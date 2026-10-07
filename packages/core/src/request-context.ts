@@ -63,6 +63,8 @@ export function createRequestMetrics(start: number): RequestMetrics {
 }
 
 export interface EmDashRequestContext {
+	/** Resolved site identity, when a trusted host has selected a site. */
+	siteId?: string;
 	/** Whether the current request is in visual editing mode */
 	editMode: boolean;
 	/**
