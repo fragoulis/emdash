@@ -1,0 +1,29 @@
+---
+import { Client } from "pg";
+
+const site = import.meta.env.PUBLIC_PROOF_SITE;
+const client = new Client({ connectionString: process.env.DATABASE_URL });
+let greeting;
+try {
+	await client.connect();
+	const result = await client.query("SELECT greeting FROM proof_sites WHERE name = $1", [site]);
+	greeting = result.rows[0]?.greeting;
+} finally {
+	await client.end();
+}
+if (!greeting) throw new Error("Site not provisioned");
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>{site} presentation</title>
+		<link rel="stylesheet" href="/style.css" />
+	</head>
+	<body>
+		<h1>{site} presentation</h1>
+		<p>{greeting}</p>
+		<img src="/mark.svg" alt={`${site} mark`} />
+	</body>
+</html>
