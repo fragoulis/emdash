@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { createReadStream, openSync, readSync, closeSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -16,12 +16,26 @@ if (!packageManagerEntrypoint) {
 	throw new Error("Cannot run pnpm pack because npm_execpath is unavailable");
 }
 
+const entrypointFd = openSync(packageManagerEntrypoint, "r");
+const magic = Buffer.alloc(4);
+try {
+	readSync(entrypointFd, magic, 0, 4, 0);
+} finally {
+	closeSync(entrypointFd);
+}
+const nativeEntrypoint = magic.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]));
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "registry-verification-pack-"));
 
 try {
 	const output = execFileSync(
-		process.execPath,
-		[packageManagerEntrypoint, "pack", "--pack-destination", temporaryDirectory, "--json"],
+		nativeEntrypoint ? packageManagerEntrypoint : process.execPath,
+		[
+			...(nativeEntrypoint ? [] : [packageManagerEntrypoint]),
+			"pack",
+			"--pack-destination",
+			temporaryDirectory,
+			"--json",
+		],
 		{ cwd: new URL("..", import.meta.url), encoding: "utf8" },
 	);
 	const { filename } = JSON.parse(output);
