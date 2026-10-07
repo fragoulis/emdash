@@ -10,6 +10,7 @@ const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, "../..");
 const fixture = resolve(root, "demos/postgres/proof");
 const databaseUrl = "postgres://postgres:proof@127.0.0.1:55432/postgres";
+const proxyToken = "proof-only-proxy-token";
 const containers = [];
 let host;
 
@@ -81,7 +82,7 @@ try {
 		"-U",
 		"postgres",
 		"-c",
-		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar')",
+		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar')",
 	]);
 
 	for (const site of ["foo", "bar"]) {
@@ -100,6 +101,7 @@ try {
 		env: {
 			...process.env,
 			PROOF_PORT: "18081",
+			PROOF_PROXY_TOKEN: proxyToken,
 			ASTRO_NODE_AUTOSTART: "disabled",
 			DATABASE_URL: databaseUrl,
 		},
@@ -112,7 +114,12 @@ try {
 
 	const caddy = await container(
 		"caddy:2-alpine",
-		["-v", `${resolve(root, "infra/shared-host/Caddyfile")}:/etc/caddy/Caddyfile:ro`],
+		[
+			"-v",
+			`${resolve(root, "infra/shared-host/Caddyfile")}:/etc/caddy/Caddyfile:ro`,
+			"-e",
+			`PROOF_PROXY_TOKEN=${proxyToken}`,
+		],
 		["caddy", "run", "--config", "/etc/caddy/Caddyfile"],
 	);
 	await waitFor(
@@ -130,6 +137,7 @@ try {
 		const html = page.text();
 		assert.match(html, new RegExp(`${site} presentation`));
 		assert.match(html, new RegExp(greeting));
+		assert.match(html, new RegExp(`Site ID: site-${site}`));
 		assert.equal((await request(`${site}.test`, "/mark.svg")).status, 200);
 		assert.match((await request(`${site}.test`, "/mark.svg")).text(), new RegExp(`${site} asset`));
 		assert.equal((await request(`${site}.test`, "/style.css")).status, 200);
@@ -141,6 +149,51 @@ try {
 		421,
 	);
 	assert.equal((await request("unknown.test", "/", 18081)).status, 421);
+	assert.equal((await request("unknown.test", "/?siteId=site-foo")).status, 421);
+	assert.equal((await request("foo.test", "/_emdash/admin")).status, 421);
+	assert.equal((await request("foo.test", "/_emdash/api/content/posts")).status, 421);
+	assert.equal((await request("foo.test", "/", 18081)).status, 421);
+	assert.equal(
+		(
+			await request("foo.test", "/", 18081, {
+				"X-Proof-Proxy-Token": proxyToken,
+				"X-Forwarded-Host": "bar.test",
+			})
+		).status,
+		421,
+	);
+	assert.equal(
+		(await request("foo.test", "/", 18080, { "X-Forwarded-Host": "bar.test" })).status,
+		200,
+	);
+	await command("docker", [
+		"exec",
+		pg,
+		"psql",
+		"-p",
+		"55432",
+		"-U",
+		"postgres",
+		"-c",
+		"UPDATE _emdash_sites SET slug = 'renamed' WHERE id = 'site-foo'; UPDATE _emdash_site_hosts SET hostname = 'new.test' WHERE site_id = 'site-foo'",
+	]);
+	assert.equal((await request("foo.test")).status, 421);
+	assert.equal((await request("new.test")).status, 200);
+	assert.match((await request("new.test")).text(), /foo presentation/);
+	assert.match((await request("new.test")).text(), /Site ID: site-foo/);
+	await command("docker", [
+		"exec",
+		pg,
+		"psql",
+		"-p",
+		"55432",
+		"-U",
+		"postgres",
+		"-c",
+		"UPDATE _emdash_site_hosts SET hostname = 'foo.test' WHERE site_id = 'site-foo'; UPDATE _emdash_sites SET active = 0 WHERE id = 'site-bar'",
+	]);
+	assert.equal((await request("foo.test")).status, 200);
+	assert.equal((await request("bar.test")).status, 421);
 
 	const nodeStatus = await readFile(`/proc/${host.pid}/status`, "utf8");
 	const caddyStatus = await command("docker", [

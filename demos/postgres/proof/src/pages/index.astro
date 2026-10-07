@@ -1,6 +1,9 @@
 ---
 import { Client } from "pg";
+import { getRequestContext } from "emdash/request-context";
 
+const siteId = getRequestContext()?.siteId;
+if (!siteId) throw new Error("Site not resolved");
 const site = import.meta.env.PUBLIC_PROOF_SITE;
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 let greeting;
@@ -23,6 +26,7 @@ if (!greeting) throw new Error("Site not provisioned");
 	</head>
 	<body>
 		<h1>{site} presentation</h1>
+		<p>Site ID: {siteId}</p>
 		<p>{greeting}</p>
 		<img src="/mark.svg" alt={`${site} mark`} />
 	</body>

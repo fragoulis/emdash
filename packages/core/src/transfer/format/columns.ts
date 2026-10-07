@@ -106,6 +106,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "_emdash_collections",
 		kind: "collection",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			slug: f("slug"),
 			label: f("label"),
@@ -218,6 +219,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "media",
 		kind: "media",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			filename: f("filename"),
 			mime_type: f("mimeType"),
@@ -242,6 +244,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "taxonomies",
 		kind: "term",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			name: f("name"),
 			slug: f("slug"),
@@ -494,6 +497,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "options",
 		kind: "setting",
 		columns: {
+			site_id: TARGET_LOCAL,
 			name: f("id"),
 			value: f("value", "json"),
 			revision: DERIVED,
@@ -529,6 +533,8 @@ export const CONTENT_TABLE_PREFIX = "ec_";
  * creates must be portable or listed here (or match a non-portable prefix).
  */
 export const NON_PORTABLE_TABLES: Readonly<Record<string, string>> = Object.freeze({
+	_emdash_sites: "installation",
+	_emdash_site_hosts: "installation",
 	users: "auth",
 	credentials: "auth",
 	auth_tokens: "auth",
