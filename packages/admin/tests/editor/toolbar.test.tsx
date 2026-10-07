@@ -1923,7 +1923,7 @@ describe("Link Insertion", () => {
 		const { screen } = await renderEditor();
 		await focusAndSelectAll(screen);
 
-		screen.getByRole("button", { name: "Add link" }).element().click();
+		getToolbarButton(screen, "Add link").element().click();
 		await typeLink("example.com/docs");
 		screen.getByRole("button", { name: "Apply" }).element().click();
 
@@ -1998,7 +1998,7 @@ describe("Link Insertion", () => {
 		const modUp = navigator.platform.includes("Mac") ? "{/Meta}" : "{/Control}";
 		await userEvent.keyboard(`${mod}{a}${modUp}`);
 
-		screen.getByRole("button", { name: "Edit link" }).element().click();
+		getToolbarButton(screen, "Edit link").element().click();
 
 		await vi.waitFor(() => {
 			expect(screen.getByRole("button", { name: "Remove" })).toBeTruthy();
