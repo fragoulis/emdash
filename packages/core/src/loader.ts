@@ -14,6 +14,7 @@
 import type { LiveLoader } from "astro/loaders";
 import { Kysely, type RawBuilder, sql, type Dialect } from "kysely";
 
+import { contentSiteId } from "./content/site.js";
 import { buildStatusCondition, isPostgres } from "./database/dialect-helpers.js";
 import { kyselyLogOption } from "./database/instrumentation.js";
 import { jsonTextValues } from "./database/json-recordset.js";
@@ -75,6 +76,7 @@ const VARIANT_RANK_COLUMN = "_emdash_variant_rank";
  */
 const SYSTEM_COLUMNS = new Set([
 	"id",
+	"site_id",
 	// "slug" - kept in data for template access
 	"status",
 	"author_id",
@@ -728,6 +730,7 @@ export async function loadEntriesByGroups(
 	const db = await getDb();
 	const tableName = getTableName(type);
 	const statusFilter = options.publishedOnly ? sql`AND status = ${"published"}` : sql``;
+	const siteId = contentSiteId();
 	const booleanFieldsSelect = foldedBooleanFieldsSelect(db, type);
 	const localeChain = options.localeChain ?? [];
 	const chainPosition =
@@ -749,6 +752,7 @@ export async function loadEntriesByGroups(
 						) AS ${sql.ref(VARIANT_RANK_COLUMN)}
 					FROM ${sql.ref(tableName)}
 					WHERE translation_group IN (${sql.join(chunk.map((group) => sql`${group}`))})
+					AND site_id = ${siteId}
 					AND deleted_at IS NULL
 					${statusFilter}
 				) AS variants
@@ -1403,6 +1407,7 @@ export function buildTaxonomyPivotQuery(
 	const deletedR = deletedIsNull ? sql`r.deleted_at IS NULL` : sql`r.deleted_at IS NOT NULL`;
 	const statusR = status !== undefined ? sql`AND ${buildStatusCondition(db, status, "r")}` : sql``;
 	const localeR = locale ? sql`AND r.locale = ${locale}` : sql``;
+	const siteR = sql`AND r.site_id = ${contentSiteId()}`;
 
 	if (isIndexedSort) {
 		const sortRef = sql.ref(`r.${primary.field}`);
@@ -1437,6 +1442,7 @@ export function buildTaxonomyPivotQuery(
 					AND ${deletedR}
 					${statusR}
 					${localeR}
+					${siteR}
 					${residual}
 					${bylineCt}
 					${cursorClause}
@@ -1447,7 +1453,7 @@ export function buildTaxonomyPivotQuery(
 			)
 			SELECT r.*, ${termsSelect}, ${bylinesSelect}, ${bylinesExistSelect}, ${booleanFieldsSelect}
 			FROM picked JOIN ${sql.ref(tableName)} AS r ON r.id = picked.entry_id
-			WHERE ${deletedR} ${statusR} ${localeR}
+			WHERE ${deletedR} ${statusR} ${localeR} ${siteR}
 			ORDER BY picked.sortval ${dir}, picked.entry_id ${dir}
 		`;
 	}
@@ -1466,12 +1472,13 @@ export function buildTaxonomyPivotQuery(
 				AND ${deletedR}
 				${statusR}
 				${localeR}
+				${siteR}
 				${residual}
 				${bylineCt}
 		)
 		SELECT r.*, ${termsSelect}, ${bylinesSelect}, ${bylinesExistSelect}, ${booleanFieldsSelect}
 		FROM picked JOIN ${sql.ref(tableName)} AS r ON r.id = picked.entry_id
-		WHERE ${deletedR} ${statusR} ${localeR}
+		WHERE ${deletedR} ${statusR} ${localeR} ${siteR}
 			${cursorCond}
 		${orderByClause}
 		${limitClause}
@@ -1634,9 +1641,11 @@ export async function getDb(): Promise<Kysely<Database>> {
 export async function loadPublishedDates(type: string, locale?: string) {
 	const tableName = getTableName(type);
 	const db = await getDb();
+	const siteId = contentSiteId();
 	const result = await sql<{ published_at: string | null; updated_at: string | null }>`
 		SELECT published_at, updated_at FROM ${sql.ref(tableName)}
 		WHERE deleted_at IS NULL
+		AND site_id = ${siteId}
 		AND ${buildStatusCondition(db, "published")}
 		${locale ? sql`AND locale = ${locale}` : sql``}
 		ORDER BY published_at DESC, id DESC
@@ -1690,6 +1699,7 @@ export function emdashLoader(): LiveLoader<EntryData, EntryFilter, LoaderCollect
 
 				// Query the per-collection table (ec_posts, ec_products, etc.)
 				const tableName = getTableName(type);
+				const siteId = contentSiteId();
 
 				// Build query with dynamic table name
 				const status = filter?.status || "published";
@@ -1917,6 +1927,7 @@ export function emdashLoader(): LiveLoader<EntryData, EntryFilter, LoaderCollect
 					result = await sql<Record<string, unknown>>`
 						SELECT *, ${termsSelect}, ${bylinesSelect}, ${bylinesExistSelect}, ${booleanFieldsSelect} FROM ${sql.ref(tableName)}
 						WHERE deleted_at IS NULL
+						AND site_id = ${siteId}
 						AND ${statusCondition}
 						${localeFilter}
 						${cursorCond}
@@ -2032,6 +2043,7 @@ export function emdashLoader(): LiveLoader<EntryData, EntryFilter, LoaderCollect
 
 				// Query the per-collection table
 				const tableName = getTableName(type);
+				const siteId = contentSiteId();
 				const locale = filter?.locale;
 
 				// Use raw SQL for dynamic table name, match by slug or id
@@ -2068,6 +2080,7 @@ export function emdashLoader(): LiveLoader<EntryData, EntryFilter, LoaderCollect
 							SELECT c.*, ${seoSelect}, ${termsSelect}, ${bylinesSelect}, ${metadataSelect}
 							FROM ${sql.ref(tableName)} AS c
 							WHERE c.deleted_at IS NULL
+							AND c.site_id = ${siteId}
 							AND ((c.slug = ${id} AND c.locale = ${locale}) OR c.id = ${id})
 							LIMIT 1
 						`.execute(db)
@@ -2075,6 +2088,7 @@ export function emdashLoader(): LiveLoader<EntryData, EntryFilter, LoaderCollect
 							SELECT c.*, ${seoSelect}, ${termsSelect}, ${bylinesSelect}, ${metadataSelect}
 							FROM ${sql.ref(tableName)} AS c
 							WHERE c.deleted_at IS NULL
+							AND c.site_id = ${siteId}
 							AND (c.slug = ${id} OR c.id = ${id})
 							LIMIT 1
 						`.execute(db);

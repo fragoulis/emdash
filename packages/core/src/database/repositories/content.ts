@@ -275,6 +275,7 @@ export function isSystemOrderField(field: string): boolean {
  */
 const SYSTEM_COLUMNS = new Set([
 	"id",
+	"site_id",
 	"slug",
 	"status",
 	"author_id",
@@ -712,7 +713,22 @@ export class ContentRepository {
 		type: string,
 		identifier: string,
 		locale?: string,
+		siteId?: string,
 	): Promise<ContentItem | null> {
+		if (siteId !== undefined) {
+			const tableName = getTableName(type);
+			const slugMatch = locale
+				? sql`(slug = ${identifier} AND locale = ${locale})`
+				: sql`slug = ${identifier}`;
+			const result = await sql<Record<string, unknown>>`
+				SELECT * FROM ${sql.ref(tableName)}
+				WHERE site_id = ${siteId} AND deleted_at IS NULL
+				AND (id = ${identifier} OR ${slugMatch})
+				ORDER BY CASE WHEN id = ${identifier} THEN 0 ELSE 1 END, locale ASC
+				LIMIT 1
+			`.execute(this.db);
+			return result.rows[0] ? this.mapRow(type, result.rows[0]) : null;
+		}
 		return this._findByIdOrSlug(type, identifier, false, locale);
 	}
 
@@ -2275,13 +2291,18 @@ export class ContentRepository {
 	/**
 	 * Find all translations in a translation group
 	 */
-	async findTranslations(type: string, translationGroup: string): Promise<ContentItem[]> {
+	async findTranslations(
+		type: string,
+		translationGroup: string,
+		siteId?: string,
+	): Promise<ContentItem[]> {
 		const tableName = getTableName(type);
 
 		const result = await sql<Record<string, unknown>>`
 			SELECT * FROM ${sql.ref(tableName)}
 			WHERE translation_group = ${translationGroup}
 			AND deleted_at IS NULL
+			${siteId === undefined ? sql`` : sql`AND site_id = ${siteId}`}
 			ORDER BY locale ASC
 		`.execute(this.db);
 

@@ -24,6 +24,7 @@
  * import resolves there at typecheck time without our help.
  */
 
+import { contentSiteId } from "./content/site.js";
 import type { ContentSeo } from "./database/repositories/types.js";
 import { getFallbackChain, getI18nConfig, isI18nEnabled } from "./i18n/config.js";
 import {
@@ -309,7 +310,7 @@ export async function getPublishedDates(
 	options?: { locale?: string },
 ): Promise<PublishedDatesResult> {
 	const locale = effectiveLocaleKey(options) || undefined;
-	const key = `publishedDates:${JSON.stringify([type, locale])}`;
+	const key = `publishedDates:${JSON.stringify([contentSiteId(), type, locale])}`;
 	try {
 		return await requestCached(key, () =>
 			cachedQuery<PublishedDatesResult>({
@@ -773,7 +774,7 @@ function encodeEntryCursor<D>(
  * because that's the sort priority.
  */
 function collectionCacheKey(type: string, filter?: CollectionFilter): string {
-	if (!filter) return `collection:${type}:`;
+	if (!filter) return `collection:${contentSiteId()}:${type}:`;
 	const parts = [
 		filter.status ?? "",
 		filter.limit ?? "",
@@ -783,7 +784,7 @@ function collectionCacheKey(type: string, filter?: CollectionFilter): string {
 		filter.orderBy ? JSON.stringify(filter.orderBy) : "",
 		filter.locale ?? "",
 	];
-	return `collection:${type}:${parts.join("|")}`;
+	return `collection:${contentSiteId()}:${type}:${parts.join("|")}`;
 }
 
 function stableStringify(value: Record<string, unknown>): string {
@@ -1376,7 +1377,7 @@ async function resolveEmDashEntry<T extends string, D = InferCollectionData<T>>(
 
 	const snapshot = await cachedQuery<ContentSnapshot<CachedEntryValue>>({
 		namespace: namespaces,
-		key: `entry:${id}|loc=${requestedLocale ?? ""}${referenceKey}`,
+		key: `entry:${contentSiteId()}:${id}|loc=${requestedLocale ?? ""}${referenceKey}`,
 		load: async () => {
 			const result = await resolveNormal();
 			if (result.error) {
@@ -1459,6 +1460,7 @@ export async function getEmDashReferences<D = Record<string, unknown>>(
 			type,
 			addressed.id,
 			addressed.locale,
+			contentSiteId(),
 		);
 		if (!entry?.translationGroup) return { entries: [] };
 
@@ -1797,7 +1799,7 @@ export async function getTranslations(type: string, id: string): Promise<Transla
 		const repo = new ContentRepository(dbInstance);
 
 		// Find the item to get its translation group
-		const item = await repo.findByIdOrSlug(type, id);
+		const item = await repo.findByIdOrSlug(type, id, undefined, contentSiteId());
 		if (!item) {
 			return {
 				translationGroup: "",
@@ -1807,7 +1809,7 @@ export async function getTranslations(type: string, id: string): Promise<Transla
 		}
 
 		const group = item.translationGroup || item.id;
-		const translations = await repo.findTranslations(type, group);
+		const translations = await repo.findTranslations(type, group, contentSiteId());
 
 		return {
 			translationGroup: group,

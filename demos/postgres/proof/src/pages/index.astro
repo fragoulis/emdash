@@ -7,10 +7,17 @@ if (!siteId) throw new Error("Site not resolved");
 const site = import.meta.env.PUBLIC_PROOF_SITE;
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 let greeting;
+let title;
 try {
 	await client.connect();
-	const result = await client.query("SELECT greeting FROM proof_sites WHERE name = $1", [site]);
+	const result = await client.query(
+		`SELECT p.greeting, c.title FROM proof_sites p
+		 JOIN ec_posts c ON c.site_id = $1 AND c.slug = 'shared' AND c.locale = 'en' AND c.status = 'published'
+		 WHERE p.name = $2`,
+		[siteId, site],
+	);
 	greeting = result.rows[0]?.greeting;
+	title = result.rows[0]?.title;
 } finally {
 	await client.end();
 }
@@ -28,6 +35,7 @@ if (!greeting) throw new Error("Site not provisioned");
 		<h1>{site} presentation</h1>
 		<p>Site ID: {siteId}</p>
 		<p>{greeting}</p>
+		<p>Published entry: {title}</p>
 		<img src="/mark.svg" alt={`${site} mark`} />
 	</body>
 </html>
