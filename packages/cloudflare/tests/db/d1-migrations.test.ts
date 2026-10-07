@@ -94,7 +94,14 @@ describe("D1 migration executor", () => {
 		if (!pendingMigration) throw new Error("Expected at least one core migration.");
 
 		const applied = new Set(identity.names.slice(0, -1));
-		const tables = ["_emdash_migrations", "_emdash_migrations_lock", "_emdash_collections"];
+		const tables = [
+			"_emdash_migrations",
+			"_emdash_migrations_lock",
+			"_emdash_collections",
+			"media",
+			"taxonomies",
+			"options",
+		];
 		const requests: Array<{ sql: string; params: unknown[] }> = [];
 		let lock = 0;
 		const lockDuringInsert: number[] = [];
@@ -112,7 +119,7 @@ describe("D1 migration executor", () => {
 					tables.map((name) => ({
 						name,
 						type: "table",
-						sql: `CREATE TABLE "${name}" (id TEXT)`,
+						sql: `CREATE TABLE "${name}" (id TEXT, site_id TEXT NOT NULL DEFAULT 'site-default')`,
 					})),
 				);
 			}

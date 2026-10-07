@@ -2,4 +2,4 @@
 "emdash": minor
 ---
 
-Adds site identity tables and optional site ownership columns to PostgreSQL and SQLite databases. Sites can have stable IDs and multiple hostnames. Existing single-site data keeps its current behavior; the new ownership fields remain empty until site-scoped operations are available. Do not serve multiple sites through the EmDash admin or content APIs yet.
+Adds site identity tables and required site ownership columns to PostgreSQL and SQLite databases. Sites have stable IDs and can have multiple hostnames. Existing collections, media, taxonomies, and settings are assigned to a default site during migration. Single-site writes continue to use the default site when no site ID is specified. Do not serve multiple sites through the EmDash admin or content APIs yet.
