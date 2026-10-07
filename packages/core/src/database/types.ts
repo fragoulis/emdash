@@ -20,6 +20,7 @@ export interface RevisionPruneQueueTable {
 }
 
 export interface TaxonomyTable {
+	site_id: Generated<string | null>;
 	id: string;
 	name: string;
 	slug: string;
@@ -75,6 +76,7 @@ export interface TaxonomyDefGroupTable {
 }
 
 export interface MediaTable {
+	site_id: Generated<string | null>;
 	id: string;
 	filename: string;
 	mime_type: string;
@@ -408,6 +410,7 @@ export interface DeviceCodeTable {
 }
 
 export interface OptionTable {
+	site_id: Generated<string | null>;
 	name: string;
 	value: string; // JSON
 	revision: Generated<string>;
@@ -433,6 +436,7 @@ export interface MigrationTable {
 // Schema Registry Tables
 
 export interface CollectionTable {
+	site_id: Generated<string | null>;
 	id: string;
 	slug: string;
 	label: string;
@@ -756,7 +760,20 @@ export interface TransferApprovalTable {
 
 // Database schema
 // Note: ec_* content tables are dynamic and not part of this type
+export interface SiteTable {
+	id: string;
+	slug: string;
+	active: Generated<number>;
+}
+
+export interface SiteHostTable {
+	hostname: string;
+	site_id: string;
+}
+
 export interface Database {
+	_emdash_sites: SiteTable;
+	_emdash_site_hosts: SiteHostTable;
 	revisions: RevisionTable;
 	_emdash_revision_prune_queue: RevisionPruneQueueTable;
 	taxonomies: TaxonomyTable;
