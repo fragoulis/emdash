@@ -510,6 +510,7 @@ export const PORTABLE_TABLES: readonly PortableTableSpec[] = Object.freeze(PORTA
 /** Standard columns of every `ec_*` content table (kind `entry`). */
 export const CONTENT_TABLE_COLUMNS: Readonly<Record<string, ColumnSpec>> = Object.freeze({
 	id: f("id"),
+	site_id: TARGET_LOCAL,
 	slug: f("slug"),
 	status: f("status"),
 	author_id: principal("authorPrincipal"),
