@@ -1,18 +1,26 @@
 This file provides guidance to agentic coding tools working in this repository.
 
-## Agent skills
+# What this repo is
 
-### Issue tracker
+This is a fork `emdash/emdash` repo with my own customizations.
+
+The `main` branch is synced with the upstream.
+
+The `multi-tenancy` branch is the working branch with out changes.
+
+# Issue tracker
 
 Track specs and tickets in GitHub Issues on `fragoulis/emdash`. See `docs/agents/issue-tracker.md`.
 
-### Domain docs
+# Domain docs
 
 Use `GLOSSARY.md` for shared terms and `CONTEXT-MAP.md` for package contexts when it exists. See `docs/agents/domain.md`.
 
 For human-facing contributor info (setup, repo layout, PR policy, i18n), see [CONTRIBUTING.md](CONTRIBUTING.md). This file focuses on the patterns and gotchas an agent needs to write correct code.
 
 Follow [AI_POLICY.md](AI_POLICY.md) for external actions and project communication. In particular, do not open design PRs, and do not comment on issues, Discussions, or design PRs. On implementation PRs, post only a specifically requested code review or a reply to code review, and sign agent-written comments posted from a human account as the policy requires.
+
+# Skills
 
 `CLAUDE.md` is a symlink to this file. `.agents/skills` and `.claude/skills` are symlinks to `skills/`. Don't try to sync between them.
 
