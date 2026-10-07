@@ -100,6 +100,8 @@ import * as m089 from "./089_auto_seed_completion.js";
 import * as m090 from "./090_redirect_enable_loop_guard.js";
 import * as m091 from "./091_redirect_artifacts.js";
 import * as m092 from "./092_site_identity.js";
+import * as m093 from "./093_default_site.js";
+import * as m094 from "./094_required_site_ownership.js";
 
 const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
 	"001_initial": m001,
@@ -193,6 +195,8 @@ const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
 	"090_redirect_enable_loop_guard": m090,
 	"091_redirect_artifacts": m091,
 	"092_site_identity": m092,
+	"093_default_site": m093,
+	"094_required_site_ownership": m094,
 });
 
 /** Ordered names from the statically registered migration set. */

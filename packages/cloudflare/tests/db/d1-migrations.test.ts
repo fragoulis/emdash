@@ -181,6 +181,72 @@ describe("D1 migration executor", () => {
 		const identity = await getCoreMigrationIdentity();
 		const d1 = fakeD1WithLastMigrationPending(identity.names, 0);
 		globalThis.fetch = d1.fetch;
+		const pendingMigration = identity.names.at(-1);
+		if (!pendingMigration) throw new Error("Expected at least one core migration.");
+
+		const applied = new Set(identity.names.slice(0, -1));
+		const tables = [
+			"_emdash_migrations",
+			"_emdash_migrations_lock",
+			"_emdash_collections",
+			"media",
+			"taxonomies",
+			"options",
+		];
+		const requests: Array<{ sql: string; params: unknown[] }> = [];
+		let lock = 0;
+		const lockDuringInsert: number[] = [];
+		const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+			const url = input instanceof Request ? input.url : input.toString();
+			if (!url.endsWith("/query")) {
+				return response({ uuid: DATABASE_ID, name: "site-db", version: "production" });
+			}
+			if (typeof init?.body !== "string") throw new Error("Expected a JSON query body.");
+			const request = JSON.parse(init.body) as { sql: string; params: unknown[] };
+			requests.push(request);
+
+			if (/\bfrom\s+["`]?sqlite_master["`]?/i.test(request.sql)) {
+				return queryResponse(
+					tables.map((name) => ({
+						name,
+						type: "table",
+						sql: `CREATE TABLE "${name}" (id TEXT, site_id TEXT NOT NULL DEFAULT 'site-default')`,
+					})),
+				);
+			}
+			if (/\bfrom\s+["`]?_emdash_migrations["`]?\b/i.test(request.sql)) {
+				if (/count\(\*\)/i.test(request.sql)) {
+					return queryResponse([{ count: applied.size }]);
+				}
+				return queryResponse(
+					Array.from(applied, (name, index) => ({
+						name,
+						timestamp: new Date(index).toISOString(),
+					})),
+				);
+			}
+			if (/\bupdate\s+["`]?_emdash_migrations_lock["`]?/i.test(request.sql)) {
+				const [value, , expected] = request.params;
+				if (lock !== expected) return queryResponse();
+				lock = Number(value);
+				return queryResponse([], 1);
+			}
+			if (/\binsert\s+into\s+["`]?_emdash_migrations["`]?\b/i.test(request.sql)) {
+				applied.add(String(request.params[0]));
+				lockDuringInsert.push(lock);
+			}
+			return queryResponse();
+		});
+		globalThis.fetch = fetch;
+
+		const executor = await createMigrationExecutor(
+			{ binding: "DB" },
+			{
+				projectRoot: "/project",
+				env: { CLOUDFLARE_API_TOKEN: TOKEN },
+				overrides: { accountId: ACCOUNT_ID, d1: DATABASE_ID },
+			},
+		);
 
 		await expect(
 			(await createExecutor()).execute(migrationRequest(identity, "apply")),

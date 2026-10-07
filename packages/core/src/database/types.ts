@@ -20,7 +20,7 @@ export interface RevisionPruneQueueTable {
 }
 
 export interface TaxonomyTable {
-	site_id: Generated<string | null>;
+	site_id: Generated<string>;
 	id: string;
 	name: string;
 	slug: string;
@@ -76,7 +76,7 @@ export interface TaxonomyDefGroupTable {
 }
 
 export interface MediaTable {
-	site_id: Generated<string | null>;
+	site_id: Generated<string>;
 	id: string;
 	filename: string;
 	mime_type: string;
@@ -410,7 +410,7 @@ export interface DeviceCodeTable {
 }
 
 export interface OptionTable {
-	site_id: Generated<string | null>;
+	site_id: Generated<string>;
 	name: string;
 	value: string; // JSON
 	revision: Generated<string>;
@@ -436,7 +436,7 @@ export interface MigrationTable {
 // Schema Registry Tables
 
 export interface CollectionTable {
-	site_id: Generated<string | null>;
+	site_id: Generated<string>;
 	id: string;
 	slug: string;
 	label: string;
