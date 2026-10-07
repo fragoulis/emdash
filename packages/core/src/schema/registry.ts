@@ -1869,6 +1869,9 @@ export class SchemaRegistry {
 		let table: CreateTableBuilder<string, string> = conn.schema
 			.createTable(tableName)
 			.addColumn("id", "text", (col) => col.primaryKey())
+			.addColumn("site_id", "text", (col) =>
+				col.notNull().defaultTo("site-default").references("_emdash_sites.id"),
+			)
 			.addColumn("slug", "text")
 			.addColumn("status", "text", (col) => col.defaultTo("draft"))
 			.addColumn("author_id", "text")
@@ -1903,7 +1906,7 @@ export class SchemaRegistry {
 		}
 
 		await table
-			.addUniqueConstraint(`${tableName}_slug_locale_unique`, ["slug", "locale"])
+			.addUniqueConstraint(`${tableName}_site_slug_locale_unique`, ["site_id", "slug", "locale"])
 			.execute();
 
 		const createIndex = options.ifNotExists ? sql`CREATE INDEX IF NOT EXISTS` : sql`CREATE INDEX`;
@@ -1912,6 +1915,11 @@ export class SchemaRegistry {
 			: sql`CREATE UNIQUE INDEX`;
 
 		// Create standard indexes
+		await sql`
+			${createIndex} ${sql.ref(`idx_${tableName}_site_id`)}
+			ON ${sql.ref(tableName)} (site_id)
+		`.execute(conn);
+
 		await sql`
 			${createIndex} ${sql.ref(`idx_${tableName}_slug`)}
 			ON ${sql.ref(tableName)} (slug)

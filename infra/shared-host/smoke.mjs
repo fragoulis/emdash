@@ -82,7 +82,7 @@ try {
 		"-U",
 		"postgres",
 		"-c",
-		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar')",
+		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar'); CREATE TABLE ec_posts (id text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id), slug text NOT NULL, locale text NOT NULL, status text NOT NULL, title text NOT NULL, UNIQUE(site_id, slug, locale)); INSERT INTO ec_posts VALUES ('foo-entry', 'site-foo', 'shared', 'en', 'published', 'Foo story'), ('bar-entry', 'site-bar', 'shared', 'en', 'published', 'Bar story'), ('foo-only', 'site-foo', 'exclusive', 'en', 'published', 'Only Foo')",
 	]);
 
 	for (const site of ["foo", "bar"]) {
@@ -138,12 +138,22 @@ try {
 		assert.match(html, new RegExp(`${site} presentation`));
 		assert.match(html, new RegExp(greeting));
 		assert.match(html, new RegExp(`Site ID: site-${site}`));
+		assert.match(html, new RegExp(`Published entry: ${site === "foo" ? "Foo" : "Bar"} story`));
+		const ownEntry = await request(`${site}.test`, "/entry/shared.json");
+		assert.equal(ownEntry.status, 200);
+		assert.deepEqual(JSON.parse(ownEntry.text()), {
+			title: `${site === "foo" ? "Foo" : "Bar"} story`,
+		});
 		assert.equal((await request(`${site}.test`, "/mark.svg")).status, 200);
 		assert.match((await request(`${site}.test`, "/mark.svg")).text(), new RegExp(`${site} asset`));
 		assert.equal((await request(`${site}.test`, "/style.css")).status, 200);
 	}
 	assert.equal((await request("unknown.test")).status, 421);
 	assert.equal((await request("unknown.test", "/mark.svg")).status, 421);
+	assert.equal((await request("unknown.test", "/entry/shared.json")).status, 421);
+	assert.equal((await request("bar.test", "/entry/foo-entry.json")).status, 404);
+	assert.equal((await request("bar.test", "/entry/exclusive.json")).status, 404);
+	assert.equal((await request("foo.test", "/entry/bar-entry.json")).status, 404);
 	assert.equal(
 		(await request("unknown.test", "/", 18080, { "X-Forwarded-Host": "foo.test" })).status,
 		421,
