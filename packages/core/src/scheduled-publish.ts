@@ -16,6 +16,7 @@ import { handleContentPublish } from "./api/handlers/content.js";
 import { ContentRepository } from "./database/repositories/content.js";
 import { OptionsRepository } from "./database/repositories/options.js";
 import type { Database } from "./database/types.js";
+import { getRequestContext, runWithContext } from "./request-context.js";
 import { SchemaRegistry } from "./schema/registry.js";
 
 /** A content item that was promoted to published by a sweep. */
@@ -38,7 +39,8 @@ interface ScheduledPublishCursor {
 }
 
 function scheduledPublishCursorKey(collection: string): string {
-	return `${SCHEDULED_PUBLISH_CURSOR_PREFIX}${collection}`;
+	const siteId = getRequestContext()?.siteId;
+	return `${SCHEDULED_PUBLISH_CURSOR_PREFIX}${collection}${siteId && siteId !== "site-default" ? `:${siteId}` : ""}`;
 }
 
 function isScheduledPublishCursor(value: unknown): value is ScheduledPublishCursor {
@@ -114,6 +116,19 @@ export async function publishDueContent(
 	db: Kysely<Database>,
 	options: PublishDueContentOptions = {},
 ): Promise<PublishedRef[]> {
+	if (!getRequestContext()?.siteId) {
+		const sites = await db.selectFrom("_emdash_sites").select("id").orderBy("id").execute();
+		const published: PublishedRef[] = [];
+		for (const site of sites) {
+			published.push(
+				...(await runWithContext({ ...getRequestContext(), editMode: false, siteId: site.id }, () =>
+					publishDueContent(db, options),
+				)),
+			);
+		}
+		return published;
+	}
+
 	const {
 		publish,
 		onPublished,

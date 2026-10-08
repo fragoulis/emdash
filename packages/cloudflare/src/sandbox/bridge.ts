@@ -78,6 +78,7 @@ const SETTINGS_KEY_PREFIX = "settings:";
 
 const SYSTEM_COLUMNS = new Set([
 	"id",
+	"site_id",
 	"slug",
 	"status",
 	"author_id",
@@ -950,7 +951,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			}).get(collection, id);
 		} catch {
 			const row = await this.env.DB.prepare(
-				`SELECT * FROM ec_${collection} WHERE id = ? AND deleted_at IS NULL`,
+				`SELECT * FROM ec_${collection} WHERE id = ? AND site_id = 'site-default' AND deleted_at IS NULL`,
 			)
 				.bind(id)
 				.first();
@@ -1121,7 +1122,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			.bind(...values)
 			.run();
 		const created = await this.env.DB.prepare(
-			`SELECT * FROM ec_${collection} WHERE id = ? AND deleted_at IS NULL`,
+			`SELECT * FROM ec_${collection} WHERE id = ? AND site_id = 'site-default' AND deleted_at IS NULL`,
 		)
 			.bind(id)
 			.first();
@@ -1181,7 +1182,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		await this.assertSiteWriteAllowed();
 		const now = new Date().toISOString();
 		const result = await this.env.DB.prepare(
-			`UPDATE ec_${collection} SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+			`UPDATE ec_${collection} SET deleted_at = ?, updated_at = ? WHERE id = ? AND site_id = 'site-default' AND deleted_at IS NULL`,
 		)
 			.bind(now, now, id)
 			.run();

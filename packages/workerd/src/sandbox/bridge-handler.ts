@@ -61,6 +61,7 @@ import type {
 	SiteInfo,
 	TaxonomyAccessWithWrite,
 } from "emdash";
+import { getRequestContext } from "emdash/request-context";
 import type { Kysely } from "kysely";
 
 const CONTENT_CREATE_ERROR_CODES = new Set([
@@ -135,6 +136,7 @@ const COLLECTION_NAME_RE = /^[a-z][a-z0-9_]*$/;
 /** System columns that plugins cannot directly write to */
 const SYSTEM_COLUMNS = new Set([
 	"id",
+	"site_id",
 	"slug",
 	"status",
 	"author_id",
@@ -1634,6 +1636,7 @@ async function contentGet(
 		const row = await asContentDb(db)
 			.selectFrom(`ec_${collection}`)
 			.where("id", "=", id)
+			.where("site_id", "=", getRequestContext()?.siteId ?? "site-default")
 			.where("deleted_at", "is", null)
 			.selectAll()
 			.executeTakeFirst();
@@ -1674,6 +1677,7 @@ async function contentList(
 		let query = asContentDb(db)
 			.selectFrom(`ec_${collection}`)
 			.where("deleted_at", "is", null)
+			.where("site_id", "=", getRequestContext()?.siteId ?? "site-default")
 			.selectAll()
 			.orderBy("id", "desc");
 		if (typeof opts.cursor === "string") query = query.where("id", "<", opts.cursor);
@@ -1711,6 +1715,7 @@ async function contentCreate(
 	// Build insert values: system columns + user data columns
 	const values: Record<string, unknown> = {
 		id,
+		site_id: getRequestContext()?.siteId ?? "site-default",
 		slug: typeof data.slug === "string" ? data.slug : null,
 		status: typeof data.status === "string" ? data.status : "draft",
 		author_id: null,
@@ -1735,6 +1740,7 @@ async function contentCreate(
 	const created = await cdb
 		.selectFrom(table)
 		.where("id", "=", id)
+		.where("site_id", "=", getRequestContext()?.siteId ?? "site-default")
 		.where("deleted_at", "is", null)
 		.selectAll()
 		.executeTakeFirst();
@@ -1789,6 +1795,7 @@ async function contentDelete(
 		.updateTable(table)
 		.set({ deleted_at: now, updated_at: now })
 		.where("id", "=", id)
+		.where("site_id", "=", getRequestContext()?.siteId ?? "site-default")
 		.where("deleted_at", "is", null)
 		.executeTakeFirst();
 

@@ -7,6 +7,7 @@ import { sql } from "kysely";
 
 import { after } from "../../after.js";
 import type { ContentFieldFilters } from "../../content-list-query.js";
+import { contentSiteId } from "../../content/site.js";
 import { isSqlite } from "../../database/dialect-helpers.js";
 import { BylineRepository } from "../../database/repositories/byline.js";
 import type { ContentBylineInput } from "../../database/repositories/byline.js";
@@ -822,6 +823,7 @@ async function slugStillTaken(
 	const result = await sql<{ id: string }>`
 		SELECT id FROM ${sql.ref(`ec_${collection}`)}
 		WHERE slug = ${slug}
+		AND site_id = ${contentSiteId()}
 		AND id != ${contentId}
 		AND deleted_at IS NULL
 		LIMIT 1

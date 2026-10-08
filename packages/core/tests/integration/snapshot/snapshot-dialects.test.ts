@@ -125,7 +125,12 @@ describeEachDialect("snapshot generation", (dialect) => {
 		expect(snapshot.tables.ec_post?.[0]?.content).toBe(JSON.stringify([]));
 		expect(snapshot.tables.ec_page).toBeUndefined();
 		expect(snapshot.schema.ec_page?.columns).toContain("id");
-		expect(snapshot.schema.ec_post?.columns.slice(0, 3)).toEqual(["id", "slug", "status"]);
+		expect(snapshot.schema.ec_post?.columns.slice(0, 4)).toEqual([
+			"id",
+			"site_id",
+			"slug",
+			"status",
+		]);
 		expect(snapshot.schema.ec_post?.columns.at(-1)).toBe("rating");
 		expect(snapshot.schema.ec_post?.types).toMatchObject({
 			id: "TEXT",
