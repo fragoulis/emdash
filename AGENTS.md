@@ -6,7 +6,7 @@ This is a fork `emdash/emdash` repo with my own customizations.
 
 The `main` branch is synced with the upstream.
 
-The `multi-tenancy` branch is the working branch with out changes.
+The `multi-tenancy` branch is the working branch for a greenfield multi-site Node deployment. Existing database rows still need forward-only backfills; the deployment has no existing Astro sites or users to move. When changing site ownership, request routing, settings, or central admin access, read [the multi-site hosting spec](docs/technical-specs/multi-site-hosting.md) and the relevant GitHub issue. The spec records the agreed target design, not a claim that all of it is implemented.
 
 # Issue tracker
 
@@ -27,6 +27,8 @@ When writing, revising, or reviewing documentation, load the `writing-emdash-doc
 # Rules
 
 **Backwards compatibility matters.** EmDash is published, in active use, and on 1.x. Prefer additive changes (new fields, new routes, new options with defaults). Breaking changes need an explicit decision, a major version bump, and a changeset that calls the break out clearly. Database migrations are forward-only -- never write one that leaves existing content inaccessible. When the compatibility decision is unclear, propose a Discussion instead of choosing a breaking design.
+
+**Site IDs have no implicit default.** For site-owned records, backfill old rows to `site-default` in a forward-only migration, then require a non-null `site_id` without a database or schema default. New writes must supply the selected site ID explicitly; an unscoped write fails. Some existing migrations and schema definitions still install a `site-default` column default. Correct those defaults through new migrations and schema changes when working on site ownership; published migrations remain immutable. See [the multi-site hosting spec](docs/technical-specs/multi-site-hosting.md).
 
 **Regression evidence for bugs.** A fix must demonstrate that it changes the reported behavior. Add a regression test when it can protect meaningful behavior; otherwise report the reproduction and verification. See [Testing](#testing).
 
