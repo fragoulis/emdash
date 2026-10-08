@@ -1,6 +1,7 @@
 import { sql, type Kysely, type Selectable } from "kysely";
 import { monotonicFactory } from "ulidx";
 
+import { contentSiteId } from "../../content/site.js";
 import { ContentDatetimeNormalizer, type DatetimeContextCache } from "../content-datetime.js";
 import type { Database, RevisionTable } from "../types.js";
 import { validateIdentifier } from "../validate.js";
@@ -67,7 +68,8 @@ export class RevisionRepository {
 		const id = createRevisionId();
 		const data = await this.datetimes.normalizeData(input.collection, input.data);
 
-		const row: Omit<RevisionTable, "created_at"> = {
+		const row: Omit<RevisionTable, "created_at" | "site_id"> & { site_id: string } = {
+			site_id: contentSiteId(),
 			id,
 			collection: input.collection,
 			entry_id: input.entryId,
@@ -116,6 +118,7 @@ export class RevisionRepository {
 			.selectFrom("revisions")
 			.selectAll()
 			.where("id", "=", id)
+			.where("site_id", "=", contentSiteId())
 			.executeTakeFirst();
 
 		return row ? this.normalizeRow(row) : null;
@@ -127,6 +130,7 @@ export class RevisionRepository {
 			.selectFrom("revisions")
 			.select("data")
 			.where("id", "=", id)
+			.where("site_id", "=", contentSiteId())
 			.executeTakeFirst();
 		if (!row) return;
 		const data: Record<string, unknown> = { ...JSON.parse(row.data), ...patch };
@@ -134,6 +138,7 @@ export class RevisionRepository {
 			.updateTable("revisions")
 			.set({ data: JSON.stringify(data) })
 			.where("id", "=", id)
+			.where("site_id", "=", contentSiteId())
 			.execute();
 	}
 
@@ -191,6 +196,7 @@ export class RevisionRepository {
 			SELECT revisions.* FROM revisions
 			WHERE revisions.collection = ${collection}
 			AND revisions.entry_id = ${entryId}
+			AND revisions.site_id = ${contentSiteId()}
 			AND EXISTS (
 				SELECT 1 FROM ${sql.ref(tableName)} AS content
 				WHERE content.id = ${entryId}
@@ -223,6 +229,7 @@ export class RevisionRepository {
 			WHERE revisions.id = ${revisionId}
 			AND revisions.collection = ${collection}
 			AND revisions.entry_id = ${entryId}
+			AND revisions.site_id = ${contentSiteId()}
 			AND EXISTS (
 				SELECT 1 FROM ${sql.ref(tableName)} AS content
 				WHERE content.id = ${entryId}
@@ -243,6 +250,7 @@ export class RevisionRepository {
 			.selectAll()
 			.where("collection", "=", collection)
 			.where("entry_id", "=", entryId)
+			.where("site_id", "=", contentSiteId())
 			.orderBy("id", "desc")
 			.limit(1)
 			.executeTakeFirst();
@@ -259,6 +267,7 @@ export class RevisionRepository {
 			.select((eb) => eb.fn.count("id").as("count"))
 			.where("collection", "=", collection)
 			.where("entry_id", "=", entryId)
+			.where("site_id", "=", contentSiteId())
 			.executeTakeFirst();
 
 		return Number(result?.count || 0);
@@ -272,6 +281,7 @@ export class RevisionRepository {
 			.deleteFrom("revisions")
 			.where("collection", "=", collection)
 			.where("entry_id", "=", entryId)
+			.where("site_id", "=", contentSiteId())
 			.executeTakeFirst();
 
 		try {
@@ -306,6 +316,7 @@ export class RevisionRepository {
 			.select("id")
 			.where("collection", "=", collection)
 			.where("entry_id", "=", entryId)
+			.where("site_id", "=", contentSiteId())
 			.orderBy("created_at", "desc")
 			.orderBy("id", "desc") // ULID tiebreaker
 			.limit(keepCount);
@@ -325,6 +336,7 @@ export class RevisionRepository {
 			DELETE FROM revisions
 			WHERE collection = ${collection}
 			AND entry_id = ${entryId}
+			AND revisions.site_id = ${contentSiteId()}
 			${revisionBoundary}
 			AND id NOT IN (${sql.join(keepIds.map((id) => sql`${id}`))})
 			AND NOT EXISTS (
@@ -365,6 +377,7 @@ export class RevisionRepository {
 			WHERE id = ${revisionId}
 			AND collection = ${collection}
 			AND entry_id = ${entryId}
+			AND revisions.site_id = ${contentSiteId()}
 			AND NOT EXISTS (
 				SELECT 1 FROM ${sql.ref(tableName)} AS content
 				WHERE content.live_revision_id = revisions.id

@@ -317,12 +317,11 @@ describeEachDialect("published dates", (dialect) => {
 		expect(missing.error).toBeUndefined();
 		await waitForDeferredTasks();
 		await sql`CREATE TABLE ec_missing (
-			id TEXT PRIMARY KEY, published_at TEXT, updated_at TEXT,
-			status TEXT, deleted_at TEXT, locale TEXT
+			id TEXT PRIMARY KEY, site_id TEXT NOT NULL DEFAULT 'site-default',
+			published_at TEXT, updated_at TEXT, status TEXT, deleted_at TEXT, locale TEXT
 		)`.execute(ctx.db);
-		await sql`INSERT INTO ec_missing VALUES ('entry', ${march}, ${march}, 'published', NULL, 'en')`.execute(
-			ctx.db,
-		);
+		await sql`INSERT INTO ec_missing (id, published_at, updated_at, status, deleted_at, locale)
+			VALUES ('entry', ${march}, ${march}, 'published', NULL, 'en')`.execute(ctx.db);
 		expect(timestamps((await load()).dates)).toEqual([march]);
 	});
 });

@@ -41,6 +41,10 @@ export async function handleRevisionList(
 	params: { limit?: number } = {},
 ): Promise<ApiResult<RevisionListResponse>> {
 	try {
+		const entry = await new ContentRepository(db).findById(collection, entryId);
+		if (!entry) {
+			return { success: false, error: { code: "NOT_FOUND", message: "Content item not found" } };
+		}
 		const repo = new RevisionRepository(db);
 		const [items, total] = await Promise.all([
 			repo.findByEntry(collection, entryId, {
@@ -75,7 +79,7 @@ export async function handleRevisionGet(
 		const repo = new RevisionRepository(db);
 		const item = await repo.findById(revisionId);
 
-		if (!item) {
+		if (!item || !(await new ContentRepository(db).findById(item.collection, item.entryId))) {
 			return {
 				success: false,
 				error: {
@@ -113,7 +117,10 @@ export async function handleRevisionRestore(
 
 		// Get the revision
 		const revision = await revisionRepo.findById(revisionId);
-		if (!revision) {
+		if (
+			!revision ||
+			!(await new ContentRepository(db).findById(revision.collection, revision.entryId))
+		) {
 			return {
 				success: false,
 				error: {

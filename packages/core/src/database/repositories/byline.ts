@@ -2,6 +2,7 @@ import { sql, type Kysely, type Selectable } from "kysely";
 import { ulid } from "ulidx";
 
 import { getBylineFieldDefs } from "../../bylines/field-defs-cache.js";
+import { contentSiteId } from "../../content/site.js";
 import { getLocaleRank } from "../../i18n/config.js";
 import { localeMatches, localeOrder } from "../../i18n/query.js";
 import {
@@ -28,7 +29,7 @@ import {
 	type FindManyResult,
 } from "./types.js";
 
-type BylineRow = Selectable<BylineTable>;
+type BylineRow = Omit<Selectable<BylineTable>, "site_id">;
 
 type LocalizedBylineRow = {
 	id: string;
@@ -562,7 +563,10 @@ export class BylineRepository {
 	}
 
 	async findById(id: string): Promise<BylineSummary | null> {
-		const row = await this.selectBylineWithAvatar().where("b.id", "=", id).executeTakeFirst();
+		const row = await this.selectBylineWithAvatar()
+			.where("b.id", "=", id)
+			.where("b.site_id", "=", contentSiteId())
+			.executeTakeFirst();
 		return this.withCustomFieldsOne(row);
 	}
 
@@ -572,7 +576,9 @@ export class BylineRepository {
 	 * calls). Mirrors `TaxonomyRepository.findBySlug`.
 	 */
 	async findBySlug(slug: string, options?: { locale?: string }): Promise<BylineSummary | null> {
-		let query = this.selectBylineWithAvatar().where("b.slug", "=", slug);
+		let query = this.selectBylineWithAvatar()
+			.where("b.slug", "=", slug)
+			.where("b.site_id", "=", contentSiteId());
 		if (options?.locale !== undefined)
 			query = query.where(localeMatches("b.locale", options.locale));
 		const row = await query
@@ -592,7 +598,9 @@ export class BylineRepository {
 	 * the lowest-locale-code match.
 	 */
 	async findByUserId(userId: string, options?: { locale?: string }): Promise<BylineSummary | null> {
-		let query = this.selectBylineWithAvatar().where("b.user_id", "=", userId);
+		let query = this.selectBylineWithAvatar()
+			.where("b.user_id", "=", userId)
+			.where("b.site_id", "=", contentSiteId());
 		if (options?.locale !== undefined)
 			query = query.where(localeMatches("b.locale", options.locale));
 		const row = await query
@@ -618,6 +626,7 @@ export class BylineRepository {
 		let query = this.db
 			.selectFrom("_emdash_bylines")
 			.selectAll()
+			.where("site_id", "=", contentSiteId())
 			.orderBy("created_at", "desc")
 			.orderBy("id", "desc")
 			.limit(limit + 1);
@@ -690,6 +699,7 @@ export class BylineRepository {
 			.selectFrom("_emdash_bylines")
 			.selectAll()
 			.where("translation_group", "=", translationGroup)
+			.where("site_id", "=", contentSiteId())
 			.orderBy("locale", "asc")
 			.execute();
 		return this.withCustomFields(rows);
@@ -823,6 +833,7 @@ export class BylineRepository {
 				.insertInto("_emdash_bylines")
 				.values({
 					id,
+					site_id: contentSiteId(),
 					slug: input.slug,
 					display_name: input.displayName,
 					bio: input.bio ?? null,
@@ -886,7 +897,12 @@ export class BylineRepository {
 		// top-of-method `findById` populated for this group.
 		let touchedGroupShared = false;
 		await withTransaction(this.db, async (trx) => {
-			await trx.updateTable("_emdash_bylines").set(updates).where("id", "=", id).execute();
+			await trx
+				.updateTable("_emdash_bylines")
+				.set(updates)
+				.where("id", "=", id)
+				.where("site_id", "=", contentSiteId())
+				.execute();
 			touchedGroupShared = await this.applyCustomFieldWritesInTrx(
 				trx,
 				id,
@@ -948,7 +964,11 @@ export class BylineRepository {
 			// the byline domain expects to see.
 			await trx.deleteFrom("_emdash_byline_field_values").where("byline_id", "=", id).execute();
 
-			await trx.deleteFrom("_emdash_bylines").where("id", "=", id).execute();
+			await trx
+				.deleteFrom("_emdash_bylines")
+				.where("id", "=", id)
+				.where("site_id", "=", contentSiteId())
+				.execute();
 
 			// Count remaining siblings in the translation group. If none
 			// remain, purge dependent rows; otherwise leave them intact so
@@ -957,12 +977,17 @@ export class BylineRepository {
 				.selectFrom("_emdash_bylines")
 				.select(({ fn }) => [fn.count<number>("id").as("count")])
 				.where("translation_group", "=", group)
+				.where("site_id", "=", contentSiteId())
 				.executeTakeFirst();
 			const remainingCount = Number(remaining?.count ?? 0);
 			if (remainingCount > 0) return;
 
 			// Last sibling gone: cascade in application code.
-			await trx.deleteFrom("_emdash_content_bylines").where("byline_id", "=", group).execute();
+			await trx
+				.deleteFrom("_emdash_content_bylines")
+				.where("byline_id", "=", group)
+				.where("site_id", "=", contentSiteId())
+				.execute();
 
 			// Group-shared custom-field values are keyed by translation_group
 			// (no FK to bylines), so they don't cascade with the byline row.
@@ -984,6 +1009,7 @@ export class BylineRepository {
 					UPDATE ${sql.ref(tableName)}
 					SET primary_byline_id = NULL
 					WHERE primary_byline_id = ${group}
+					AND site_id = ${contentSiteId()}
 				`.execute(trx);
 			}
 		});
@@ -1030,6 +1056,8 @@ export class BylineRepository {
 			])
 			.where("cb.collection_slug", "=", collectionSlug)
 			.where("cb.content_id", "=", contentId)
+			.where("cb.site_id", "=", contentSiteId())
+			.where("b.site_id", "=", contentSiteId())
 			.orderBy("cb.sort_order", "asc");
 		if (options?.locale !== undefined)
 			query = query.where(localeMatches("b.locale", options.locale));
@@ -1090,6 +1118,7 @@ export class BylineRepository {
 			.select("id")
 			.where("collection_slug", "=", collectionSlug)
 			.where("content_id", "=", contentId)
+			.where("site_id", "=", contentSiteId())
 			.limit(1)
 			.executeTakeFirst();
 		return row !== undefined;
@@ -1111,6 +1140,7 @@ export class BylineRepository {
 				.distinct()
 				.where("collection_slug", "=", collectionSlug)
 				.where("content_id", "in", chunk)
+				.where("site_id", "=", contentSiteId())
 				.execute();
 			for (const row of rows) result.add(row.content_id);
 		}
@@ -1171,6 +1201,8 @@ export class BylineRepository {
 				])
 				.where("cb.collection_slug", "=", collectionSlug)
 				.where("cb.content_id", "in", chunk)
+				.where("cb.site_id", "=", contentSiteId())
+				.where("b.site_id", "=", contentSiteId())
 				.orderBy("cb.sort_order", "asc");
 			if (options?.locale !== undefined)
 				query = query.where(localeMatches("b.locale", options.locale));
@@ -1276,7 +1308,8 @@ export class BylineRepository {
 					"b.locale as locale",
 					"b.translation_group as translation_group",
 				])
-				.where("b.user_id", "in", chunk);
+				.where("b.user_id", "in", chunk)
+				.where("b.site_id", "=", contentSiteId());
 			if (options?.locale !== undefined)
 				query = query.where(localeMatches("b.locale", options.locale));
 
@@ -1330,6 +1363,14 @@ export class BylineRepository {
 		validateIdentifier(collection, "collection slug");
 		const tableName = `ec_${collection}`;
 		validateIdentifier(tableName, "content table");
+		const owned = await sql<{ id: string }>`
+			SELECT id FROM ${sql.ref(tableName)}
+			WHERE id IN (${sourceContentId}, ${targetContentId})
+			AND site_id = ${contentSiteId()}
+		`.execute(this.db);
+		if (owned.rows.length !== (sourceContentId === targetContentId ? 1 : 2)) {
+			throw new EmDashValidationError("Content item not found");
+		}
 
 		// Like `setContentBylines`, this method is expected to be called
 		// within a transaction context (content handlers wrap in
@@ -1340,6 +1381,7 @@ export class BylineRepository {
 			.select("id")
 			.where("collection_slug", "=", collection)
 			.where("content_id", "=", targetContentId)
+			.where("site_id", "=", contentSiteId())
 			.executeTakeFirst();
 		if (existing) return;
 
@@ -1348,6 +1390,7 @@ export class BylineRepository {
 			.select(["byline_id", "sort_order", "role_label"])
 			.where("collection_slug", "=", collection)
 			.where("content_id", "=", sourceContentId)
+			.where("site_id", "=", contentSiteId())
 			.orderBy("sort_order", "asc")
 			.execute();
 		if (sourceRows.length === 0) return;
@@ -1358,6 +1401,7 @@ export class BylineRepository {
 			.values(
 				sourceRows.map((row) => ({
 					id: ulid(),
+					site_id: contentSiteId(),
 					collection_slug: collection,
 					content_id: targetContentId,
 					byline_id: row.byline_id,
@@ -1375,6 +1419,7 @@ export class BylineRepository {
 			UPDATE ${sql.ref(tableName)}
 			SET primary_byline_id = ${firstByline}
 			WHERE id = ${targetContentId}
+			AND site_id = ${contentSiteId()}
 		`.execute(this.db);
 
 		// Byline credits are folded into the target entry's cached payload.
@@ -1400,6 +1445,11 @@ export class BylineRepository {
 		validateIdentifier(collectionSlug, "collection slug");
 		const tableName = `ec_${collectionSlug}`;
 		validateIdentifier(tableName, "content table");
+		const owned = await sql<{ id: string }>`
+			SELECT id FROM ${sql.ref(tableName)}
+			WHERE id = ${contentId} AND site_id = ${contentSiteId()}
+		`.execute(this.db);
+		if (owned.rows.length === 0) throw new EmDashValidationError("Content item not found");
 
 		// Resolve each wire row id to its translation_group up front so we
 		// can (a) validate the rows exist and (b) dedupe by the value that
@@ -1414,6 +1464,7 @@ export class BylineRepository {
 				.selectFrom("_emdash_bylines")
 				.select(["id", "translation_group"])
 				.where("id", "in", batch)
+				.where("site_id", "=", contentSiteId())
 				.execute();
 			if (rows.length !== batch.length) {
 				throw new Error("One or more byline IDs do not exist");
@@ -1446,6 +1497,7 @@ export class BylineRepository {
 			.deleteFrom("_emdash_content_bylines")
 			.where("collection_slug", "=", collectionSlug)
 			.where("content_id", "=", contentId)
+			.where("site_id", "=", contentSiteId())
 			.execute();
 
 		for (let i = 0; i < bylines.length; i++) {
@@ -1455,6 +1507,7 @@ export class BylineRepository {
 				.insertInto("_emdash_content_bylines")
 				.values({
 					id: ulid(),
+					site_id: contentSiteId(),
 					collection_slug: collectionSlug,
 					content_id: contentId,
 					byline_id: item.group,
@@ -1470,6 +1523,7 @@ export class BylineRepository {
 			UPDATE ${sql.ref(tableName)}
 			SET primary_byline_id = ${primaryGroup}
 			WHERE id = ${contentId}
+			AND site_id = ${contentSiteId()}
 		`.execute(this.db);
 
 		// Byline credits are folded into this entry's cached payload.
@@ -1483,6 +1537,7 @@ export class BylineRepository {
 			.deleteFrom("_emdash_content_bylines")
 			.where("collection_slug", "=", collectionSlug)
 			.where("content_id", "=", contentId)
+			.where("site_id", "=", contentSiteId())
 			.executeTakeFirst();
 		return Number(result.numDeletedRows ?? 0);
 	}

@@ -3,6 +3,7 @@ import { ulid } from "ulidx";
 
 import type { ContentFieldFilterValue, ContentFieldFilters } from "../../content-list-query.js";
 import { keepKnownFields, staleStoredKeys } from "../../content/known-fields.js";
+import { contentSiteId } from "../../content/site.js";
 import { normalizeExplicitDatetime } from "../../datetime-normalization.js";
 import { getLocaleCandidates } from "../../i18n/config.js";
 import { canonicalLocaleColumn, localeMatches, localeOrder } from "../../i18n/query.js";
@@ -463,6 +464,7 @@ export class ContentRepository {
 		// Build column names and values
 		const columns: string[] = [
 			"id",
+			"site_id",
 			"slug",
 			"status",
 			"author_id",
@@ -476,6 +478,7 @@ export class ContentRepository {
 		];
 		const values: unknown[] = [
 			id,
+			contentSiteId(),
 			slug || null,
 			status,
 			authorId || null,
@@ -526,6 +529,7 @@ export class ContentRepository {
 				SELECT ${sql.join(valuePlaceholders, sql`, `)}
 				FROM ${sql.ref(tableName)} AS translation_source
 				WHERE translation_source.id = ${translationOf}
+					AND translation_source.site_id = ${contentSiteId()}
 					AND translation_source.deleted_at IS NULL
 			`.execute(this.db);
 		} else {
@@ -568,12 +572,14 @@ export class ContentRepository {
 			? await sql<{ slug: string }>`
 					SELECT slug FROM ${sql.ref(tableName)}
 					WHERE slug = ${baseSlug}
+					AND site_id = ${contentSiteId()}
 					AND ${localeMatches("locale", locale)}
 					LIMIT 1
 				`.execute(this.db)
 			: await sql<{ slug: string }>`
 					SELECT slug FROM ${sql.ref(tableName)}
 					WHERE slug = ${baseSlug}
+					AND site_id = ${contentSiteId()}
 					LIMIT 1
 				`.execute(this.db);
 
@@ -587,11 +593,13 @@ export class ContentRepository {
 			? await sql<{ slug: string }>`
 					SELECT slug FROM ${sql.ref(tableName)}
 					WHERE (slug = ${baseSlug} OR slug LIKE ${pattern})
+					AND site_id = ${contentSiteId()}
 					AND ${localeMatches("locale", locale)}
 				`.execute(this.db)
 			: await sql<{ slug: string }>`
 					SELECT slug FROM ${sql.ref(tableName)}
-					WHERE slug = ${baseSlug} OR slug LIKE ${pattern}
+					WHERE (slug = ${baseSlug} OR slug LIKE ${pattern})
+					AND site_id = ${contentSiteId()}
 				`.execute(this.db);
 
 		// Find the highest numeric suffix in use
@@ -662,6 +670,7 @@ export class ContentRepository {
 		const result = await sql<Record<string, unknown>>`
 			SELECT * FROM ${sql.ref(tableName)}
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 		`.execute(this.db);
 
@@ -685,7 +694,7 @@ export class ContentRepository {
 		for (const batch of chunks([...new Set(ids)], SQL_BATCH_SIZE)) {
 			const result = await sql<Record<string, unknown>>`
 				SELECT * FROM ${sql.ref(tableName)}
-				WHERE id IN (${sql.join(batch)}) ${deletedFilter}
+				WHERE id IN (${sql.join(batch)}) AND site_id = ${contentSiteId()} ${deletedFilter}
 			`.execute(this.db);
 			for (const row of result.rows) {
 				const item = this.mapRow(type, row);
@@ -710,6 +719,7 @@ export class ContentRepository {
 			const result = await sql<Record<string, unknown>>`
 				SELECT * FROM ${sql.ref(tableName)}
 				WHERE slug IN (${sql.join(batch)}) AND ${localeMatches("locale", locale)} ${deletedFilter} ${statusFilter}
+				AND site_id = ${contentSiteId()}
 				ORDER BY ${localeOrder("locale", locale)}, id ASC
 			`.execute(this.db);
 			for (const row of result.rows) {
@@ -737,6 +747,7 @@ export class ContentRepository {
 		const result = await sql<Record<string, unknown>>`
 			SELECT * FROM ${sql.ref(tableName)}
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 		`.execute(this.db);
 
 		const row = result.rows[0];
@@ -795,6 +806,7 @@ export class ContentRepository {
 			.selectFrom(tableName as keyof Database)
 			.select("id" as never)
 			.where("id" as never, "=", id as never)
+			.where("site_id" as never, "=", contentSiteId() as never)
 			.where("deleted_at" as never, "is not", null)
 			.executeTakeFirst();
 		return row !== undefined;
@@ -848,6 +860,7 @@ export class ContentRepository {
 			? await sql<Record<string, unknown>>`
 					SELECT * FROM ${sql.ref(tableName)}
 					WHERE slug = ${slug}
+					AND site_id = ${contentSiteId()}
 					AND ${localeMatches("locale", locale)}
 					AND deleted_at IS NULL
 					ORDER BY ${localeOrder("locale", locale)}, id ASC
@@ -855,6 +868,7 @@ export class ContentRepository {
 			: await sql<Record<string, unknown>>`
 					SELECT * FROM ${sql.ref(tableName)}
 					WHERE slug = ${slug}
+					AND site_id = ${contentSiteId()}
 					AND deleted_at IS NULL
 					ORDER BY locale ASC
 					LIMIT 1
@@ -883,12 +897,14 @@ export class ContentRepository {
 			? await sql<Record<string, unknown>>`
 					SELECT * FROM ${sql.ref(tableName)}
 					WHERE slug = ${slug}
+					AND site_id = ${contentSiteId()}
 					AND ${localeMatches("locale", locale)}
 					ORDER BY ${localeOrder("locale", locale)}, id ASC
 				`.execute(this.db)
 			: await sql<Record<string, unknown>>`
 					SELECT * FROM ${sql.ref(tableName)}
 					WHERE slug = ${slug}
+					AND site_id = ${contentSiteId()}
 					ORDER BY locale ASC
 					LIMIT 1
 				`.execute(this.db);
@@ -933,7 +949,8 @@ export class ContentRepository {
 		let query = this.db
 			.selectFrom(tableName as keyof Database)
 			.selectAll()
-			.where("deleted_at" as never, "is", null);
+			.where("deleted_at" as never, "is", null)
+			.where("site_id" as never, "=", contentSiteId() as never);
 
 		// Apply filters with parameterized queries
 		if (options.where?.status) {
@@ -1152,6 +1169,7 @@ export class ContentRepository {
 			.updateTable(tableName as keyof Database)
 			.set(updates)
 			.where("id", "=", id)
+			.where("site_id" as never, "=", contentSiteId() as never)
 			.where("deleted_at" as never, "is", null);
 		if (expectedRevision) {
 			query = query
@@ -1210,14 +1228,15 @@ export class ContentRepository {
 
 		const buildQueries = () => {
 			const audit = sql`
-				INSERT INTO revisions (id, collection, entry_id, data, author_id)
-				VALUES (${revisionId}, ${type}, ${id}, ${JSON.stringify(normalizedSnapshot)}, ${authorId})
+				INSERT INTO revisions (id, site_id, collection, entry_id, data, author_id)
+				VALUES (${revisionId}, ${contentSiteId()}, ${type}, ${id}, ${JSON.stringify(normalizedSnapshot)}, ${authorId})
 				RETURNING id
 			`;
 			const update = sql`
 				UPDATE ${sql.ref(tableName)}
 				SET ${sql.join(assignments, sql`, `)}
 				WHERE id = ${id}
+				AND site_id = ${contentSiteId()}
 				AND deleted_at IS NULL
 				AND version = ${existing.version}
 				AND updated_at = ${existing.updatedAt}
@@ -1295,8 +1314,8 @@ export class ContentRepository {
 		const revisionId = createRevisionId();
 		const buildQueries = () => {
 			const audit = sql`
-				INSERT INTO revisions (id, collection, entry_id, data, author_id)
-				VALUES (${revisionId}, ${type}, ${id}, ${JSON.stringify(normalizedSnapshot)}, ${authorId})
+				INSERT INTO revisions (id, site_id, collection, entry_id, data, author_id)
+				VALUES (${revisionId}, ${contentSiteId()}, ${type}, ${id}, ${JSON.stringify(normalizedSnapshot)}, ${authorId})
 				RETURNING id
 			`;
 			const stage = sql`
@@ -1304,6 +1323,7 @@ export class ContentRepository {
 				SET draft_revision_id = ${revisionId},
 					version = version + 1
 				WHERE id = ${id}
+				AND site_id = ${contentSiteId()}
 				AND deleted_at IS NULL
 				AND version = ${existing.version}
 				AND updated_at = ${existing.updatedAt}
@@ -1520,6 +1540,7 @@ export class ContentRepository {
 			UPDATE ${sql.ref(tableName)}
 			SET ${sql.join(assignments, sql`, `)}
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 			AND version = ${expected.version}
 			AND ${nullableColumnMatch("live_revision_id", expected.liveRevisionId)}
@@ -1591,6 +1612,7 @@ export class ContentRepository {
 		const siblings = await sql<Record<string, unknown>>`
 			SELECT * FROM ${sql.ref(tableName)}
 			WHERE translation_group = ${translationGroup}
+			AND site_id = ${contentSiteId()}
 			AND id != ${sourceId}
 		`.execute(this.db);
 
@@ -1677,6 +1699,7 @@ export class ContentRepository {
 					UPDATE ${sql.ref(tableName)}
 					SET ${sql.join(assignments, sql`, `)}
 					WHERE id = ${current.id}
+					AND site_id = ${contentSiteId()}
 					AND version = ${current.version}
 					AND ${nullableColumnMatch("live_revision_id", current.liveRevisionId)}
 					AND ${nullableColumnMatch("draft_revision_id", current.draftRevisionId)}
@@ -1707,6 +1730,7 @@ export class ContentRepository {
 			UPDATE ${sql.ref(tableName)}
 			SET deleted_at = ${now}
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 		`.execute(this.db);
 
@@ -1744,6 +1768,7 @@ export class ContentRepository {
 				updated_at = ${now},
 				version = ${existing.version + 1}
 			WHERE id = ${existing.id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NOT NULL
 			AND version = ${existing.version}
 			AND updated_at = ${existing.updatedAt}
@@ -1776,6 +1801,7 @@ export class ContentRepository {
 		const result = await sql`
 			DELETE FROM ${sql.ref(tableName)}
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NOT NULL
 		`.execute(this.db);
 
@@ -1805,7 +1831,8 @@ export class ContentRepository {
 		let query = this.db
 			.selectFrom(tableName as keyof Database)
 			.selectAll()
-			.where("deleted_at" as never, "is not", null);
+			.where("deleted_at" as never, "is not", null)
+			.where("site_id" as never, "=", contentSiteId() as never);
 
 		if (options.where?.locale) {
 			query = query.where(localeMatches("locale", options.where.locale));
@@ -1876,7 +1903,8 @@ export class ContentRepository {
 		let query = this.db
 			.selectFrom(tableName as keyof Database)
 			.select((eb) => eb.fn.count("id").as("count"))
-			.where("deleted_at" as never, "is not", null);
+			.where("deleted_at" as never, "is not", null)
+			.where("site_id" as never, "=", contentSiteId() as never);
 
 		if (options.locale) {
 			query = query.where(localeMatches("locale", options.locale));
@@ -2003,6 +2031,8 @@ export class ContentRepository {
 				.innerJoin("_emdash_bylines as b", "b.translation_group", "cb.byline_id")
 				.select("cb.id")
 				.where("cb.collection_slug", "=", type)
+				.where("cb.site_id", "=", contentSiteId())
+				.where("b.site_id", "=", contentSiteId())
 				.whereRef("cb.content_id", "=", idColumn);
 			sub = filter.locale
 				? sub.where(localeMatches("b.locale", filter.locale))
@@ -2023,6 +2053,7 @@ export class ContentRepository {
 					.selectFrom("_emdash_content_bylines as cb")
 					.select("cb.id")
 					.where("cb.collection_slug", "=", type)
+					.where("cb.site_id", "=", contentSiteId())
 					.whereRef("cb.content_id", "=", idColumn),
 			);
 
@@ -2038,6 +2069,7 @@ export class ContentRepository {
 			let sub = eb
 				.selectFrom("_emdash_bylines as b")
 				.select("b.id")
+				.where("b.site_id", "=", contentSiteId())
 				.whereRef("b.user_id", "=", authorColumn);
 			sub = filter.locale
 				? sub.where(localeMatches("b.locale", filter.locale))
@@ -2095,7 +2127,8 @@ export class ContentRepository {
 		let query = this.db
 			.selectFrom(tableName as keyof Database)
 			.select((eb) => eb.fn.count("id").as("count"))
-			.where("deleted_at" as never, "is", null);
+			.where("deleted_at" as never, "is", null)
+			.where("site_id" as never, "=", contentSiteId() as never);
 
 		if (where?.status) {
 			query = query.where("status", "=", where.status);
@@ -2132,6 +2165,7 @@ export class ContentRepository {
 			.select("author_id")
 			.distinct()
 			.where("deleted_at" as never, "is", null)
+			.where("site_id" as never, "=", contentSiteId() as never)
 			.where("author_id" as never, "is not", null)
 			.execute();
 
@@ -2164,6 +2198,7 @@ export class ContentRepository {
 				),
 			])
 			.where("deleted_at" as never, "is", null)
+			.where("site_id" as never, "=", contentSiteId() as never)
 			.executeTakeFirst();
 
 		return {
@@ -2214,6 +2249,7 @@ export class ContentRepository {
 				scheduled_at = ${normalizedScheduledAt},
 				updated_at = ${now}
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 			AND version = ${existing.version}
 			AND updated_at = ${existing.updatedAt}
@@ -2264,6 +2300,7 @@ export class ContentRepository {
 				scheduled_at = NULL,
 				updated_at = ${now}
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND scheduled_at IS NOT NULL
 			AND deleted_at IS NULL
 			AND version = ${existing.version}
@@ -2320,6 +2357,7 @@ export class ContentRepository {
 			SELECT * FROM ${sql.ref(tableName)}
 			WHERE scheduled_at IS NOT NULL
 			AND scheduled_at <= ${now}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 			${afterClause}
 			ORDER BY scheduled_at ASC, id ASC
@@ -2334,6 +2372,7 @@ export class ContentRepository {
 		const result = await sql<{ id: string }>`
 			SELECT id FROM ${sql.ref(tableName)}
 			WHERE translation_group = ${translationGroup}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 		`.execute(this.db);
 		return result.rows.map((row) => row.id);
@@ -2349,7 +2388,8 @@ export class ContentRepository {
 		for (const batch of chunks([...new Set(translationGroups)], SQL_BATCH_SIZE)) {
 			const result = await sql<{ id: string; translation_group: string }>`
 				SELECT id, translation_group FROM ${sql.ref(tableName)}
-				WHERE translation_group IN (${sql.join(batch)}) AND deleted_at IS NULL
+				WHERE translation_group IN (${sql.join(batch)})
+				AND site_id = ${contentSiteId()} AND deleted_at IS NULL
 			`.execute(this.db);
 			for (const row of result.rows) {
 				const group = ids.get(row.translation_group) ?? [];
@@ -2374,7 +2414,7 @@ export class ContentRepository {
 			SELECT * FROM ${sql.ref(tableName)}
 			WHERE translation_group = ${translationGroup}
 			AND deleted_at IS NULL
-			${siteId === undefined ? sql`` : sql`AND site_id = ${siteId}`}
+			AND site_id = ${siteId ?? contentSiteId()}
 			ORDER BY locale ASC
 		`.execute(this.db);
 
@@ -2400,6 +2440,7 @@ export class ContentRepository {
 		const result = await sql<Record<string, unknown>>`
 			SELECT id FROM ${sql.ref(tableName)}
 			WHERE translation_group = ${translationGroup}
+			AND site_id = ${contentSiteId()}
 			${exclusion}
 			LIMIT 1
 		`.execute(this.db);
@@ -2442,6 +2483,7 @@ export class ContentRepository {
 				const result = await sql<Record<string, unknown>>`
 					SELECT * FROM ${sql.ref(tableName)}
 					WHERE translation_group IN (${sql.join(chunk)})
+					AND site_id = ${contentSiteId()}
 					AND deleted_at IS NULL
 					${publishedFilter}
 					ORDER BY translation_group ASC, locale ASC
@@ -2482,6 +2524,7 @@ export class ContentRepository {
 				const idRows = await sql<Record<string, unknown>>`
 					SELECT * FROM ${sql.ref(tableName)}
 					WHERE id IN (${sql.join(chunk)})
+					AND site_id = ${contentSiteId()}
 					AND deleted_at IS NULL
 				`.execute(this.db);
 				for (const row of idRows.rows) {
@@ -2492,6 +2535,7 @@ export class ContentRepository {
 				const slugRows = await sql<Record<string, unknown>>`
 					SELECT * FROM ${sql.ref(tableName)}
 					WHERE slug IN (${sql.join(chunk)})
+					AND site_id = ${contentSiteId()}
 					AND deleted_at IS NULL
 					ORDER BY locale ASC
 				`.execute(this.db);
@@ -2607,6 +2651,7 @@ export class ContentRepository {
 							updated_at = ${now},
 							version = version + 1
 						WHERE id = ${id}
+						AND site_id = ${contentSiteId()}
 						AND deleted_at IS NULL
 						AND version = ${existing.version}
 						AND updated_at = ${existing.updatedAt}
@@ -2736,6 +2781,7 @@ export class ContentRepository {
 					UPDATE ${sql.ref(tableName)}
 					SET ${sql.join(assignments, sql`, `)}
 					WHERE id = ${id}
+					AND site_id = ${contentSiteId()}
 					AND deleted_at IS NULL
 					AND version = ${existing.version}
 					AND updated_at = ${existing.updatedAt}
@@ -2863,6 +2909,7 @@ export class ContentRepository {
 					updated_at = ${now},
 					version = version + 1
 				WHERE id = ${id}
+				AND site_id = ${contentSiteId()}
 				AND deleted_at IS NULL
 				AND version = ${existing.version}
 				AND updated_at = ${existing.updatedAt}
@@ -2936,6 +2983,7 @@ export class ContentRepository {
 			SET draft_revision_id = ${revisionId},
 				version = version + 1
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 			AND version = ${expected.version}
 			AND ${nullableColumnMatch("live_revision_id", expected.liveRevisionId)}
@@ -2982,6 +3030,7 @@ export class ContentRepository {
 			SET draft_revision_id = NULL,
 				version = version + 1
 			WHERE id = ${id}
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 			AND version = ${existing.version}
 			AND updated_at = ${existing.updatedAt}
@@ -3011,6 +3060,7 @@ export class ContentRepository {
 		const result = await sql<{ count: number }>`
 			SELECT COUNT(id) as count FROM ${sql.ref(tableName)}
 			WHERE scheduled_at IS NOT NULL
+			AND site_id = ${contentSiteId()}
 			AND deleted_at IS NULL
 		`.execute(this.db);
 

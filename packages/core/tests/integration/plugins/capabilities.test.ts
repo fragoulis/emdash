@@ -136,6 +136,7 @@ describe("Capability Enforcement Integration (v2)", () => {
 		await sql`
 			CREATE TABLE IF NOT EXISTS ec_posts (
 				id TEXT PRIMARY KEY,
+				site_id TEXT NOT NULL DEFAULT 'site-default',
 				slug TEXT,
 				status TEXT DEFAULT 'draft',
 				author_id TEXT,
