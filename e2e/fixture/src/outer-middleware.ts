@@ -1,5 +1,5 @@
 import { defineMiddleware } from "astro:middleware";
-import { getRequestContext } from "emdash/request-context";
+import { getRequestContext, runWithContext } from "emdash/request-context";
 
 const FINALIZER_NONCE = "outer-finalizer";
 
@@ -11,7 +11,16 @@ function preNextState(locals: App.Locals): string {
 	});
 }
 
-export const onRequest = defineMiddleware(async (context, next) => {
+export const onRequest = defineMiddleware((context, next) => {
+	if (context.url.hostname === "127.0.0.1") {
+		return runWithContext({ editMode: false, siteId: "site-bar" }, () =>
+			handleRequest(context, next),
+		);
+	}
+	return handleRequest(context, next);
+});
+
+const handleRequest: typeof onRequest = async (context, next) => {
 	const state = preNextState(context.locals);
 
 	if (context.url.pathname === "/outer-cache-hit") {
@@ -42,4 +51,4 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		statusText: response.statusText,
 		headers,
 	});
-});
+};

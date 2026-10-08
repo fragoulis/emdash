@@ -260,6 +260,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "_emdash_bylines",
 		kind: "byline",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			slug: f("slug"),
 			display_name: f("displayName"),
@@ -300,6 +301,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "revisions",
 		kind: "revision",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			collection: f("collection"),
 			entry_id: f("entryId"),
@@ -327,6 +329,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "_emdash_content_bylines",
 		kind: "content_byline",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			collection_slug: f("collection"),
 			content_id: f("entryId"),

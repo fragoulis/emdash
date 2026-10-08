@@ -89,7 +89,7 @@ it("seeks the junction and the byline row for a selected byline", async () => {
 	// Junction seek on (collection_slug, content_id, byline_id) — the unique
 	// from migration 031 — then the byline group at the list's locale.
 	expect(plan).toContain("sqlite_autoindex__emdash_content_bylines_2");
-	expect(plan).toContain("idx_bylines_group_locale_unique");
+	expect(plan).toContain("idx_bylines_site_group_locale_unique");
 	expect(plan).not.toContain("SCAN cb");
 	expect(plan).not.toContain("SCAN b");
 	expect(plan).not.toContain("TEMP B-TREE");
@@ -98,8 +98,10 @@ it("seeks the junction and the byline row for a selected byline", async () => {
 it("seeks the junction for the no-byline filter", async () => {
 	const plan = await planOfPageQuery({ mode: "none", locale: "en" });
 
-	expect(plan).toContain("idx_content_bylines_content");
-	expect(plan).toContain("idx_bylines_group_locale_unique");
+	expect(plan).toMatch(
+		/SEARCH cb USING INDEX \S+ \(site_id=\? AND collection_slug=\? AND content_id=\?\)/,
+	);
+	expect(plan).toContain("idx_bylines_site_group_locale_unique");
 	expect(plan).not.toContain("SCAN cb");
 	expect(plan).not.toContain("SCAN b");
 	expect(plan).not.toContain("TEMP B-TREE");
@@ -116,7 +118,7 @@ it("seeks the author's byline when inference is opted into", async () => {
 	// With groups to narrow to, the inferred branch seeks the author's byline
 	// through the (translation_group, locale) unique and checks `user_id` off
 	// the row, rather than scanning the byline table.
-	expect(plan).toContain("idx_bylines_group_locale_unique");
+	expect(plan).toContain("idx_bylines_site_group_locale_unique");
 	expect(plan).not.toContain("SCAN cb");
 	expect(plan).not.toContain("SCAN b");
 	expect(plan).not.toContain("TEMP B-TREE");
@@ -125,7 +127,7 @@ it("seeks the author's byline when inference is opted into", async () => {
 it("seeks every probe for the no-byline filter with inference opted into", async () => {
 	const plan = await planOfPageQuery({ mode: "none", includeInferred: true, locale: "en" });
 
-	expect(plan).toContain("idx_bylines_user_id_locale_unique");
+	expect(plan).toContain("idx_bylines_site_user_locale_unique");
 	expect(plan).not.toContain("SCAN cb");
 	expect(plan).not.toContain("SCAN b");
 	expect(plan).not.toContain("TEMP B-TREE");
