@@ -102,6 +102,7 @@ describe("shipped template seeds survive the autosave validator", () => {
 					for (const [k, v] of Object.entries(row)) {
 						if (
 							k === "id" ||
+							k === "site_id" ||
 							k === "slug" ||
 							k === "status" ||
 							k === "author_id" ||

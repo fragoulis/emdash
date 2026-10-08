@@ -5,6 +5,7 @@ import type { Generated } from "kysely";
 // by the SchemaRegistry. They are not defined in this type file.
 
 export interface RevisionTable {
+	site_id: Generated<string>;
 	id: string;
 	collection: string; // e.g., 'posts'
 	entry_id: string; // ID in the ec_* table
@@ -931,6 +932,7 @@ export interface NotFoundLogTable {
 }
 
 export interface BylineTable {
+	site_id: Generated<string>;
 	id: string;
 	slug: string;
 	display_name: string;
@@ -959,6 +961,7 @@ export interface BylineTable {
 }
 
 export interface ContentBylineTable {
+	site_id: Generated<string>;
 	id: string;
 	collection_slug: string;
 	content_id: string;

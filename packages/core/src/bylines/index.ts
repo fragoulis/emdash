@@ -18,6 +18,7 @@
 
 import { sql } from "kysely";
 
+import { contentSiteId } from "../content/site.js";
 import { BylineRepository } from "../database/repositories/byline.js";
 import type { BylineSummary, ContentBylineCredit } from "../database/repositories/types.js";
 import { validateIdentifier } from "../database/validate.js";
@@ -88,7 +89,7 @@ export async function getBylineBySlug(
 	options?: { locale?: string },
 ): Promise<BylineSummary | null> {
 	const chain = resolveLocaleChain(options?.locale);
-	const cacheKey = `byline-by-slug:${slug}:${chain.length > 0 ? chain.join(",") : "*"}`;
+	const cacheKey = `byline-by-slug:${contentSiteId()}:${slug}:${chain.length > 0 ? chain.join(",") : "*"}`;
 	return requestCached(cacheKey, async () => {
 		const db = await getDb();
 		const repo = new BylineRepository(db);
@@ -253,7 +254,7 @@ async function getEntryContext(
 		primary_byline_id: string | null;
 	}>`
 		SELECT author_id, primary_byline_id FROM ${sql.ref(tableName)}
-		WHERE id = ${entryId}
+		WHERE id = ${entryId} AND site_id = ${contentSiteId()}
 		LIMIT 1
 	`.execute(db);
 

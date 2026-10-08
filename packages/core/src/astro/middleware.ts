@@ -1245,7 +1245,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
 	};
 
 	try {
-		const response = await runWithContext({ editMode: false, queryRecorder, metrics }, run);
+		const response = await runWithContext(
+			{ ...getRequestContext(), editMode: false, queryRecorder, metrics },
+			run,
+		);
 		applyBuildValidator(context);
 		keepUnsharedResponsesOutOfRouteCache(context, response);
 		return response;

@@ -86,7 +86,9 @@ it("migrates a pre-074 table off the deleted_at-leading plan", async () => {
 	captured = [];
 	await repo.findReadyToPublish("post", 100);
 	const before = explain(scheduledQuery());
-	expect(contentAccess(before)).toMatch(/SEARCH ec_post USING INDEX \S+ \(deleted_at=\?\)/);
+	expect(contentAccess(before)).toMatch(
+		/SEARCH ec_post USING INDEX \S+ \((?:deleted_at|site_id)=\?\)/,
+	);
 	expect(before).toContain("USE TEMP B-TREE FOR ORDER BY");
 
 	await migration074.up(db);
