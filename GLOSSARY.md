@@ -8,6 +8,12 @@ Terms for managing multiple sites in one EmDash installation.
 A blog with its own content, Astro pages, and theme. A site may have more than one hostname.
 _Avoid_: Tenant, blog (when discussing access or data ownership)
 
+**Site setting**:
+A value owned by one site, such as its title, public URL, or SEO defaults. Different sites may use the same setting name with different values.
+
+**Installation-wide setting**:
+A value shared by all sites, such as plugin configuration. It has no site owner.
+
 **Site membership**:
 The association between a user and a site that grants one of EmDash's existing roles on that site.
 _Avoid_: Global role
