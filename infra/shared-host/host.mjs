@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { runWithContext } from "emdash/request-context";
 
+import { staffIdentity } from "./clerk-auth.mjs";
 import { resolveSite } from "./site-registry.mjs";
 
 const centralPathPattern = /^\/(?:_emdash(?:\/|$)|admin(?:\/|$)|preview(?:\/|$))/;
@@ -64,12 +65,27 @@ const server = createServer(async (request, response) => {
 				response.end();
 				return;
 			}
-			if (path !== "/_emdash/admin/login" && !path.startsWith("/_astro/")) {
-				response.writeHead(403, { "Cache-Control": "no-store" });
+			if (path === "/_emdash/admin/login" || path.startsWith("/_astro/")) {
+				runWithContext({ editMode: false }, () => adminHandler(request, response));
+				return;
+			}
+			if (path === "/_emdash/admin/no-access") {
+				let identity;
+				try {
+					identity = await staffIdentity(request);
+				} catch (error) {
+					console.error("[shared-host] Clerk verification failed:", error);
+				}
+				if (identity) {
+					runWithContext({ editMode: false }, () => adminHandler(request, response));
+					return;
+				}
+				response.writeHead(302, { Location: "/_emdash/admin/login", "Cache-Control": "no-store" });
 				response.end();
 				return;
 			}
-			runWithContext({ editMode: false }, () => adminHandler(request, response));
+			response.writeHead(403, { "Cache-Control": "no-store" });
+			response.end();
 			return;
 		}
 		const handler = siteId && handlers.get(siteId);
