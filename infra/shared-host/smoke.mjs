@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -53,7 +53,11 @@ function request(hostname, path = "/", port = 18080, headers = {}, method = "GET
 				const chunks = [];
 				res.on("data", (chunk) => chunks.push(chunk));
 				res.on("end", () =>
-					resolveResponse({ status: res.statusCode, headers: res.headers, text: () => Buffer.concat(chunks).toString() }),
+					resolveResponse({
+						status: res.statusCode,
+						headers: res.headers,
+						text: () => Buffer.concat(chunks).toString(),
+					}),
 				);
 			},
 		);
@@ -88,16 +92,12 @@ try {
 	for (const site of ["foo", "bar"]) {
 		await command(resolve(root, "infra/shared-host/node_modules/.bin/astro"), ["build"], {
 			cwd: fixture,
-			env: { ...process.env, PROOF_SITE: site, PUBLIC_PROOF_SITE: site },
+			env: { ...process.env, PROOF_SITE: site },
 		});
-		await writeFile(
-			resolve(fixture, `dist/${site}/client/mark.svg`),
-			`<svg xmlns="http://www.w3.org/2000/svg"><title>${site} asset</title></svg>\n`,
-		);
 	}
 	await command(resolve(root, "infra/shared-host/node_modules/.bin/astro"), ["build"], {
 		cwd: fixture,
-		env: { ...process.env, PROOF_SITE: "platform", DATABASE_URL: databaseUrl },
+		env: { ...process.env, PROOF_SITE: "admin", DATABASE_URL: databaseUrl },
 	});
 
 	host = spawn(process.execPath, [resolve(root, "infra/shared-host/host.mjs")], {
@@ -106,7 +106,7 @@ try {
 			...process.env,
 			PROOF_PORT: "18081",
 			PROOF_PROXY_TOKEN: proxyToken,
-			PROOF_PLATFORM_HOST: "platform.test",
+			PROOF_ADMIN_HOST: "admin.test",
 			ASTRO_NODE_AUTOSTART: "disabled",
 			DATABASE_URL: databaseUrl,
 		},
@@ -133,6 +133,7 @@ try {
 			(await request("unknown.test")).status === 421,
 	);
 
+	const styles = new Map();
 	for (const [site, greeting] of [
 		["foo", "Hello from Foo"],
 		["bar", "Hello from Bar"],
@@ -151,38 +152,38 @@ try {
 		});
 		assert.equal((await request(`${site}.test`, "/mark.svg")).status, 200);
 		assert.match((await request(`${site}.test`, "/mark.svg")).text(), new RegExp(`${site} asset`));
-		assert.equal((await request(`${site}.test`, "/style.css")).status, 200);
+		const stylesheet = await request(`${site}.test`, "/style.css");
+		assert.equal(stylesheet.status, 200);
+		styles.set(site, stylesheet.text());
 	}
-	const login = await request("platform.test", "/_emdash/admin/login");
+	assert.notEqual(styles.get("foo"), styles.get("bar"));
+	const login = await request("admin.test", "/_emdash/admin/login");
 	assert.equal(login.status, 200);
 	assert.equal(login.headers["cache-control"], "private, no-store");
 	assert.match(login.text(), /admin-root/);
 	const adminScript = login.text().match(/(?:src|component-url)="(\/_astro\/[^"]+\.js)"/)?.[1];
 	assert.ok(adminScript, "The admin shell loads a client application");
-	assert.equal((await request("platform.test", adminScript)).status, 200);
+	assert.equal((await request("admin.test", adminScript)).status, 200);
 	assert.equal((await request("foo.test", adminScript)).status, 404);
-	assert.equal((await request("platform.test", "/admin")).status, 302);
-	assert.equal((await request("platform.test", "/_emdash/api/health")).status, 403);
+	assert.equal((await request("admin.test", "/admin")).status, 302);
+	assert.equal((await request("admin.test", "/_emdash/api/health")).status, 403);
+	assert.equal((await request("admin.test", "/_emdash/api/settings?siteId=site-foo")).status, 403);
+	assert.equal((await request("admin.test", "/_emdash/admin/settings")).status, 403);
+	assert.equal((await request("admin.test", "/preview/foo")).status, 403);
 	assert.equal(
-		(await request("platform.test", "/_emdash/api/settings?siteId=site-foo")).status,
-		403,
-	);
-	assert.equal((await request("platform.test", "/_emdash/admin/settings")).status, 403);
-	assert.equal((await request("platform.test", "/preview/foo")).status, 403);
-	assert.equal(
-		(await request("platform.test", "/_emdash/api/content/posts", 18080, {}, "POST")).status,
+		(await request("admin.test", "/_emdash/api/content/posts", 18080, {}, "POST")).status,
 		421,
 	);
 	assert.equal(
 		(
-			await request("platform.test", "/_emdash/api/content/posts", 18080, {
+			await request("admin.test", "/_emdash/api/content/posts", 18080, {
 				"X-Site-Id": "site-foo",
 			})
 		).status,
 		403,
 	);
 	assert.equal(
-		(await request("platform.test", "/_emdash/admin/login", 18080, { Forwarded: "host=foo.test" }))
+		(await request("admin.test", "/_emdash/admin/login", 18080, { Forwarded: "host=foo.test" }))
 			.status,
 		421,
 	);
@@ -196,7 +197,7 @@ try {
 	assert.equal((await request("unknown.test", "/entry/shared.json")).status, 421);
 	assert.equal((await request("bar.test", "/entry/foo-entry.json")).status, 404);
 	assert.equal(
-		(await request("platform.test", "/", 18080, { "X-Forwarded-Host": "foo.test" })).status,
+		(await request("admin.test", "/", 18080, { "X-Forwarded-Host": "foo.test" })).status,
 		403,
 	);
 	assert.equal((await request("foo.test", "/_emdash/api/auth/dev-bypass")).status, 421);
@@ -211,7 +212,7 @@ try {
 	assert.equal((await request("foo.test", "/_emdash/admin")).status, 421);
 	assert.equal((await request("foo.test", "/_emdash/api/content/posts")).status, 421);
 	assert.equal((await request("foo.test", "/", 18081)).status, 421);
-	assert.equal((await request("platform.test", "/_emdash/admin/login", 18081)).status, 421);
+	assert.equal((await request("admin.test", "/_emdash/admin/login", 18081)).status, 421);
 	assert.equal(
 		(
 			await request("foo.test", "/", 18081, {
@@ -262,9 +263,9 @@ try {
 		"-U",
 		"postgres",
 		"-c",
-		"INSERT INTO _emdash_site_hosts VALUES ('platform.test', 'site-foo')",
+		"INSERT INTO _emdash_site_hosts VALUES ('admin.test', 'site-foo')",
 	]);
-	assert.equal((await request("platform.test", "/_emdash/admin/login")).status, 421);
+	assert.equal((await request("admin.test", "/_emdash/admin/login")).status, 421);
 	await command("docker", [
 		"exec",
 		pg,
@@ -274,7 +275,7 @@ try {
 		"-U",
 		"postgres",
 		"-c",
-		"DELETE FROM _emdash_site_hosts WHERE hostname = 'platform.test'",
+		"DELETE FROM _emdash_site_hosts WHERE hostname = 'admin.test'",
 	]);
 
 	const nodeStatus = await readFile(`/proc/${host.pid}/status`, "utf8");
@@ -287,7 +288,7 @@ try {
 	]);
 	console.log(`Node PID ${host.pid}: ${nodeStatus.match(/^VmRSS:.*$/m)?.[0]}`);
 	console.log(`Caddy: ${caddyStatus}`);
-	console.log("Two presentations and their assets passed real HTTP checks through Caddy.");
+	console.log("Two public presentations and the admin area passed real HTTP checks through Caddy.");
 } finally {
 	if (host) {
 		host.kill();

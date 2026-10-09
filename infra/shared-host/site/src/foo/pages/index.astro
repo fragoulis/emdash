@@ -4,7 +4,7 @@ import { getRequestContext } from "emdash/request-context";
 
 const siteId = getRequestContext()?.siteId;
 if (!siteId) throw new Error("Site not resolved");
-const site = import.meta.env.PUBLIC_PROOF_SITE;
+const site = "foo";
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 let greeting;
 let title;

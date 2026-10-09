@@ -5,28 +5,26 @@ import react from "@astrojs/react";
 import { defineConfig } from "astro/config";
 
 const site = process.env.PROOF_SITE;
-if (!/^(foo|bar|platform)$/.test(site ?? ""))
-	throw new Error("Set PROOF_SITE to foo, bar or platform");
+if (!/^(foo|bar|admin)$/.test(site ?? "")) throw new Error("Set PROOF_SITE to foo, bar or admin");
 
 export default defineConfig({
 	output: "server",
 	adapter: node({ mode: "standalone" }),
 	outDir: `./dist/${site}`,
-	srcDir: fileURLToPath(
-		new URL(site === "platform" ? "./platform/src/" : "./src/", import.meta.url),
-	),
+	srcDir: fileURLToPath(new URL(`./src/${site}/`, import.meta.url)),
+	publicDir: fileURLToPath(new URL(`./src/${site}/public/`, import.meta.url)),
 	integrations:
-		site === "platform"
+		site === "admin"
 			? [
 					react(),
 					{
-						name: "platform-admin-route",
+						name: "admin-route",
 						hooks: {
 							"astro:config:setup"({ injectRoute }) {
 								injectRoute({
 									pattern: "/_emdash/admin/[...path]",
 									entrypoint: fileURLToPath(
-										new URL("./platform/src/routes/admin.astro", import.meta.url),
+										new URL("./src/admin/routes/admin.astro", import.meta.url),
 									),
 								});
 							},

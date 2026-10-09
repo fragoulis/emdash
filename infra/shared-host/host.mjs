@@ -7,9 +7,9 @@ import { runWithContext } from "emdash/request-context";
 import { resolveSite } from "./site-registry.mjs";
 
 const centralPathPattern = /^\/(?:_emdash(?:\/|$)|admin(?:\/|$)|preview(?:\/|$))/;
-const platformHost = process.env.PROOF_PLATFORM_HOST;
-if (!platformHost || !/^[a-z0-9.-]+$/.test(platformHost)) {
-	throw new Error("Set PROOF_PLATFORM_HOST to a trusted hostname");
+const adminHost = process.env.PROOF_ADMIN_HOST;
+if (!adminHost || !/^[a-z0-9.-]+$/.test(adminHost)) {
+	throw new Error("Set PROOF_ADMIN_HOST to a trusted hostname");
 }
 
 const builds = new Map([
@@ -25,8 +25,8 @@ for (const [siteId, site] of builds) {
 	handlers.set(siteId, handler);
 }
 
-const { handler: platformHandler } = await import(
-	pathToFileURL(resolve(buildDirectory, "platform/server/entry.mjs")).href
+const { handler: adminHandler } = await import(
+	pathToFileURL(resolve(buildDirectory, "admin/server/entry.mjs")).href
 );
 
 const server = createServer(async (request, response) => {
@@ -53,7 +53,7 @@ const server = createServer(async (request, response) => {
 		const siteId = await resolveSite(host);
 		const path = new URL(request.url ?? "/", "http://localhost").pathname;
 		const centralPath = centralPathPattern.test(path);
-		if (host === platformHost) {
+		if (host === adminHost) {
 			if (siteId || (request.method !== "GET" && request.method !== "HEAD")) {
 				response.writeHead(421);
 				response.end();
@@ -69,7 +69,7 @@ const server = createServer(async (request, response) => {
 				response.end();
 				return;
 			}
-			runWithContext({ editMode: false }, () => platformHandler(request, response));
+			runWithContext({ editMode: false }, () => adminHandler(request, response));
 			return;
 		}
 		const handler = siteId && handlers.get(siteId);
