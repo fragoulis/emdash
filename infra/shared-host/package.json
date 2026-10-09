@@ -7,11 +7,16 @@
 	},
 	"dependencies": {
 		"@astrojs/node": "catalog:",
+		"@astrojs/react": "catalog:",
 		"@clerk/backend": "^3.23.1",
 		"@clerk/clerk-js": "^6.38.1",
+		"@cloudflare/kumo": "catalog:",
+		"@emdash-cms/admin": "workspace:*",
 		"astro": "catalog:",
 		"emdash": "workspace:*",
 		"jose": "^6.2.10",
-		"pg": "^8.0.0"
+		"pg": "^8.0.0",
+		"react": "catalog:",
+		"react-dom": "catalog:"
 	}
 }

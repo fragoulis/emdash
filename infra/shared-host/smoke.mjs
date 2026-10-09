@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { request as httpRequest } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
+import { chromium } from "@playwright/test";
 import { SignJWT } from "jose";
 
 const exec = promisify(execFile);
@@ -15,9 +17,10 @@ const fixture = resolve(root, "infra/shared-host/site");
 const databaseUrl = "postgres://postgres:proof@127.0.0.1:55432/postgres";
 const proxyToken = "proof-only-proxy-token";
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const { privateKey: otherPrivateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwtKey = publicKey.export({ type: "spki", format: "pem" });
 const issuer = "https://fixture.clerk.accounts.dev";
-const origin = "http://admin.test";
+let origin = "http://admin.test";
 
 async function session(claims = {}) {
 	return new SignJWT({ sid: "sess_fixture", azp: origin, ...claims })
@@ -30,6 +33,7 @@ async function session(claims = {}) {
 }
 const containers = [];
 let host;
+let clerkFixture;
 
 async function command(file, args, options = {}) {
 	return (await exec(file, args, { cwd: root, ...options })).stdout.trim();
@@ -103,8 +107,51 @@ try {
 		"-U",
 		"postgres",
 		"-c",
-		"CREATE TABLE proof_staff (provider_user_id text PRIMARY KEY); CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar'); CREATE TABLE ec_posts (id text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id), slug text NOT NULL, locale text NOT NULL, status text NOT NULL, title text NOT NULL, UNIQUE(site_id, slug, locale)); INSERT INTO ec_posts VALUES ('foo-entry', 'site-foo', 'shared', 'en', 'published', 'Foo story'), ('bar-entry', 'site-bar', 'shared', 'en', 'published', 'Bar story'), ('foo-only', 'site-foo', 'exclusive', 'en', 'published', 'Only Foo')",
+		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar'); CREATE TABLE ec_posts (id text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id), slug text NOT NULL, locale text NOT NULL, status text NOT NULL, title text NOT NULL, UNIQUE(site_id, slug, locale)); INSERT INTO ec_posts VALUES ('foo-entry', 'site-foo', 'shared', 'en', 'published', 'Foo story'), ('bar-entry', 'site-bar', 'shared', 'en', 'published', 'Bar story'), ('foo-only', 'site-foo', 'exclusive', 'en', 'published', 'Only Foo')",
 	]);
+
+	let sessionActive = true;
+	clerkFixture = createServer((req, res) => {
+		const sessionId = req.url?.split("/")[3];
+		res.setHeader("Content-Type", "application/json");
+		if (sessionId === "sess_fixture" && req.method === "POST") {
+			sessionActive = false;
+			res.end(
+				JSON.stringify({
+					object: "session",
+					id: sessionId,
+					user_id: "user_fixture",
+					status: "revoked",
+				}),
+			);
+		} else if (sessionId === "sess_fixture") {
+			res.end(
+				JSON.stringify({
+					object: "session",
+					id: sessionId,
+					user_id: "user_fixture",
+					status: sessionActive ? "active" : "revoked",
+				}),
+			);
+		} else if (sessionId === "sess_outage") {
+			res.writeHead(503);
+			res.end(
+				JSON.stringify({ errors: [{ code: "service_unavailable", message: "Unavailable" }] }),
+			);
+		} else {
+			res.writeHead(404);
+			res.end(
+				JSON.stringify({ errors: [{ code: "resource_not_found", message: "Unknown session" }] }),
+			);
+		}
+	});
+	await new Promise((ready) => clerkFixture.listen(0, "127.0.0.1", ready));
+
+	for (let attempt = 0; attempt < 2; attempt++) {
+		await command(process.execPath, [resolve(root, "infra/shared-host/provision.mjs")], {
+			env: { ...process.env, DATABASE_URL: databaseUrl },
+		});
+	}
 
 	for (const site of ["foo", "bar"]) {
 		await command(resolve(root, "infra/shared-host/node_modules/.bin/astro"), ["build"], {
@@ -132,6 +179,8 @@ try {
 			ASTRO_NODE_AUTOSTART: "disabled",
 			DATABASE_URL: databaseUrl,
 			CLERK_JWT_KEY: jwtKey,
+			CLERK_SECRET_KEY: "sk_test_fixture",
+			PROOF_CLERK_API_URL: `http://127.0.0.1:${clerkFixture.address().port}`,
 			PROOF_CLERK_ISSUER: issuer,
 			PROOF_ADMIN_ORIGIN: origin,
 		},
@@ -208,6 +257,17 @@ try {
 		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}x` })).status,
 		302,
 	);
+	const forged = await new SignJWT({ sid: "sess_fixture", azp: origin })
+		.setProtectedHeader({ alg: "RS256" })
+		.setIssuer(issuer)
+		.setSubject("user_fixture")
+		.setIssuedAt()
+		.setExpirationTime("5m")
+		.sign(otherPrivateKey);
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${forged}` })).status,
+		302,
+	);
 	const expired = new SignJWT({ sid: "sess_fixture", azp: origin })
 		.setProtectedHeader({ alg: "RS256" })
 		.setIssuer(issuer)
@@ -222,7 +282,15 @@ try {
 	assert.equal(
 		(
 			await request("admin.test", noAccess, 18080, {
-				Cookie: `__session=${await session({ subject: "unknown" })}`,
+				Cookie: `__session=${await session({ subject: "user_unknown" })}`,
+			})
+		).status,
+		302,
+	);
+	assert.equal(
+		(
+			await request("admin.test", noAccess, 18080, {
+				Cookie: `__session=${await session({ sid: "sess_outage" })}`,
 			})
 		).status,
 		302,
@@ -245,6 +313,38 @@ try {
 	);
 	assert.equal(
 		(await request("admin.test", noAccess, 18080, { Cookie: "__session=" })).status,
+		302,
+	);
+	assert.equal(
+		(
+			await request(
+				"admin.test",
+				"/_emdash/api/auth/logout",
+				18080,
+				{ Cookie: `__session=${valid}` },
+				"POST",
+			)
+		).status,
+		403,
+	);
+	assert.equal(
+		(
+			await request(
+				"admin.test",
+				"/_emdash/api/auth/logout",
+				18080,
+				{
+					Cookie: `__session=${valid}`,
+					Origin: origin,
+					"X-EmDash-Request": "1",
+				},
+				"POST",
+			)
+		).status,
+		204,
+	);
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}` })).status,
 		302,
 	);
 	assert.equal((await request("foo.test", "/")).status, 200);
@@ -373,6 +473,96 @@ try {
 		"DELETE FROM _emdash_site_hosts WHERE hostname = 'admin.test'",
 	]);
 
+	host.kill();
+	await new Promise((done) => host.once("exit", done));
+	origin = "http://localhost:18080";
+	sessionActive = true;
+	host = spawn(process.execPath, [resolve(root, "infra/shared-host/host.mjs")], {
+		cwd: root,
+		env: {
+			...process.env,
+			PROOF_PORT: "18081",
+			PROOF_PROXY_TOKEN: proxyToken,
+			PROOF_ADMIN_HOST: "localhost",
+			ASTRO_NODE_AUTOSTART: "disabled",
+			DATABASE_URL: databaseUrl,
+			CLERK_JWT_KEY: jwtKey,
+			CLERK_SECRET_KEY: "sk_test_fixture",
+			PROOF_CLERK_API_URL: `http://127.0.0.1:${clerkFixture.address().port}`,
+			PROOF_CLERK_ISSUER: issuer,
+			PROOF_ADMIN_ORIGIN: origin,
+		},
+		stdio: "inherit",
+	});
+	await waitFor(async () => (await request("localhost", "/_emdash/admin/login")).status === 200);
+	const browser = await chromium.launch({
+		...(existsSync("/usr/bin/chromium") ? { executablePath: "/usr/bin/chromium" } : {}),
+		args: ["--no-sandbox"],
+	});
+	try {
+		const page = await browser.newPage();
+		const loginPath = "/_emdash/admin/login";
+		await page.route("https://fixture.accounts.dev/**", async (route) => {
+			await page.context().addCookies([
+				{
+					name: "__session",
+					value: await session(),
+					url: origin,
+				},
+			]);
+			await route.fulfill({
+				status: 302,
+				headers: { Location: `${origin}/_emdash/admin/no-access` },
+			});
+		});
+		await page.goto(`${origin}${loginPath}`);
+		await page.getByRole("link", { name: "Continue to Clerk" }).click();
+		await page.getByRole("heading", { name: "No site access" }).waitFor();
+		assert.equal(page.url(), `${origin}/_emdash/admin/no-access`);
+		assert.equal(
+			(await page.request.get(`${origin}/_emdash/api/settings?siteId=site-foo`)).status(),
+			403,
+		);
+		await page.getByRole("button", { name: "Sign out" }).click();
+		await page.waitForURL(`${origin}${loginPath}`);
+		assert.equal(
+			(await page.request.get(`${origin}/_emdash/admin/no-access`, { maxRedirects: 0 })).status(),
+			302,
+		);
+		await page.context().addCookies([
+			{
+				name: "__session",
+				value: `${await session()}x`,
+				url: origin,
+			},
+		]);
+		await page.goto(`${origin}/_emdash/admin/no-access`);
+		assert.equal(page.url(), `${origin}${loginPath}`);
+		await page.route("https://fixture.accounts.dev/**", (route) =>
+			route.fulfill({ status: 503, body: "Unavailable" }),
+		);
+		await page.getByRole("link", { name: "Continue to Clerk" }).click();
+		assert.match(await page.locator("body").innerText(), /Unavailable/);
+		assert.equal(
+			(await page.request.get(`${origin}/_emdash/admin/no-access`, { maxRedirects: 0 })).status(),
+			302,
+		);
+		sessionActive = true;
+		await page.setExtraHTTPHeaders({ "Accept-Language": "ar" });
+		await page.context().addCookies([
+			{
+				name: "__session",
+				value: await session(),
+				url: origin,
+			},
+		]);
+		await page.goto(`${origin}/_emdash/admin/no-access`);
+		assert.equal(await page.locator("html").getAttribute("dir"), "rtl");
+		assert.equal((await request("foo.test")).status, 200);
+	} finally {
+		await browser.close();
+	}
+
 	const nodeStatus = await readFile(`/proc/${host.pid}/status`, "utf8");
 	const caddyStatus = await command("docker", [
 		"exec",
@@ -388,6 +578,7 @@ try {
 	if (host) {
 		host.kill();
 	}
+	if (clerkFixture) clerkFixture.close();
 	for (const id of containers.toReversed()) {
 		await command("docker", ["stop", id]).catch(() => {});
 	}
