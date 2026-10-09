@@ -32,6 +32,8 @@ allowBuilds:
   "@mongodb-js/zstd": false
   node-liblzma: false
   protobufjs: false
+  browser-tabs-lock: false
+  core-js: false
 # Reviewed benign trust downgrades (publish-method changes, not takeovers).
 trustPolicyExclude:
   - "vite@6.4.1" # trusted-publisher -> provenance (vitejs CI change)
