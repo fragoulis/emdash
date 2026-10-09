@@ -1,0 +1,41 @@
+---
+import { Client } from "pg";
+import { getRequestContext } from "emdash/request-context";
+
+const siteId = getRequestContext()?.siteId;
+if (!siteId) throw new Error("Site not resolved");
+const site = "bar";
+const client = new Client({ connectionString: process.env.DATABASE_URL });
+let greeting;
+let title;
+try {
+	await client.connect();
+	const result = await client.query(
+		`SELECT p.greeting, c.title FROM proof_sites p
+		 JOIN ec_posts c ON c.site_id = $1 AND c.slug = 'shared' AND c.locale = 'en' AND c.status = 'published'
+		 WHERE p.name = $2`,
+		[siteId, site],
+	);
+	greeting = result.rows[0]?.greeting;
+	title = result.rows[0]?.title;
+} finally {
+	await client.end();
+}
+if (!greeting) throw new Error("Site not provisioned");
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>{site} presentation</title>
+		<link rel="stylesheet" href="/style.css" />
+	</head>
+	<body>
+		<h1>{site} presentation</h1>
+		<p>Site ID: {siteId}</p>
+		<p>{greeting}</p>
+		<p>Published entry: {title}</p>
+		<img src="/mark.svg" alt={`${site} mark`} />
+	</body>
+</html>
