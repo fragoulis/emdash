@@ -1,6 +1,16 @@
 ---
 export const prerender = false;
 const noAccess = Astro.url.pathname === "/_emdash/admin/no-access";
+const signInUrl = import.meta.env.PUBLIC_CLERK_SIGN_IN_URL;
+if (!signInUrl || new URL(signInUrl).protocol !== "https:") {
+	throw new Error("Set PUBLIC_CLERK_SIGN_IN_URL to the hosted Clerk sign-in URL");
+}
+const hostedSignIn = new URL(signInUrl);
+if (!process.env.PROOF_ADMIN_ORIGIN) throw new Error("Set PROOF_ADMIN_ORIGIN");
+hostedSignIn.searchParams.set(
+	"redirect_url",
+	`${process.env.PROOF_ADMIN_ORIGIN}/_emdash/admin/login`,
+);
 Astro.response.headers.set("Cache-Control", "private, no-store");
 ---
 
@@ -22,7 +32,7 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
 			) : (
 				<>
 					<h1>Sign in to EmDash</h1>
-					<div id="sign-in"></div>
+					<a href={hostedSignIn.toString()}>Continue to Clerk</a>
 				</>
 			)}
 		</main>
@@ -40,9 +50,6 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
 				});
 			} else if (clerk.user) {
 				window.location.replace("/_emdash/admin/no-access");
-			} else {
-				const container = document.getElementById("sign-in");
-				if (container) clerk.mountSignIn(container, { forceRedirectUrl: "/_emdash/admin/no-access" });
 			}
 		</script>
 	</body>
