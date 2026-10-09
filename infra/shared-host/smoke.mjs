@@ -114,7 +114,12 @@ try {
 	}
 	await command(resolve(root, "infra/shared-host/node_modules/.bin/astro"), ["build"], {
 		cwd: fixture,
-		env: { ...process.env, PROOF_SITE: "admin", DATABASE_URL: databaseUrl },
+		env: {
+			...process.env,
+			PROOF_SITE: "admin",
+			PUBLIC_CLERK_SIGN_IN_URL: "https://fixture.accounts.dev/sign-in",
+			DATABASE_URL: databaseUrl,
+		},
 	});
 
 	host = spawn(process.execPath, [resolve(root, "infra/shared-host/host.mjs")], {
@@ -181,6 +186,8 @@ try {
 	assert.equal(login.status, 200);
 	assert.equal(login.headers["cache-control"], "private, no-store");
 	assert.match(login.text(), /Sign in to EmDash/);
+	assert.match(login.text(), /https:\/\/fixture.accounts.dev\/sign-in/);
+	assert.match(login.text(), /redirect_url=http%3A%2F%2Fadmin.test%2F_emdash%2Fadmin%2Flogin/);
 	const adminScript = login.text().match(/(?:src|component-url)="(\/_astro\/[^"]+\.js)"/)?.[1];
 	assert.ok(adminScript, "The admin shell loads a client application");
 	assert.equal((await request("admin.test", adminScript)).status, 200);
