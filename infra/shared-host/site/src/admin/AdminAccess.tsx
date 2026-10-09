@@ -74,7 +74,9 @@ export function AdminAccess({
 						)}
 					</>
 				) : (
-					<LinkButton href={signInUrl}>{continueLabel}</LinkButton>
+					<LinkButton href={signInUrl} variant="primary">
+						{continueLabel}
+					</LinkButton>
 				)}
 			</section>
 		</main>
