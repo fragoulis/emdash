@@ -1517,6 +1517,21 @@ importers:
         specifier: 'catalog:'
         version: 4.125.0(@cloudflare/workers-types@5.20260911.1)
 
+  infra/shared-host:
+    dependencies:
+      '@astrojs/node':
+        specifier: 'catalog:'
+        version: 11.1.5(astro@7.3.2(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@types/node@26.1.1)(aws4fetch@1.0.20)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
+      astro:
+        specifier: 'catalog:'
+        version: 7.3.2(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@types/node@26.1.1)(aws4fetch@1.0.20)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)
+      emdash:
+        specifier: workspace:*
+        version: link:../../packages/core
+      pg:
+        specifier: ^8.0.0
+        version: 8.18.0
+
   packages/admin:
     dependencies:
       '@atcute/lexicons':

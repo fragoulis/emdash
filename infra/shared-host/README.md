@@ -8,7 +8,7 @@ Run from the repository root on Linux with Node, built workspace packages (`pnpm
 node infra/shared-host/smoke.mjs
 ```
 
-The smoke script starts disposable PostgreSQL and Caddy containers on the host network, builds the two presentations in `demos/postgres/proof/dist/`, starts one Node process, checks page and asset responses over HTTP through Caddy, then prints warm resident memory and stops all three services. It binds ports 18080 (Caddy), 18081 (Node), and 55432 (PostgreSQL) to loopback. Keep these ports free. The test does not need DNS or a local Caddy installation. Build output is ignored by Git.
+The smoke script starts disposable PostgreSQL and Caddy containers on the host network, builds the two presentations from `infra/shared-host/site/` into `infra/shared-host/site/dist/`, starts one Node process, checks page and asset responses over HTTP through Caddy, then prints warm resident memory and stops all three services. It binds ports 18080 (Caddy), 18081 (Node), and 55432 (PostgreSQL) to loopback. Keep these ports free. The test does not need DNS or a local Caddy installation. Build output is ignored by Git.
 
 ## Baseline
 
