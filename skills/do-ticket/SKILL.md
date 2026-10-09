@@ -15,5 +15,3 @@ Use the /implement skill.
 In the commit body, append `Closes #{ticket-number}.`
 
 Push and open a PR using the /pr skill.
-
-Do not open against the `main` branch. Open against the `multi-tenancy` branch.
