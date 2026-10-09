@@ -1,0 +1,23 @@
+---
+import adminStylesUrl from "@emdash-cms/admin/styles.css?url";
+import { AdminApp } from "@emdash-cms/admin";
+import { loadMessages, resolveLocale, getLocaleDir } from "@emdash-cms/admin/locales";
+
+export const prerender = false;
+const locale = resolveLocale(Astro.request);
+const messages = await loadMessages(locale);
+Astro.response.headers.set("Cache-Control", "private, no-store");
+---
+
+<!doctype html>
+<html lang={locale} dir={getLocaleDir(locale)} data-theme="classic">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>EmDash Admin</title>
+		<link rel="stylesheet" href={adminStylesUrl} />
+	</head>
+	<body class="isolate">
+		<div id="admin-root"><AdminApp client:only="react" locale={locale} messages={messages} pluginAdmins={[]} authProviders={[]} /></div>
+	</body>
+</html>
