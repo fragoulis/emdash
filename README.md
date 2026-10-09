@@ -1,4 +1,8 @@
-# EmDash
+# EmDash multi-site fork
+
+This fork of [EmDash](https://github.com/emdash-cms/emdash) is working toward hosting multiple Astro sites with one admin and one Node.js process. The target design uses separate trusted Astro builds for each site, shared PostgreSQL storage, and a central admin. **Multi-site hosting is not yet a production-ready feature.** See the [multi-site hosting spec](docs/technical-specs/multi-site-hosting.md) for the target design and the [two-build host proof](infra/shared-host/README.md) for what works today.
+
+The rest of this README describes upstream EmDash and its single-site setup.
 
 A full-stack TypeScript CMS built on [Astro](https://astro.build/). EmDash takes the ideas that made WordPress dominant -- extensibility, admin UX, a plugin ecosystem -- and rebuilds them on serverless, type-safe foundations. Plugins run in sandboxed Worker isolates, solving the fundamental security problem with WordPress's plugin architecture.
 
