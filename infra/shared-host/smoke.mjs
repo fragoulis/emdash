@@ -1,16 +1,33 @@
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
+import { SignJWT } from "jose";
+
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, "../..");
 const fixture = resolve(root, "infra/shared-host/site");
 const databaseUrl = "postgres://postgres:proof@127.0.0.1:55432/postgres";
 const proxyToken = "proof-only-proxy-token";
+const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const jwtKey = publicKey.export({ type: "spki", format: "pem" });
+const issuer = "https://fixture.clerk.accounts.dev";
+const origin = "http://admin.test";
+
+async function session(claims = {}) {
+	return new SignJWT({ sid: "sess_fixture", azp: origin, ...claims })
+		.setProtectedHeader({ alg: "RS256" })
+		.setIssuer(claims.issuer ?? issuer)
+		.setSubject(claims.subject ?? "user_fixture")
+		.setIssuedAt()
+		.setExpirationTime("5m")
+		.sign(privateKey);
+}
 const containers = [];
 let host;
 
@@ -86,7 +103,7 @@ try {
 		"-U",
 		"postgres",
 		"-c",
-		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar'); CREATE TABLE ec_posts (id text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id), slug text NOT NULL, locale text NOT NULL, status text NOT NULL, title text NOT NULL, UNIQUE(site_id, slug, locale)); INSERT INTO ec_posts VALUES ('foo-entry', 'site-foo', 'shared', 'en', 'published', 'Foo story'), ('bar-entry', 'site-bar', 'shared', 'en', 'published', 'Bar story'), ('foo-only', 'site-foo', 'exclusive', 'en', 'published', 'Only Foo')",
+		"CREATE TABLE proof_staff (provider_user_id text PRIMARY KEY); CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar'); CREATE TABLE ec_posts (id text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id), slug text NOT NULL, locale text NOT NULL, status text NOT NULL, title text NOT NULL, UNIQUE(site_id, slug, locale)); INSERT INTO ec_posts VALUES ('foo-entry', 'site-foo', 'shared', 'en', 'published', 'Foo story'), ('bar-entry', 'site-bar', 'shared', 'en', 'published', 'Bar story'), ('foo-only', 'site-foo', 'exclusive', 'en', 'published', 'Only Foo')",
 	]);
 
 	for (const site of ["foo", "bar"]) {
@@ -109,6 +126,9 @@ try {
 			PROOF_ADMIN_HOST: "admin.test",
 			ASTRO_NODE_AUTOSTART: "disabled",
 			DATABASE_URL: databaseUrl,
+			CLERK_JWT_KEY: jwtKey,
+			PROOF_CLERK_ISSUER: issuer,
+			PROOF_ADMIN_ORIGIN: origin,
 		},
 		stdio: "inherit",
 	});
@@ -160,12 +180,80 @@ try {
 	const login = await request("admin.test", "/_emdash/admin/login");
 	assert.equal(login.status, 200);
 	assert.equal(login.headers["cache-control"], "private, no-store");
-	assert.match(login.text(), /admin-root/);
+	assert.match(login.text(), /Sign in to EmDash/);
 	const adminScript = login.text().match(/(?:src|component-url)="(\/_astro\/[^"]+\.js)"/)?.[1];
 	assert.ok(adminScript, "The admin shell loads a client application");
 	assert.equal((await request("admin.test", adminScript)).status, 200);
 	assert.equal((await request("foo.test", adminScript)).status, 404);
 	assert.equal((await request("admin.test", "/admin")).status, 302);
+	const noAccess = "/_emdash/admin/no-access";
+	assert.equal((await request("admin.test", noAccess)).status, 302);
+	const valid = await session();
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}` })).status,
+		200,
+	);
+	assert.match(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}` })).text(),
+		/No site access/,
+	);
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}x` })).status,
+		302,
+	);
+	const expired = new SignJWT({ sid: "sess_fixture", azp: origin })
+		.setProtectedHeader({ alg: "RS256" })
+		.setIssuer(issuer)
+		.setSubject("user_fixture")
+		.setIssuedAt(Math.floor(Date.now() / 1000) - 3600)
+		.setExpirationTime(Math.floor(Date.now() / 1000) - 3500)
+		.sign(privateKey);
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${await expired}` })).status,
+		302,
+	);
+	assert.equal(
+		(
+			await request("admin.test", noAccess, 18080, {
+				Cookie: `__session=${await session({ subject: "unknown" })}`,
+			})
+		).status,
+		302,
+	);
+	assert.equal(
+		(
+			await request("admin.test", noAccess, 18080, {
+				Cookie: `__session=${await session({ azp: "http://foo.test" })}`,
+			})
+		).status,
+		302,
+	);
+	assert.equal(
+		(
+			await request("admin.test", noAccess, 18080, {
+				Cookie: `__session=${await session({ issuer: "https://other.clerk.accounts.dev" })}`,
+			})
+		).status,
+		302,
+	);
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: "__session=" })).status,
+		302,
+	);
+	assert.equal((await request("foo.test", "/")).status, 200);
+	assert.equal(
+		(await request("admin.test", "/_emdash/api/health", 18080, { Cookie: `__session=${valid}` }))
+			.status,
+		403,
+	);
+	assert.equal(
+		(
+			await request("admin.test", "/_emdash/api/settings?siteId=site-foo", 18080, {
+				Cookie: `__session=${await session({ role: "admin", public_metadata: { is_super_admin: true } })}`,
+			})
+		).status,
+		403,
+	);
 	assert.equal((await request("admin.test", "/_emdash/api/health")).status, 403);
 	assert.equal((await request("admin.test", "/_emdash/api/settings?siteId=site-foo")).status, 403);
 	assert.equal((await request("admin.test", "/_emdash/admin/settings")).status, 403);
