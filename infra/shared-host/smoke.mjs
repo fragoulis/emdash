@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, "../..");
-const fixture = resolve(root, "demos/postgres/proof");
+const fixture = resolve(root, "infra/shared-host/site");
 const databaseUrl = "postgres://postgres:proof@127.0.0.1:55432/postgres";
 const proxyToken = "proof-only-proxy-token";
 const containers = [];
@@ -86,7 +86,7 @@ try {
 	]);
 
 	for (const site of ["foo", "bar"]) {
-		await command(resolve(root, "demos/postgres/node_modules/.bin/astro"), ["build"], {
+		await command(resolve(root, "infra/shared-host/node_modules/.bin/astro"), ["build"], {
 			cwd: fixture,
 			env: { ...process.env, PROOF_SITE: site, PUBLIC_PROOF_SITE: site },
 		});
