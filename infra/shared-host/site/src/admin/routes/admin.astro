@@ -1,23 +1,49 @@
 ---
-import adminStylesUrl from "@emdash-cms/admin/styles.css?url";
-import { AdminApp } from "@emdash-cms/admin";
-import { loadMessages, resolveLocale, getLocaleDir } from "@emdash-cms/admin/locales";
-
 export const prerender = false;
-const locale = resolveLocale(Astro.request);
-const messages = await loadMessages(locale);
+const noAccess = Astro.url.pathname === "/_emdash/admin/no-access";
 Astro.response.headers.set("Cache-Control", "private, no-store");
 ---
 
 <!doctype html>
-<html lang={locale} dir={getLocaleDir(locale)} data-theme="classic">
+<html lang="en">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>EmDash Admin</title>
-		<link rel="stylesheet" href={adminStylesUrl} />
+		<title>{noAccess ? "No site access - EmDash" : "Sign in - EmDash"}</title>
 	</head>
-	<body class="isolate">
-		<div id="admin-root"><AdminApp client:only="react" locale={locale} messages={messages} pluginAdmins={[]} authProviders={[]} /></div>
+	<body>
+		<main>
+			{noAccess ? (
+				<>
+					<h1>No site access</h1>
+					<p>You are signed in, but you do not have access to a site yet.</p>
+					<button id="sign-out" type="button">Sign out</button>
+				</>
+			) : (
+				<>
+					<h1>Sign in to EmDash</h1>
+					<div id="sign-in"></div>
+				</>
+			)}
+		</main>
+		<script>
+			import { Clerk } from "@clerk/clerk-js";
+
+			const key = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY;
+			if (!key) throw new Error("Set PUBLIC_CLERK_PUBLISHABLE_KEY when building the admin");
+			const clerk = new Clerk(key);
+			await clerk.load();
+			const signOut = document.getElementById("sign-out");
+			if (signOut) {
+				signOut.addEventListener("click", async () => {
+					await clerk.signOut({ redirectUrl: "/_emdash/admin/login" });
+				});
+			} else if (clerk.user) {
+				window.location.replace("/_emdash/admin/no-access");
+			} else {
+				const container = document.getElementById("sign-in");
+				if (container) clerk.mountSignIn(container, { forceRedirectUrl: "/_emdash/admin/no-access" });
+			}
+		</script>
 	</body>
 </html>
