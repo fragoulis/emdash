@@ -45,15 +45,15 @@ async function waitFor(check) {
 	throw new Error("Service did not become ready");
 }
 
-function request(hostname, path = "/", port = 18080, headers = {}) {
+function request(hostname, path = "/", port = 18080, headers = {}, method = "GET") {
 	return new Promise((resolveResponse, reject) => {
 		const req = httpRequest(
-			{ hostname: "127.0.0.1", port, path, headers: { Host: hostname, ...headers } },
+			{ hostname: "127.0.0.1", port, path, method, headers: { Host: hostname, ...headers } },
 			(res) => {
 				const chunks = [];
 				res.on("data", (chunk) => chunks.push(chunk));
 				res.on("end", () =>
-					resolveResponse({ status: res.statusCode, text: () => Buffer.concat(chunks).toString() }),
+					resolveResponse({ status: res.statusCode, headers: res.headers, text: () => Buffer.concat(chunks).toString() }),
 				);
 			},
 		);
@@ -95,6 +95,10 @@ try {
 			`<svg xmlns="http://www.w3.org/2000/svg"><title>${site} asset</title></svg>\n`,
 		);
 	}
+	await command(resolve(root, "infra/shared-host/node_modules/.bin/astro"), ["build"], {
+		cwd: fixture,
+		env: { ...process.env, PROOF_SITE: "platform", DATABASE_URL: databaseUrl },
+	});
 
 	host = spawn(process.execPath, [resolve(root, "infra/shared-host/host.mjs")], {
 		cwd: root,
@@ -102,6 +106,7 @@ try {
 			...process.env,
 			PROOF_PORT: "18081",
 			PROOF_PROXY_TOKEN: proxyToken,
+			PROOF_PLATFORM_HOST: "platform.test",
 			ASTRO_NODE_AUTOSTART: "disabled",
 			DATABASE_URL: databaseUrl,
 		},
@@ -148,10 +153,53 @@ try {
 		assert.match((await request(`${site}.test`, "/mark.svg")).text(), new RegExp(`${site} asset`));
 		assert.equal((await request(`${site}.test`, "/style.css")).status, 200);
 	}
+	const login = await request("platform.test", "/_emdash/admin/login");
+	assert.equal(login.status, 200);
+	assert.equal(login.headers["cache-control"], "private, no-store");
+	assert.match(login.text(), /admin-root/);
+	const adminScript = login.text().match(/(?:src|component-url)="(\/_astro\/[^"]+\.js)"/)?.[1];
+	assert.ok(adminScript, "The admin shell loads a client application");
+	assert.equal((await request("platform.test", adminScript)).status, 200);
+	assert.equal((await request("foo.test", adminScript)).status, 404);
+	assert.equal((await request("platform.test", "/admin")).status, 302);
+	assert.equal((await request("platform.test", "/_emdash/api/health")).status, 403);
+	assert.equal(
+		(await request("platform.test", "/_emdash/api/settings?siteId=site-foo")).status,
+		403,
+	);
+	assert.equal((await request("platform.test", "/_emdash/admin/settings")).status, 403);
+	assert.equal((await request("platform.test", "/preview/foo")).status, 403);
+	assert.equal(
+		(await request("platform.test", "/_emdash/api/content/posts", 18080, {}, "POST")).status,
+		421,
+	);
+	assert.equal(
+		(
+			await request("platform.test", "/_emdash/api/content/posts", 18080, {
+				"X-Site-Id": "site-foo",
+			})
+		).status,
+		403,
+	);
+	assert.equal(
+		(await request("platform.test", "/_emdash/admin/login", 18080, { Forwarded: "host=foo.test" }))
+			.status,
+		421,
+	);
+	assert.equal((await request("foo.test", "/_emdash/admin/login")).status, 421);
+	assert.equal((await request("foo.test", "/admin")).status, 421);
+	assert.equal((await request("foo.test", "/_astro/anything.js")).status, 404);
+	assert.equal((await request("foo.test", "/preview/foo")).status, 421);
+	assert.equal((await request("foo.test", "/%5Femdash/admin/login")).status, 404);
 	assert.equal((await request("unknown.test")).status, 421);
 	assert.equal((await request("unknown.test", "/mark.svg")).status, 421);
 	assert.equal((await request("unknown.test", "/entry/shared.json")).status, 421);
 	assert.equal((await request("bar.test", "/entry/foo-entry.json")).status, 404);
+	assert.equal(
+		(await request("platform.test", "/", 18080, { "X-Forwarded-Host": "foo.test" })).status,
+		403,
+	);
+	assert.equal((await request("foo.test", "/_emdash/api/auth/dev-bypass")).status, 421);
 	assert.equal((await request("bar.test", "/entry/exclusive.json")).status, 404);
 	assert.equal((await request("foo.test", "/entry/bar-entry.json")).status, 404);
 	assert.equal(
@@ -163,6 +211,7 @@ try {
 	assert.equal((await request("foo.test", "/_emdash/admin")).status, 421);
 	assert.equal((await request("foo.test", "/_emdash/api/content/posts")).status, 421);
 	assert.equal((await request("foo.test", "/", 18081)).status, 421);
+	assert.equal((await request("platform.test", "/_emdash/admin/login", 18081)).status, 421);
 	assert.equal(
 		(
 			await request("foo.test", "/", 18081, {
@@ -204,6 +253,29 @@ try {
 	]);
 	assert.equal((await request("foo.test")).status, 200);
 	assert.equal((await request("bar.test")).status, 421);
+	await command("docker", [
+		"exec",
+		pg,
+		"psql",
+		"-p",
+		"55432",
+		"-U",
+		"postgres",
+		"-c",
+		"INSERT INTO _emdash_site_hosts VALUES ('platform.test', 'site-foo')",
+	]);
+	assert.equal((await request("platform.test", "/_emdash/admin/login")).status, 421);
+	await command("docker", [
+		"exec",
+		pg,
+		"psql",
+		"-p",
+		"55432",
+		"-U",
+		"postgres",
+		"-c",
+		"DELETE FROM _emdash_site_hosts WHERE hostname = 'platform.test'",
+	]);
 
 	const nodeStatus = await readFile(`/proc/${host.pid}/status`, "utf8");
 	const caddyStatus = await command("docker", [
