@@ -1,4 +1,9 @@
 ---
+import adminStylesUrl from "@emdash-cms/admin/styles.css?url";
+import { getLocaleDir, loadMessages, resolveLocale } from "@emdash-cms/admin/locales";
+import { translateCentralAdminLabels } from "@emdash-cms/admin/locales/server";
+import { AdminAccess } from "../AdminAccess.js";
+
 export const prerender = false;
 const noAccess = Astro.url.pathname === "/_emdash/admin/no-access";
 const signInUrl = import.meta.env.PUBLIC_CLERK_SIGN_IN_URL;
@@ -11,46 +16,32 @@ hostedSignIn.searchParams.set(
 	"redirect_url",
 	`${process.env.PROOF_ADMIN_ORIGIN}/_emdash/admin/login`,
 );
+const locale = resolveLocale(Astro.request);
+const messages = await loadMessages(locale);
+const labels = translateCentralAdminLabels(messages);
+const title = noAccess ? labels.noSiteAccess : labels.signIn;
+const documentTitle = noAccess ? labels.noSiteAccessTitle : labels.signInTitle;
 Astro.response.headers.set("Cache-Control", "private, no-store");
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={locale} dir={getLocaleDir(locale)} data-theme="classic">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>{noAccess ? "No site access - EmDash" : "Sign in - EmDash"}</title>
+		<title>{documentTitle}</title>
+		<link rel="stylesheet" href={adminStylesUrl} />
 	</head>
 	<body>
-		<main>
-			{noAccess ? (
-				<>
-					<h1>No site access</h1>
-					<p>You are signed in, but you do not have access to a site yet.</p>
-					<button id="sign-out" type="button">Sign out</button>
-				</>
-			) : (
-				<>
-					<h1>Sign in to EmDash</h1>
-					<a href={hostedSignIn.toString()}>Continue to Clerk</a>
-				</>
-			)}
-		</main>
-		<script>
-			import { Clerk } from "@clerk/clerk-js";
-
-			const key = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY;
-			if (!key) throw new Error("Set PUBLIC_CLERK_PUBLISHABLE_KEY when building the admin");
-			const clerk = new Clerk(key);
-			await clerk.load();
-			const signOut = document.getElementById("sign-out");
-			if (signOut) {
-				signOut.addEventListener("click", async () => {
-					await clerk.signOut({ redirectUrl: "/_emdash/admin/login" });
-				});
-			} else if (clerk.user) {
-				window.location.replace("/_emdash/admin/no-access");
-			}
-		</script>
+		<AdminAccess
+			client:load
+			noAccess={noAccess}
+			signInUrl={hostedSignIn.toString()}
+			title={title}
+			description={noAccess ? labels.noSiteDescription : labels.signInDescription}
+			continueLabel={labels.continueToClerk}
+			signOutLabel={labels.signOut}
+			signOutError={labels.signOutError}
+		/>
 	</body>
 </html>
