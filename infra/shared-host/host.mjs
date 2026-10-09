@@ -6,21 +6,28 @@ import { runWithContext } from "emdash/request-context";
 
 import { resolveSite } from "./site-registry.mjs";
 
+const centralPathPattern = /^\/(?:_emdash(?:\/|$)|admin(?:\/|$)|preview(?:\/|$))/;
+const platformHost = process.env.PROOF_PLATFORM_HOST;
+if (!platformHost || !/^[a-z0-9.-]+$/.test(platformHost)) {
+	throw new Error("Set PROOF_PLATFORM_HOST to a trusted hostname");
+}
+
 const builds = new Map([
 	["site-foo", "foo"],
 	["site-bar", "bar"],
 ]);
 
 const handlers = new Map();
+const buildDirectory = process.env.PROOF_BUILD_DIR ?? "infra/shared-host/site/dist";
 for (const [siteId, site] of builds) {
-	const entry = resolve(
-		process.env.PROOF_BUILD_DIR ?? "infra/shared-host/site/dist",
-		site,
-		"server/entry.mjs",
-	);
+	const entry = resolve(buildDirectory, site, "server/entry.mjs");
 	const { handler } = await import(pathToFileURL(entry).href);
 	handlers.set(siteId, handler);
 }
+
+const { handler: platformHandler } = await import(
+	pathToFileURL(resolve(buildDirectory, "platform/server/entry.mjs")).href
+);
 
 const server = createServer(async (request, response) => {
 	const host = request.headers.host;
@@ -32,7 +39,11 @@ const server = createServer(async (request, response) => {
 		Array.isArray(host) ||
 		!forwardedHost ||
 		Array.isArray(forwardedHost) ||
-		forwardedHost !== host
+		forwardedHost !== host ||
+		host.includes(":") ||
+		host.includes(",") ||
+		request.headers.forwarded !== undefined ||
+		request.headers["x-original-host"] !== undefined
 	) {
 		response.writeHead(421);
 		response.end();
@@ -40,12 +51,29 @@ const server = createServer(async (request, response) => {
 	}
 	try {
 		const siteId = await resolveSite(host);
+		const path = new URL(request.url ?? "/", "http://localhost").pathname;
+		const centralPath = centralPathPattern.test(path);
+		if (host === platformHost) {
+			if (siteId || (request.method !== "GET" && request.method !== "HEAD")) {
+				response.writeHead(421);
+				response.end();
+				return;
+			}
+			if (path === "/admin" || path === "/admin/") {
+				response.writeHead(302, { Location: "/_emdash/admin/login", "Cache-Control": "no-store" });
+				response.end();
+				return;
+			}
+			if (path !== "/_emdash/admin/login" && !path.startsWith("/_astro/")) {
+				response.writeHead(403, { "Cache-Control": "no-store" });
+				response.end();
+				return;
+			}
+			runWithContext({ editMode: false }, () => platformHandler(request, response));
+			return;
+		}
 		const handler = siteId && handlers.get(siteId);
-		if (
-			!handler ||
-			(request.method !== "GET" && request.method !== "HEAD") ||
-			request.url?.startsWith("/_emdash")
-		) {
+		if (!handler || (request.method !== "GET" && request.method !== "HEAD") || centralPath) {
 			response.writeHead(421);
 			response.end();
 			return;

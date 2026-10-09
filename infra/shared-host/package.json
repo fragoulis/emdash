@@ -7,8 +7,12 @@
 	},
 	"dependencies": {
 		"@astrojs/node": "catalog:",
+		"@astrojs/react": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
 		"astro": "catalog:",
 		"emdash": "workspace:*",
+		"@emdash-cms/admin": "workspace:*",
 		"pg": "^8.0.0"
 	}
 }
