@@ -1,0 +1,14 @@
+{
+	"name": "@emdash-cms/shared-host-proof",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"smoke": "node smoke.mjs"
+	},
+	"dependencies": {
+		"@astrojs/node": "catalog:",
+		"astro": "catalog:",
+		"emdash": "workspace:*",
+		"pg": "^8.0.0"
+	}
+}

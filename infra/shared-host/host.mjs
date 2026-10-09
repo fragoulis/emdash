@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { runWithContext } from "emdash/request-context";
 
-import { resolveSite } from "../../demos/postgres/site-registry.mjs";
+import { resolveSite } from "./site-registry.mjs";
 
 const builds = new Map([
 	["site-foo", "foo"],
@@ -14,7 +14,7 @@ const builds = new Map([
 const handlers = new Map();
 for (const [siteId, site] of builds) {
 	const entry = resolve(
-		process.env.PROOF_BUILD_DIR ?? "demos/postgres/proof/dist",
+		process.env.PROOF_BUILD_DIR ?? "infra/shared-host/site/dist",
 		site,
 		"server/entry.mjs",
 	);
