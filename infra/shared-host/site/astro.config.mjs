@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import node from "@astrojs/node";
+import react from "@astrojs/react";
 import { defineConfig } from "astro/config";
 
 const site = process.env.PROOF_SITE;
@@ -15,6 +16,7 @@ export default defineConfig({
 	integrations:
 		site === "admin"
 			? [
+					react(),
 					{
 						name: "admin-route",
 						hooks: {

@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { runWithContext } from "emdash/request-context";
 
-import { staffIdentity } from "./clerk-auth.mjs";
+import { signOutStaff, staffIdentity } from "./clerk-auth.mjs";
 import { resolveSite } from "./site-registry.mjs";
 
 const centralPathPattern = /^\/(?:_emdash(?:\/|$)|admin(?:\/|$)|preview(?:\/|$))/;
@@ -55,6 +55,34 @@ const server = createServer(async (request, response) => {
 		const path = new URL(request.url ?? "/", "http://localhost").pathname;
 		const centralPath = centralPathPattern.test(path);
 		if (host === adminHost) {
+			if (!siteId && path === "/_emdash/api/auth/logout" && request.method === "POST") {
+				if (
+					request.headers.origin !== process.env.PROOF_ADMIN_ORIGIN ||
+					request.headers["x-emdash-request"] !== "1"
+				) {
+					response.writeHead(403, { "Cache-Control": "no-store" });
+					response.end();
+					return;
+				}
+				try {
+					if (!(await signOutStaff(request))) {
+						response.writeHead(401, { "Cache-Control": "no-store" });
+						response.end();
+						return;
+					}
+				} catch (error) {
+					console.error("[shared-host] Clerk logout failed:", error);
+					response.writeHead(503, { "Cache-Control": "no-store" });
+					response.end();
+					return;
+				}
+				response.writeHead(204, {
+					"Cache-Control": "no-store",
+					"Set-Cookie": "__session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+				});
+				response.end();
+				return;
+			}
 			if (siteId || (request.method !== "GET" && request.method !== "HEAD")) {
 				response.writeHead(421);
 				response.end();
@@ -74,7 +102,9 @@ const server = createServer(async (request, response) => {
 				try {
 					identity = await staffIdentity(request);
 				} catch (error) {
-					console.error("[shared-host] Clerk verification failed:", error);
+					if (!error?.reason?.startsWith("token-") && error?.status !== 404) {
+						console.error("[shared-host] Clerk verification failed:", error);
+					}
 				}
 				if (identity) {
 					runWithContext({ editMode: false }, () => adminHandler(request, response));
