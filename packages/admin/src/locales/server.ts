@@ -78,6 +78,32 @@ const TOOLBAR_MESSAGES = {
 	uploadingFile: msg({ id: "visualEditing.uploadingFile", message: "Uploading {filename}…" }),
 } satisfies Record<keyof VisualEditingToolbarLabels, MessageDescriptor>;
 
+const CENTRAL_ADMIN_MESSAGES = {
+	noSiteAccess: msg`No site access`,
+	signIn: msg`Sign in to EmDash`,
+	noSiteAccessTitle: msg`No site access - EmDash`,
+	signInTitle: msg`Sign in - EmDash`,
+	noSiteDescription: msg`You are signed in, but you do not have access to a site yet.`,
+	signInDescription: msg`Sign in with your staff account to manage sites.`,
+	continueToClerk: msg`Continue to Clerk`,
+	signOut: msg`Sign out`,
+	signOutError: msg`Could not sign out. Try again.`,
+};
+
+export function translateCentralAdminLabels(messages: Messages) {
+	return {
+		noSiteAccess: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.noSiteAccess),
+		signIn: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signIn),
+		noSiteAccessTitle: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.noSiteAccessTitle),
+		signInTitle: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signInTitle),
+		noSiteDescription: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.noSiteDescription),
+		signInDescription: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signInDescription),
+		continueToClerk: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.continueToClerk),
+		signOut: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signOut),
+		signOutError: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signOutError),
+	};
+}
+
 function resolveToolbarMessage(messages: Messages, descriptor: MessageDescriptor): string {
 	const translated = descriptor.id ? messages[descriptor.id] : undefined;
 	if (typeof translated === "string") return translated;
