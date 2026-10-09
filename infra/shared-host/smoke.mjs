@@ -111,10 +111,16 @@ try {
 	]);
 
 	let sessionActive = true;
+	let providerUnavailable = false;
 	clerkFixture = createServer((req, res) => {
 		const sessionId = req.url?.split("/")[3];
 		res.setHeader("Content-Type", "application/json");
-		if (sessionId === "sess_fixture" && req.method === "POST") {
+		if (providerUnavailable || sessionId === "sess_outage") {
+			res.writeHead(503);
+			res.end(
+				JSON.stringify({ errors: [{ code: "service_unavailable", message: "Unavailable" }] }),
+			);
+		} else if (sessionId === "sess_fixture" && req.method === "POST") {
 			sessionActive = false;
 			res.end(
 				JSON.stringify({
@@ -132,11 +138,6 @@ try {
 					user_id: "user_fixture",
 					status: sessionActive ? "active" : "revoked",
 				}),
-			);
-		} else if (sessionId === "sess_outage") {
-			res.writeHead(503);
-			res.end(
-				JSON.stringify({ errors: [{ code: "service_unavailable", message: "Unavailable" }] }),
 			);
 		} else {
 			res.writeHead(404);
@@ -253,6 +254,13 @@ try {
 		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}` })).text(),
 		/No site access/,
 	);
+	providerUnavailable = true;
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}` })).status,
+		302,
+	);
+	assert.equal((await request("foo.test")).status, 200);
+	providerUnavailable = false;
 	assert.equal(
 		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}x` })).status,
 		302,
