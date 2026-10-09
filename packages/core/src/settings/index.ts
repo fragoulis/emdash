@@ -12,6 +12,7 @@ import { siteSettingsTag } from "../cache/chrome-tags.js";
 import { resolvePluginEncryptionKeys } from "../config/secrets.js";
 import { MediaRepository } from "../database/repositories/media.js";
 import { OptionsRepository } from "../database/repositories/options.js";
+import { SiteSettingsRepository, selectedSiteId } from "../database/repositories/site-settings.js";
 import { withTransaction } from "../database/transaction.js";
 import type { Database } from "../database/types.js";
 import { getDb } from "../loader.js";
@@ -94,14 +95,23 @@ async function decodePersistedPluginSetting(
  */
 const SITE_SETTINGS_CACHE_KEY = Symbol.for("emdash:site-settings");
 const g = globalThis as Record<symbol, unknown>;
-const settingsCache: SingleFlightCache<Partial<SiteSettings>> =
+const settingsCaches: Map<string, SingleFlightCache<Partial<SiteSettings>>> =
 	// eslint-disable-next-line typescript/no-unsafe-type-assertion -- globalThis singleton pattern (see request-context.ts)
-	(g[SITE_SETTINGS_CACHE_KEY] as SingleFlightCache<Partial<SiteSettings>> | undefined) ??
+	(g[SITE_SETTINGS_CACHE_KEY] as Map<string, SingleFlightCache<Partial<SiteSettings>>> | undefined) ??
 	(() => {
-		const c = createSingleFlightCache<Partial<SiteSettings>>();
-		g[SITE_SETTINGS_CACHE_KEY] = c;
-		return c;
+		const caches = new Map<string, SingleFlightCache<Partial<SiteSettings>>>();
+		g[SITE_SETTINGS_CACHE_KEY] = caches;
+		return caches;
 	})();
+
+function settingsCache(siteId: string): SingleFlightCache<Partial<SiteSettings>> {
+	let cache = settingsCaches.get(siteId);
+	if (!cache) {
+		cache = createSingleFlightCache<Partial<SiteSettings>>();
+		settingsCaches.set(siteId, cache);
+	}
+	return cache;
+}
 
 /**
  * Bump the isolate-wide site-settings cache version, forcing the next
@@ -111,9 +121,9 @@ const settingsCache: SingleFlightCache<Partial<SiteSettings>> =
  * own cached copy until they expire — staleness bounded by isolate lifetime.
  */
 export function invalidateSiteSettingsCache(): void {
-	invalidateSingleFlightCache(settingsCache);
-	// Cross-isolate invalidation for the optional distributed object cache.
-	invalidateObjectCache(SETTINGS_CACHE_NAMESPACE);
+	const siteId = selectedSiteId();
+	invalidateSingleFlightCache(settingsCache(siteId));
+	invalidateObjectCache(`${SETTINGS_CACHE_NAMESPACE}:${siteId}`);
 }
 
 /**
@@ -188,7 +198,8 @@ export async function getSiteSetting<K extends SiteSettingKey>(
 	// whole settings object up-front, then `EmDashHead` or a plugin
 	// asks for one key — no reason the singular call should round-trip
 	// again.
-	const primed = peekRequestCache<Partial<SiteSettings>>("siteSettings");
+	const siteId = selectedSiteId();
+	const primed = peekRequestCache<Partial<SiteSettings>>(`siteSettings:${siteId}`);
 	if (primed) {
 		const settings = await primed;
 		return settings[key];
@@ -196,7 +207,7 @@ export async function getSiteSetting<K extends SiteSettingKey>(
 
 	// Otherwise cache per-key. Templates that pull several settings
 	// independently still share the in-flight query for each one.
-	return requestCached(`siteSetting:${key}`, async () => {
+	return requestCached(`siteSetting:${siteId}:${key}`, async () => {
 		const db = await getDb();
 		return getSiteSettingWithDb(key, db);
 	});
@@ -213,8 +224,8 @@ export async function getSiteSettingWithDb<K extends SiteSettingKey>(
 	db: Kysely<Database>,
 	storage: Storage | null = null,
 ): Promise<SiteSettings[K] | undefined> {
-	const options = new OptionsRepository(db);
-	const value = await options.get<SiteSettings[K]>(`${SETTINGS_PREFIX}${key}`);
+	const options = new SiteSettingsRepository(db);
+	const value = await options.get<SiteSettings[K]>(key);
 
 	if (!value) {
 		return undefined;
@@ -266,12 +277,13 @@ export function getSiteSettings(): Promise<Partial<SiteSettings>> {
 	// global scope's lifetime without ever sharing an awaitable promise. The
 	// distributed object cache (cachedQuery) sits beneath both, backing cold
 	// isolates without a database round-trip.
-	return requestCached("siteSettings", () =>
+	const siteId = selectedSiteId();
+	return requestCached(`siteSettings:${siteId}`, () =>
 		singleFlightCached(
-			settingsCache,
+			settingsCache(siteId),
 			() =>
 				cachedQuery({
-					namespace: SETTINGS_CACHE_NAMESPACE,
+					namespace: `${SETTINGS_CACHE_NAMESPACE}:${siteId}`,
 					key: "all",
 					load: async () => {
 						const db = await getDb();
@@ -307,14 +319,14 @@ export async function getSiteSettingsWithDb(
 	db: Kysely<Database>,
 	storage: Storage | null = null,
 ): Promise<Partial<SiteSettings>> {
-	const options = new OptionsRepository(db);
-	const allOptions = await options.getByPrefix(SETTINGS_PREFIX);
+	const options = new SiteSettingsRepository(db);
+	const allOptions = await options.getAll();
 
 	const settings: Record<string, unknown> = {};
 
 	// Convert Map to settings object, removing the prefix
 	for (const [key, value] of allOptions) {
-		const settingKey = key.replace(SETTINGS_PREFIX, "");
+		const settingKey = key;
 		settings[settingKey] = value;
 	}
 
@@ -377,19 +389,22 @@ export async function setSiteSettings(
 
 	try {
 		await withTransaction(db, async (trx) => {
-			const transactionOptions = new OptionsRepository(trx);
-			await transactionOptions.setMany(updates);
-			await transactionOptions.deleteMany(deletions);
+			const transactionOptions = new SiteSettingsRepository(trx);
+			for (const [key, value] of Object.entries(updates)) {
+				await transactionOptions.set(key.slice(SETTINGS_PREFIX.length), value);
+			}
+			for (const key of deletions) {
+				await transactionOptions.delete(key.slice(SETTINGS_PREFIX.length));
+			}
 
 			for (const [key, patch] of nestedPatches) {
-				const optionName = `${SETTINGS_PREFIX}${key}`;
-				const next = { ...(await transactionOptions.get<Record<string, unknown>>(optionName)) };
+				const next = { ...(await transactionOptions.get<Record<string, unknown>>(key)) };
 				for (const [field, fieldValue] of Object.entries(patch)) {
 					if (fieldValue === null) delete next[field];
 					else if (fieldValue !== undefined) next[field] = fieldValue;
 				}
-				if (Object.keys(next).length === 0) await transactionOptions.delete(optionName);
-				else await transactionOptions.set(optionName, next);
+				if (Object.keys(next).length === 0) await transactionOptions.delete(key);
+				else await transactionOptions.set(key, next);
 			}
 		});
 	} finally {

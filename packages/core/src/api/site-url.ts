@@ -11,7 +11,7 @@
 
 import type { Kysely } from "kysely";
 
-import { OptionsRepository } from "../database/repositories/options.js";
+import { SiteSettingsRepository } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import { getConfiguredOrigin, type SiteUrlConfig } from "./public-url.js";
 
@@ -54,7 +54,7 @@ export async function getChosenSiteOrigin(
 ): Promise<string | undefined> {
 	return (
 		getConfiguredOrigin(config) ??
-		siteUrlSettingOrigin(await new OptionsRepository(db).get("site:url"))
+		siteUrlSettingOrigin(await new SiteSettingsRepository(db).get("url"))
 	);
 }
 
@@ -67,13 +67,7 @@ export async function getSiteBaseUrl(
 	if (configured) {
 		return `${configured}/_emdash`;
 	}
-	const options = new OptionsRepository(db);
-	const stored = await options.getMany(["site:url", "emdash:site_url"]);
-	const storedUrl = resolveSiteOrigin(
-		config,
-		stored.get("site:url"),
-		stored.get("emdash:site_url"),
-	);
+	const storedUrl = resolveSiteOrigin(config, await new SiteSettingsRepository(db).get("url"), undefined);
 	if (storedUrl) {
 		return `${storedUrl}/_emdash`;
 	}

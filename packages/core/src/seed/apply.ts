@@ -47,6 +47,7 @@ import { SchemaError, SchemaRegistry } from "../schema/registry.js";
 import type { CollectionWithFields, Field } from "../schema/types.js";
 import { FTSManager } from "../search/fts-manager.js";
 import { invalidateSiteSettingsCache, setSiteSettings } from "../settings/index.js";
+import { SiteSettingsRepository } from "../database/repositories/site-settings.js";
 import type { SiteSettings } from "../settings/types.js";
 import type { Storage } from "../storage/types.js";
 import { chunks, SQL_BATCH_SIZE } from "../utils/chunks.js";
@@ -82,15 +83,15 @@ async function applySiteSettings(
 		return;
 	}
 
-	const options = new OptionsRepository(db);
+	const options = new SiteSettingsRepository(db);
 	let applied = 0;
 	try {
 		for (const [key, value] of entries) {
-			const write = await options.compareAndSet(`site:${key}`, null, value);
-			if (!write.applied && onConflict === "error") {
+			const inserted = await options.setIfAbsent(key, value);
+			if (!inserted && onConflict === "error") {
 				throw new Error(`Conflict: site setting "site:${key}" already exists`);
 			}
-			if (write.applied) applied++;
+			if (inserted) applied++;
 		}
 	} finally {
 		if (applied > 0) {

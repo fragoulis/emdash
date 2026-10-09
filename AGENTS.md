@@ -47,7 +47,7 @@ Main is kept green. Do not run checks before editing merely to establish a basel
 - Run `pnpm format`.
 - Run `pnpm build` from the repository root. Package-scoped builds are not sufficient because validation resolves declaration output from other workspace packages.
 - Run `pnpm lint:quick` and confirm `pnpm --silent lint:json | jq '.diagnostics | length'` returns zero.
-- Run the tests relevant to the changed behavior.
+- Run only the test files relevant to the changed code and behavior. Never run the full test suite (`pnpm test`), even if a skill asks for it; it is too slow and can hang. Report that full-suite tests were not run.
 - Run `pnpm typecheck` (packages) or `pnpm typecheck:demos` (Astro demos).
 
 If a check fails, make sure the root build is current and rerun it. Treat any remaining failure as introduced by the current work and fix it before committing.
