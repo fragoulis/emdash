@@ -4,9 +4,7 @@ This file provides guidance to agentic coding tools working in this repository.
 
 This is a fork `emdash/emdash` repo with my own customizations.
 
-The `main` branch is synced with the upstream.
-
-The `multi-tenancy` branch is the working branch for a greenfield multi-site Node deployment. Existing database rows still need forward-only backfills; the deployment has no existing Astro sites or users to move. When changing site ownership, request routing, settings, or central admin access, read [the multi-site hosting spec](docs/technical-specs/multi-site-hosting.md) and the relevant GitHub issue. The spec records the agreed target design, not a claim that all of it is implemented.
+Existing database rows still need forward-only backfills; the deployment has no existing Astro sites or users to move. When changing site ownership, request routing, settings, or central admin access, read [the multi-site hosting spec](docs/technical-specs/multi-site-hosting.md) and the relevant GitHub issue. The spec records the agreed target design, not a claim that all of it is implemented.
 
 # Issue tracker
 
