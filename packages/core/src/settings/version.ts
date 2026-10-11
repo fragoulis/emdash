@@ -2,9 +2,8 @@ import type { Kysely, RawBuilder } from "kysely";
 import { sql } from "kysely";
 
 import { isPostgres } from "../database/dialect-helpers.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
-
-const SITE_OPTION_PREFIX = "site:%";
 
 /** Returns the canonical JSON representation of a site-settings revision fingerprint. */
 export function normalizeSiteSettingsVersion(input: string): string {
@@ -28,6 +27,7 @@ export function normalizeSiteSettingsVersion(input: string): string {
  * existing read. It deliberately does not read option values.
  */
 export function siteSettingsVersionQuery(db: Kysely<Database>): RawBuilder<string> {
+	const siteId = selectedSiteId();
 	if (isPostgres(db)) {
 		return sql<string>`(
 			select coalesce(
@@ -35,7 +35,7 @@ export function siteSettingsVersionQuery(db: Kysely<Database>): RawBuilder<strin
 				'[]'
 			)
 			from options
-			where name like ${SITE_OPTION_PREFIX}
+			where site_id = ${siteId} and name like ${`site:${siteId}:%`}
 		)`;
 	}
 
@@ -47,7 +47,7 @@ export function siteSettingsVersionQuery(db: Kysely<Database>): RawBuilder<strin
 		from (
 			select name, revision
 			from options
-			where name glob ${"site:*"}
+			where site_id = ${siteId} and name glob ${`site:${siteId}:*`}
 			order by name
 		)
 	)`;

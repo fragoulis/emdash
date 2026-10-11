@@ -21,6 +21,8 @@ import { getChosenSiteOrigin } from "#api/site-url.js";
 import { siteSettingsTag } from "#cache/chrome-tags.js";
 import { invalidateRouteCache } from "#cache/route-cache.js";
 
+import { getRequestContext } from "../../../../request-context.js";
+
 export const prerender = false;
 
 const siteDomainBody = z.object({ domain: z.string().min(1).max(253) });
@@ -33,6 +35,7 @@ export const GET: APIRoute = async ({ locals }) => {
 
 	const denied = requirePerm(user, "settings:read");
 	if (denied) return denied;
+	if (!getRequestContext()?.siteId) return apiError("SITE_REQUIRED", "A site is required", 403);
 
 	try {
 		const siteOrigin = (await getChosenSiteOrigin(emdash.db, emdash.config)) ?? null;
@@ -50,6 +53,7 @@ export const POST: APIRoute = async ({ request, locals, cache }) => {
 
 	const denied = requirePerm(user, "settings:manage");
 	if (denied) return denied;
+	if (!getRequestContext()?.siteId) return apiError("SITE_REQUIRED", "A site is required", 403);
 
 	try {
 		const body = await parseBody(request, siteDomainBody);

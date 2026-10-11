@@ -12,6 +12,7 @@ import { siteSettingsTag } from "../cache/chrome-tags.js";
 import { resolvePluginEncryptionKeys } from "../config/secrets.js";
 import { MediaRepository } from "../database/repositories/media.js";
 import { OptionsRepository } from "../database/repositories/options.js";
+import { SiteSettingsRepository, selectedSiteId } from "../database/repositories/site-settings.js";
 import { withTransaction } from "../database/transaction.js";
 import type { Database } from "../database/types.js";
 import { getDb } from "../loader.js";
@@ -110,28 +111,41 @@ interface SiteSettingsCache {
 const SITE_SETTINGS_CACHE_TTL_MS = 30_000;
 const SITE_SETTINGS_CACHE_KEY = Symbol.for("emdash:site-settings:swr");
 const g = globalThis as Record<symbol, unknown>;
-const settingsCache: SiteSettingsCache =
-	// eslint-disable-next-line typescript/no-unsafe-type-assertion -- globalThis singleton pattern (see request-context.ts)
-	(g[SITE_SETTINGS_CACHE_KEY] as SiteSettingsCache | undefined) ??
-	(() => {
-		const c: SiteSettingsCache = {
+// oxlint-disable typescript/no-unsafe-type-assertion -- globalThis singleton pattern (see request-context.ts)
+const settingsCaches: Map<string, SiteSettingsCache> = (g[
+	SITE_SETTINGS_CACHE_KEY
+] as Map<string, SiteSettingsCache> | undefined) ??
+(() => {
+	const caches = new Map<string, SiteSettingsCache>();
+	g[SITE_SETTINGS_CACHE_KEY] = caches;
+	return caches;
+})();
+// oxlint-enable typescript/no-unsafe-type-assertion
+
+function getSettingsCache(siteId: string = selectedSiteId()): SiteSettingsCache {
+	let cache = settingsCaches.get(siteId);
+	if (!cache) {
+		cache = {
 			snapshot: null,
 			expiresAt: 0,
 			generation: 0,
 			revalidatingUntil: 0,
 			refresh: createSingleFlightCache<CachedSiteSettings>(),
 		};
-		g[SITE_SETTINGS_CACHE_KEY] = c;
-		return c;
-	})();
+		settingsCaches.set(siteId, cache);
+	}
+	return cache;
+}
 
 /** Capture the resolved snapshot before route-cache headers are finalized. @internal */
 export function peekSiteSettingsSnapshot(): CachedSiteSettings | null {
+	const settingsCache = getSettingsCache();
 	return settingsCache.snapshot;
 }
 
 /** Discard a snapshot found stale by the route-cache freshness check. @internal */
 export function invalidateSiteSettingsSnapshot(): void {
+	const settingsCache = getSettingsCache();
 	settingsCache.generation++;
 	settingsCache.snapshot = null;
 	settingsCache.expiresAt = 0;
@@ -147,9 +161,10 @@ export function invalidateSiteSettingsSnapshot(): void {
  * own cached copy while a background refresh picks up remote writes.
  */
 export function invalidateSiteSettingsCache(): void {
+	const siteId = getRequestContext()?.siteId;
+	if (!siteId) return;
 	invalidateSiteSettingsSnapshot();
-	// Cross-isolate invalidation for the optional distributed object cache.
-	invalidateObjectCache(SETTINGS_CACHE_NAMESPACE);
+	invalidateObjectCache(`${SETTINGS_CACHE_NAMESPACE}:${siteId}`);
 }
 
 /**
@@ -224,7 +239,8 @@ export async function getSiteSetting<K extends SiteSettingKey>(
 	// whole settings object up-front, then `EmDashHead` or a plugin
 	// asks for one key — no reason the singular call should round-trip
 	// again.
-	const primed = peekRequestCache<Partial<SiteSettings>>("siteSettings");
+	const siteId = selectedSiteId();
+	const primed = peekRequestCache<Partial<SiteSettings>>(`siteSettings:${siteId}`);
 	if (primed) {
 		const settings = await primed;
 		return settings[key];
@@ -232,7 +248,7 @@ export async function getSiteSetting<K extends SiteSettingKey>(
 
 	// Otherwise cache per-key. Templates that pull several settings
 	// independently still share the in-flight query for each one.
-	return requestCached(`siteSetting:${key}`, async () => {
+	return requestCached(`siteSetting:${siteId}:${key}`, async () => {
 		const db = await getDb();
 		return getSiteSettingWithDb(key, db);
 	});
@@ -249,8 +265,8 @@ export async function getSiteSettingWithDb<K extends SiteSettingKey>(
 	db: Kysely<Database>,
 	storage: Storage | null = null,
 ): Promise<SiteSettings[K] | undefined> {
-	const options = new OptionsRepository(db);
-	const value = await options.get<SiteSettings[K]>(`${SETTINGS_PREFIX}${key}`);
+	const options = new SiteSettingsRepository(db);
+	const value = await options.get<SiteSettings[K]>(key);
 
 	if (!value) {
 		return undefined;
@@ -282,11 +298,12 @@ export async function getSiteSettingWithDb<K extends SiteSettingKey>(
 }
 
 function refreshSiteSettings(): Promise<CachedSiteSettings> {
+	const settingsCache = getSettingsCache();
 	return singleFlightCached(
 		settingsCache.refresh,
 		() =>
 			cachedQuery({
-				namespace: SETTINGS_CACHE_NAMESPACE,
+				namespace: `${SETTINGS_CACHE_NAMESPACE}:${selectedSiteId()}`,
 				key: "snapshot-v1",
 				load: async () => loadSiteSettingsSnapshot(await getDb()),
 			}),
@@ -295,11 +312,13 @@ function refreshSiteSettings(): Promise<CachedSiteSettings> {
 }
 
 function installSiteSettings(snapshot: CachedSiteSettings): void {
+	const settingsCache = getSettingsCache();
 	settingsCache.snapshot = snapshot;
 	settingsCache.expiresAt = Date.now() + SITE_SETTINGS_CACHE_TTL_MS;
 }
 
 function revalidateSiteSettings(): void {
+	const settingsCache = getSettingsCache();
 	const now = Date.now();
 	if (settingsCache.revalidatingUntil > now) return;
 	settingsCache.revalidatingUntil = now + SITE_SETTINGS_CACHE_TTL_MS;
@@ -316,6 +335,7 @@ function revalidateSiteSettings(): void {
 }
 
 async function loadCachedSiteSettings(): Promise<CachedSiteSettings> {
+	const settingsCache = getSettingsCache();
 	for (let attempt = 0; attempt < 3; attempt++) {
 		const snapshot = settingsCache.snapshot;
 		if (snapshot) {
@@ -349,8 +369,10 @@ async function loadCachedSiteSettings(): Promise<CachedSiteSettings> {
  * ```
  */
 export function getSiteSettings(): Promise<Partial<SiteSettings>> {
-	return requestCached("siteSettings", async () => {
-		const snapshot = await requestCached("siteSettingsSnapshot", async () => {
+	const siteId = selectedSiteId();
+	const settingsCache = getSettingsCache(siteId);
+	return requestCached(`siteSettings:${siteId}`, async () => {
+		const snapshot = await requestCached(`siteSettingsSnapshot:${siteId}`, async () => {
 			const ctx = getRequestContext();
 			const requestSettings = ctx?.siteSettings;
 			if (ctx?.routeCacheFill) return loadSiteSettingsSnapshot(await getDb());
@@ -367,7 +389,7 @@ export function getSiteSettings(): Promise<Partial<SiteSettings>> {
 		});
 		return snapshot.data;
 	}).then(async (data) => {
-		const snapshot = await peekRequestCache<CachedSiteSettings>("siteSettingsSnapshot");
+		const snapshot = await peekRequestCache<CachedSiteSettings>(`siteSettingsSnapshot:${siteId}`);
 		if (snapshot) getRequestContext()?.siteSettings?.onRead(snapshot.version);
 		return data;
 	});
@@ -404,20 +426,17 @@ async function loadSiteSettingsSnapshot(
 	db: Kysely<Database>,
 	storage: Storage | null = null,
 ): Promise<CachedSiteSettings> {
-	const options = new OptionsRepository(db);
-	const allOptions = await options.getVersionedByPrefix(SETTINGS_PREFIX);
+	const options = new SiteSettingsRepository(db);
+	const allOptions = await options.getVersioned();
 	const version = normalizeSiteSettingsVersion(
 		JSON.stringify(
-			[...allOptions]
-				.filter(([key]) => key.startsWith(SETTINGS_PREFIX))
-				.map(([key, value]) => [key, value.revision]),
+			[...allOptions].map(([key, value]) => [`site:${selectedSiteId()}:${key}`, value.revision]),
 		),
 	);
 	const settings: Record<string, unknown> = {};
 
 	for (const [key, value] of allOptions) {
-		const settingKey = key.replace(SETTINGS_PREFIX, "");
-		settings[settingKey] = value.value;
+		settings[key] = value.value;
 	}
 
 	const typedSettings = settings as Partial<SiteSettings>;
@@ -466,6 +485,7 @@ export async function setSiteSettings(
 	settings: SiteSettingsUpdate,
 	db: Kysely<Database>,
 ): Promise<void> {
+	selectedSiteId();
 	const updates: Record<string, unknown> = {};
 	const deletions: string[] = [];
 	const nestedPatches: [key: string, patch: Record<string, unknown>][] = [];
@@ -483,19 +503,22 @@ export async function setSiteSettings(
 
 	try {
 		await withTransaction(db, async (trx) => {
-			const transactionOptions = new OptionsRepository(trx);
-			await transactionOptions.setMany(updates);
-			await transactionOptions.deleteMany(deletions);
+			const transactionOptions = new SiteSettingsRepository(trx);
+			for (const [key, value] of Object.entries(updates)) {
+				await transactionOptions.set(key.slice(SETTINGS_PREFIX.length), value);
+			}
+			for (const key of deletions) {
+				await transactionOptions.delete(key.slice(SETTINGS_PREFIX.length));
+			}
 
 			for (const [key, patch] of nestedPatches) {
-				const optionName = `${SETTINGS_PREFIX}${key}`;
-				const next = { ...(await transactionOptions.get<Record<string, unknown>>(optionName)) };
+				const next = { ...(await transactionOptions.get<Record<string, unknown>>(key)) };
 				for (const [field, fieldValue] of Object.entries(patch)) {
 					if (fieldValue === null) delete next[field];
 					else if (fieldValue !== undefined) next[field] = fieldValue;
 				}
-				if (Object.keys(next).length === 0) await transactionOptions.delete(optionName);
-				else await transactionOptions.set(optionName, next);
+				if (Object.keys(next).length === 0) await transactionOptions.delete(key);
+				else await transactionOptions.set(key, next);
 			}
 
 			// A running export detects writes to tables without updated_at via

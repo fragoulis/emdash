@@ -1001,7 +1001,7 @@ function ContentNewPage() {
 			onQuickEditByline={handleQuickEditByline}
 			currentUser={currentUser}
 			manifest={manifest ?? null}
-			timezone={manifest.timezone ?? "UTC"}
+			timezone={manifest.timezone ?? "Europe/Athens"}
 		/>
 	);
 }
@@ -1984,7 +1984,7 @@ function ContentEditPage() {
 			collection={collection}
 			collectionLabel={collectionConfig.labelSingular || collectionConfig.label}
 			item={item}
-			timezone={manifest.timezone ?? "UTC"}
+			timezone={manifest.timezone ?? "Europe/Athens"}
 			fields={collectionConfig.fields}
 			isSaving={
 				updateMutation.isPending || publishedAtMutation.isPending || publishMutation.isPending
