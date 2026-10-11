@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { OptionsRepository } from "../../../src/database/repositories/options.js";
 import type { Database } from "../../../src/database/types.js";
 import { createContentAccessWithWrite } from "../../../src/plugins/context.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { BlockTypeRegistry } from "../../../src/schema/block-type-registry.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { applySeed } from "../../../src/seed/apply.js";
@@ -240,10 +241,14 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 				.where("id", "=", operation.id)
 				.execute();
 
-			await setSiteSettings({ title: "Updated title" }, ctx.db);
+			await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+				setSiteSettings({ title: "Updated title" }, ctx.db),
+			);
 
 			expect((await repo.require(operation.id)).writeEpoch).toBe(1);
-			const settings = await getSiteSettingsWithDb(ctx.db);
+			const settings = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+				getSiteSettingsWithDb(ctx.db),
+			);
 			expect(settings.title).toBe("Updated title");
 		});
 
@@ -256,12 +261,20 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 				.where("id", "=", operation.id)
 				.execute();
 
-			await setSiteSettings({ title: "Before" }, ctx.db);
+			await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+				setSiteSettings({ title: "Before" }, ctx.db),
+			);
 			await blockWriteEpochUpdates(ctx.dialect, ctx.db);
 
-			await expect(setSiteSettings({ title: "After" }, ctx.db)).rejects.toThrow();
+			await expect(
+				runWithContext({ editMode: false, siteId: "site-default" }, () =>
+					setSiteSettings({ title: "After" }, ctx.db),
+				),
+			).rejects.toThrow();
 
-			const settings = await getSiteSettingsWithDb(ctx.db);
+			const settings = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+				getSiteSettingsWithDb(ctx.db),
+			);
 			expect(settings.title).toBe("Before");
 			expect((await repo.require(operation.id)).writeEpoch).toBe(1);
 		});
@@ -275,7 +288,9 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 				.where("id", "=", operation.id)
 				.execute();
 
-			await setSiteSettings({ title: undefined, tagline: undefined }, ctx.db);
+			await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+				setSiteSettings({ title: undefined, tagline: undefined }, ctx.db),
+			);
 
 			expect((await repo.require(operation.id)).writeEpoch).toBe(0);
 		});

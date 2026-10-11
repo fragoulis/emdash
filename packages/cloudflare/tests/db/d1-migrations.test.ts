@@ -179,8 +179,6 @@ describe("D1 migration executor", () => {
 
 	it("applies a pending migration through the REST dialect while holding the migration lock", async () => {
 		const identity = await getCoreMigrationIdentity();
-		const d1 = fakeD1WithLastMigrationPending(identity.names, 0);
-		globalThis.fetch = d1.fetch;
 		const pendingMigration = identity.names.at(-1);
 		if (!pendingMigration) throw new Error("Expected at least one core migration.");
 
@@ -239,26 +237,17 @@ describe("D1 migration executor", () => {
 		});
 		globalThis.fetch = fetch;
 
-		const executor = await createMigrationExecutor(
-			{ binding: "DB" },
-			{
-				projectRoot: "/project",
-				env: { CLOUDFLARE_API_TOKEN: TOKEN },
-				overrides: { accountId: ACCOUNT_ID, d1: DATABASE_ID },
-			},
-		);
-
 		await expect(
 			(await createExecutor()).execute(migrationRequest(identity, "apply")),
-		).resolves.toMatchObject({ pending: [], executed: [d1.pendingMigration] });
+		).resolves.toMatchObject({ pending: [], executed: [pendingMigration] });
 		expect(
-			d1.requests.find((request) =>
+			requests.find((request) =>
 				/\binsert\s+into\s+["`]?_emdash_migrations["`]?\b/i.test(request.sql),
 			)?.params[0],
-		).toBe(d1.pendingMigration);
-		expect(d1.lockDuringInsert).toEqual([expect.any(Number)]);
-		expect(d1.lockDuringInsert[0]).toBeGreaterThan(0);
-		expect(d1.state.lock).toBe(0);
+		).toBe(pendingMigration);
+		expect(lockDuringInsert).toEqual([expect.any(Number)]);
+		expect(lockDuringInsert[0]).toBeGreaterThan(0);
+		expect(lock).toBe(0);
 	});
 
 	it("takes over a stuck lock through the REST dialect without a request taking it first", async () => {

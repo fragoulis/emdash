@@ -6,12 +6,12 @@ import {
 	normalizeDatetimeStorage,
 	scanDatetimeStorage,
 } from "../../../src/database/datetime-storage.js";
-import { OptionsRepository } from "../../../src/database/repositories/options.js";
+import { createMigrator } from "../../../src/database/migrations/runner.js";
 import type { Database } from "../../../src/database/types.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import {
 	describeEachDialect,
-	setupForDialect,
+	createForDialect,
 	teardownForDialect,
 	type DialectTestContext,
 } from "../../utils/test-db.js";
@@ -71,7 +71,9 @@ describeEachDialect("datetime normalization migration", (dialect) => {
 	let ctx: DialectTestContext;
 
 	beforeEach(async () => {
-		ctx = await setupForDialect(dialect);
+		ctx = await createForDialect(dialect);
+		const { error } = await createMigrator(ctx.db).migrateTo("096_editorial_site_ownership");
+		if (error) throw error;
 		const registry = new SchemaRegistry(ctx.db);
 		await registry.createCollection({
 			slug: "events",
@@ -93,8 +95,16 @@ describeEachDialect("datetime normalization migration", (dialect) => {
 				subFields: [{ slug: "begins_at", label: "Begins at", type: "datetime" }],
 			},
 		});
-		await new OptionsRepository(ctx.db).set("site:timezone", "America/New_York");
+		await setLegacyTimezone("America/New_York");
 	});
+
+	async function setLegacyTimezone(timezone: string) {
+		await ctx.db
+			.insertInto("options")
+			.values({ name: "site:timezone", value: JSON.stringify(timezone) })
+			.onConflict((oc) => oc.column("name").doUpdateSet({ value: JSON.stringify(timezone) }))
+			.execute();
+	}
 
 	afterEach(async () => {
 		await teardownForDialect(ctx);
@@ -594,10 +604,10 @@ describeEachDialect("datetime normalization migration", (dialect) => {
 			await expect(
 				normalizeDatetimeStorage(interruptAt(ctx.db, clean.statements.length, false)),
 			).rejects.toThrow("interrupted");
-			await new OptionsRepository(ctx.db).set("site:timezone", "Europe/Berlin");
+			await setLegacyTimezone("Europe/Berlin");
 
 			await normalizeDatetimeStorage(ctx.db);
-			await new OptionsRepository(ctx.db).set("site:timezone", "America/New_York");
+			await setLegacyTimezone("America/New_York");
 
 			expect(await snapshot()).toEqual(expected);
 		});
@@ -612,7 +622,7 @@ describeEachDialect("datetime normalization migration", (dialect) => {
 			await expect(
 				normalizeDatetimeStorage(interruptAt(ctx.db, firstEventsWrite, false)),
 			).rejects.toThrow("interrupted");
-			await new OptionsRepository(ctx.db).set("site:timezone", "Europe/Berlin");
+			await setLegacyTimezone("Europe/Berlin");
 
 			const rerun = instrument(ctx.db);
 			await normalizeDatetimeStorage(rerun.db);

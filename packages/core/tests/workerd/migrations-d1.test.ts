@@ -14,7 +14,6 @@ import {
 	getExactMigrationStatus,
 	runMigrations,
 } from "../../src/database/migrations/runner.js";
-import { OptionsRepository } from "../../src/database/repositories/options.js";
 import type { Database } from "../../src/database/types.js";
 import { SchemaRegistry } from "../../src/schema/registry.js";
 import { seedPreI18nSchema } from "../utils/pre-i18n-schema.js";
@@ -73,7 +72,7 @@ describe("core migrations on D1", () => {
 	});
 
 	it("normalizes legacy content and revision datetimes", async () => {
-		await runMigrations(db);
+		await migrateThrough("096_editorial_site_ownership");
 		const registry = new SchemaRegistry(db);
 		await registry.createCollection({ slug: "events", label: "Events" });
 		await registry.createField("events", {
@@ -81,7 +80,9 @@ describe("core migrations on D1", () => {
 			label: "Starts at",
 			type: "datetime",
 		});
-		await new OptionsRepository(db).set("site:timezone", "Asia/Tokyo");
+		await sql`INSERT INTO options (name, value) VALUES ('site:timezone', '"Asia/Tokyo"')`.execute(
+			db,
+		);
 		await sql`
 			INSERT INTO ec_events (
 				id, slug, status, created_at, updated_at, version, locale, translation_group, starts_at
@@ -118,7 +119,7 @@ describe("core migrations on D1", () => {
 
 	it("normalizes a large legacy site in far fewer D1 calls than changed rows", async () => {
 		const count = 500;
-		await runMigrations(db);
+		await migrateThrough("096_editorial_site_ownership");
 		const registry = new SchemaRegistry(db);
 		await registry.createCollection({
 			slug: "events",
@@ -136,7 +137,9 @@ describe("core migrations on D1", () => {
 			type: "repeater",
 			validation: { subFields: [{ slug: "begins_at", label: "Begins at", type: "datetime" }] },
 		});
-		await new OptionsRepository(db).set("site:timezone", "Asia/Tokyo");
+		await sql`INSERT INTO options (name, value) VALUES ('site:timezone', '"Asia/Tokyo"')`.execute(
+			db,
+		);
 		const ids = Array.from(
 			{ length: count },
 			(_, index) => `event-${String(index).padStart(4, "0")}`,
@@ -325,7 +328,7 @@ describe("040 byline rebuild on D1", () => {
 		// two auto-committed statements. When only the drop lands, a rerun
 		// finds no FKs to strip and skips the rebuild, leaving the credits in
 		// `_emdash_content_bylines_new`; 071 repairs that state.
-		await runMigrations(db);
+		await migrateThrough("096_editorial_site_ownership");
 		await sql`
 			INSERT INTO _emdash_content_bylines (collection_slug, content_id, byline_id, sort_order)
 			VALUES ('posts', 'p1', 'b1', 0)
@@ -345,6 +348,7 @@ describe("040 byline rebuild on D1", () => {
 		expect(await listIndexes(db, "_emdash_content_bylines")).toEqual([
 			"idx_content_bylines_byline",
 			"idx_content_bylines_content",
+			"idx_emdash_content_bylines_site_id",
 		]);
 		const credits = await sql<{ content_id: string }>`
 			SELECT content_id FROM _emdash_content_bylines
