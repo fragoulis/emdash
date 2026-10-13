@@ -50,6 +50,29 @@ export async function staffIdentity(request) {
 	return session.userId;
 }
 
+export async function staffAuthority(request, siteSlug) {
+	const session = await verifiedSession(request);
+	if (!session) return null;
+	const user = await session.clerk.users.getUser(session.userId);
+	if (user.id !== session.userId) return null;
+	const { rows } = await pool.query(
+		`SELECT s.id AS site_id, m.role FROM _emdash_sites s
+		 LEFT JOIN proof_site_memberships m ON m.site_id = s.id AND m.provider_user_id = $2
+		 WHERE s.slug = $1 AND s.active = 1`,
+		[siteSlug, session.userId],
+	);
+	const site = rows[0];
+	if (!site) return null;
+	const superAdmin = user.publicMetadata?.is_super_admin === true;
+	if (!superAdmin && site.role === null) return null;
+	return {
+		actorId: session.userId,
+		siteId: site.site_id,
+		role: superAdmin ? 50 : site.role,
+		superAdmin,
+	};
+}
+
 export async function signOutStaff(request) {
 	const session = await verifiedSession(request);
 	if (!session) return false;

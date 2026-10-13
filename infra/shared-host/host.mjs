@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { runWithContext } from "emdash/request-context";
 
 import { signOutStaff, staffIdentity } from "./clerk-auth.mjs";
+import { handleProofApi } from "./proof-api.mjs";
 import { resolveSite } from "./site-registry.mjs";
 
 const centralPathPattern = /^\/(?:_emdash(?:\/|$)|admin(?:\/|$)|preview(?:\/|$))/;
@@ -55,7 +56,13 @@ const server = createServer(async (request, response) => {
 		const path = new URL(request.url ?? "/", "http://localhost").pathname;
 		const centralPath = centralPathPattern.test(path);
 		if (host === adminHost) {
-			if (!siteId && path === "/_emdash/api/auth/logout" && request.method === "POST") {
+			if (siteId) {
+				response.writeHead(421);
+				response.end();
+				return;
+			}
+			if (await handleProofApi(request, response, path)) return;
+			if (path === "/_emdash/api/auth/logout" && request.method === "POST") {
 				if (
 					request.headers.origin !== process.env.PROOF_ADMIN_ORIGIN ||
 					request.headers["x-emdash-request"] !== "1"
