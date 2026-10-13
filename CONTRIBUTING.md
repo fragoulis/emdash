@@ -150,9 +150,9 @@ Your site uses `workspace:*` links, so core changes are reflected immediately.
 | **Chore**                                  | Open an implementation PR directly when it is concrete and scoped. Dependency upgrades normally come through Renovate or Dependabot.                        |
 | **Behavior-preserving refactor**           | Open an implementation PR directly and show that behavior is unchanged.                                                                                     |
 | **Behavior-preserving performance change** | Open an implementation PR directly with relevant measurements.                                                                                              |
-| **Feature**                                | Get a [feature plan or RFC](proposals/README.md) accepted before opening the implementation PR.                                                             |
+| **Feature**                                | Open an implementation PR. For broader design decisions, you can propose a [feature plan or RFC](proposals/README.md) first.                                |
 
-A bounded, additive feature normally uses a feature-plan PR without a separate Discussion. A broader or harder-to-reverse feature starts with an Ideas Discussion and then uses an RFC PR. Every implementation PR marked as a Feature links its merged design PR.
+For broader or harder-to-reverse features, use an Ideas Discussion and an RFC PR to settle the design before implementation. If the feature has an accepted design, link it in the implementation PR.
 
 Do not open prototype or draft implementation PRs against EmDash while the design is unresolved. Prototype locally or in a fork and link the evidence from the design PR.
 
