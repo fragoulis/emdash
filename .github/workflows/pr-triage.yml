@@ -81,54 +81,6 @@ jobs:
                 errors.push('Check at least one "Type of change" checkbox.');
               }
 
-              const isFeature = /- \[x\] Feature/i.test(body) || /^feat(\([^)]*\))?!?:/i.test(pr.title);
-              // PRs opened before the process was proposed, or from the template used
-              // before design PRs, are not checked for a design PR link.
-              const designProcessApplies =
-                Date.parse(pr.created_at) >= Date.parse('2026-10-03T00:00:00Z') &&
-                !/New features link to an approved Discussion/i.test(body);
-              if (isFeature && designProcessApplies) {
-                const designMatch = body.match(/New features link to their merged design PR:\s*https:\/\/github\.com\/emdash-cms\/emdash\/pull\/(\d+)/i);
-                if (!designMatch) {
-                  errors.push('Feature PRs require a link to their merged design PR. Follow the feature-plan or RFC process in `proposals/README.md` first.');
-                } else {
-                  const designNumber = Number(designMatch[1]);
-                  if (designNumber === pr.number) {
-                    errors.push('The feature link must point to an earlier merged design PR, not this implementation PR.');
-                  } else {
-                    try {
-                      const { data: designPr } = await github.rest.pulls.get({
-                        owner: context.repo.owner,
-                        repo: context.repo.repo,
-                        pull_number: designNumber,
-                      });
-                      if (!designPr.merged_at) {
-                        errors.push(`Design PR #${designNumber} has not been merged.`);
-                      } else {
-                        const designFiles = await github.paginate(github.rest.pulls.listFiles, {
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          pull_number: designNumber,
-                          per_page: 100,
-                        });
-                        if (
-                          designFiles.length === 0 ||
-                          designFiles.some(file => !file.filename.startsWith('proposals/'))
-                        ) {
-                          errors.push(`PR #${designNumber} is merged but is not a design-only PR under \`proposals/\`.`);
-                        }
-                      }
-                    } catch (error) {
-                      if (error.status === 404) {
-                        errors.push(`Design PR #${designNumber} does not exist in emdash-cms/emdash.`);
-                      } else {
-                        throw error;
-                      }
-                    }
-                  }
-                }
-              }
-
               if (!/- \[x\][^\n]*\bI have read\b[^\n]*CONTRIBUTING/i.test(body)) {
                 errors.push('Check the "I have read CONTRIBUTING.md" checkbox.');
               }
