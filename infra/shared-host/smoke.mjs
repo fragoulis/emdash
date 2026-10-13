@@ -66,7 +66,11 @@ async function waitFor(check) {
 	throw new Error("Service did not become ready");
 }
 
-function request(hostname, path = "/", port = 18080, headers = {}, method = "GET") {
+function proof(slug, id) {
+	return `/_emdash/api/proof/sites/${slug}/entries/${id}`;
+}
+
+function request(hostname, path = "/", port = 18080, headers = {}, method = "GET", body) {
 	return new Promise((resolveResponse, reject) => {
 		const req = httpRequest(
 			{ hostname: "127.0.0.1", port, path, method, headers: { Host: hostname, ...headers } },
@@ -83,7 +87,7 @@ function request(hostname, path = "/", port = 18080, headers = {}, method = "GET
 			},
 		);
 		req.on("error", reject);
-		req.end();
+		req.end(body === undefined ? undefined : JSON.stringify(body));
 	});
 }
 
@@ -112,6 +116,7 @@ try {
 
 	let sessionActive = true;
 	let providerUnavailable = false;
+	let superAdmin = false;
 	clerkFixture = createServer((req, res) => {
 		const sessionId = req.url?.split("/")[3];
 		res.setHeader("Content-Type", "application/json");
@@ -120,6 +125,16 @@ try {
 			res.end(
 				JSON.stringify({ errors: [{ code: "service_unavailable", message: "Unavailable" }] }),
 			);
+		} else if (req.url === "/v1/users/user_fixture") {
+			res.end(
+				JSON.stringify({
+					object: "user",
+					id: "user_fixture",
+					public_metadata: { is_super_admin: superAdmin },
+				}),
+			);
+		} else if (req.url === "/v1/users/user_second") {
+			res.end(JSON.stringify({ object: "user", id: "user_second", public_metadata: {} }));
 		} else if (sessionId === "sess_fixture" && req.method === "POST") {
 			sessionActive = false;
 			res.end(
@@ -130,12 +145,12 @@ try {
 					status: "revoked",
 				}),
 			);
-		} else if (sessionId === "sess_fixture") {
+		} else if (sessionId === "sess_fixture" || sessionId === "sess_second") {
 			res.end(
 				JSON.stringify({
 					object: "session",
 					id: sessionId,
-					user_id: "user_fixture",
+					user_id: sessionId === "sess_second" ? "user_second" : "user_fixture",
 					status: sessionActive ? "active" : "revoked",
 				}),
 			);
@@ -254,7 +269,204 @@ try {
 		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}` })).text(),
 		/No site access/,
 	);
+	const memberHeaders = { Cookie: `__session=${valid}` };
+	const writeHeaders = {
+		...memberHeaders,
+		Origin: origin,
+		"X-EmDash-Request": "1",
+		"Content-Type": "application/json",
+	};
+	assert.equal(
+		(await request("admin.test", proof("foo", "foo-entry"), 18080, memberHeaders)).status,
+		403,
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "foo-entry"), 18080, {
+				Cookie: `__session=${valid}x`,
+			})
+		).status,
+		403,
+	);
+	await command("docker", [
+		"exec",
+		pg,
+		"psql",
+		"-p",
+		"55432",
+		"-U",
+		"postgres",
+		"-c",
+		"INSERT INTO proof_site_memberships VALUES ('user_fixture', 'site-foo', 40), ('user_fixture', 'site-bar', 10)",
+	]);
+	const fooEntry = await request("admin.test", proof("foo", "foo-entry"), 18080, memberHeaders);
+	assert.equal(fooEntry.status, 200);
+	assert.deepEqual(JSON.parse(fooEntry.text()), {
+		title: "Foo story",
+		siteId: "site-foo",
+		actorId: "user_fixture",
+	});
+	assert.equal(
+		(await request("admin.test", proof("bar", "bar-entry"), 18080, memberHeaders)).status,
+		200,
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("bar", "bar-entry"), 18080, writeHeaders, "PUT", {
+				title: "Tampered",
+			})
+		).status,
+		403,
+	);
+	assert.equal(
+		(await request("admin.test", proof("foo", "bar-entry"), 18080, memberHeaders)).status,
+		404,
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "bar-entry"), 18080, writeHeaders, "PUT", {
+				title: "Tampered",
+			})
+		).status,
+		404,
+	);
+	assert.equal(
+		(await request("foo.test", proof("foo", "foo-entry"), 18080, memberHeaders)).status,
+		421,
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "foo-entry"), 18080, memberHeaders, "PUT", {
+				title: "Changed",
+			})
+		).status,
+		403,
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "foo-entry"), 18080, writeHeaders, "PUT", {
+				title: "Updated Foo",
+				siteId: "site-bar",
+				id: "bar-entry",
+			})
+		).status,
+		200,
+	);
+	assert.equal((await request("bar.test", "/entry/shared.json")).text(), '{"title":"Bar story"}');
+	const second = await session({ sid: "sess_second", subject: "user_second" });
+	assert.equal(
+		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${second}` })).status,
+		200,
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "foo-entry"), 18080, {
+				Cookie: `__session=${second}`,
+			})
+		).status,
+		403,
+	);
+	await command("docker", [
+		"exec",
+		pg,
+		"psql",
+		"-p",
+		"55432",
+		"-U",
+		"postgres",
+		"-c",
+		"INSERT INTO proof_site_memberships VALUES ('user_second', 'site-foo', 10), ('user_second', 'site-bar', 40)",
+	]);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "foo-entry"), 18080, {
+				Cookie: `__session=${second}`,
+			})
+		).status,
+		200,
+	);
+	assert.equal(
+		(
+			await request(
+				"admin.test",
+				proof("foo", "foo-entry"),
+				18080,
+				{ ...writeHeaders, Cookie: `__session=${second}` },
+				"PUT",
+				{ title: "Denied" },
+			)
+		).status,
+		403,
+	);
+	assert.equal(
+		(
+			await request(
+				"admin.test",
+				proof("bar", "bar-entry"),
+				18080,
+				{ ...writeHeaders, Cookie: `__session=${second}` },
+				"PUT",
+				{ title: "Updated Bar" },
+			)
+		).status,
+		200,
+	);
+	await command("docker", [
+		"exec",
+		pg,
+		"psql",
+		"-p",
+		"55432",
+		"-U",
+		"postgres",
+		"-c",
+		"DELETE FROM proof_site_memberships WHERE provider_user_id = 'user_fixture' AND site_id = 'site-foo'",
+	]);
+	assert.equal(
+		(await request("admin.test", proof("foo", "foo-entry"), 18080, memberHeaders)).status,
+		403,
+	);
+	assert.equal(
+		(await request("admin.test", proof("bar", "bar-entry"), 18080, memberHeaders)).status,
+		200,
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "foo-entry"), 18080, {
+				Cookie: `__session=${await session({ public_metadata: { is_super_admin: true } })}`,
+			})
+		).status,
+		403,
+	);
+	superAdmin = true;
+	assert.deepEqual(
+		JSON.parse(
+			(await request("admin.test", proof("foo", "foo-entry"), 18080, memberHeaders)).text(),
+		),
+		{ title: "Updated Foo", siteId: "site-foo", actorId: "user_fixture" },
+	);
+	assert.equal(
+		(
+			await request("admin.test", proof("foo", "foo-entry"), 18080, writeHeaders, "PUT", {
+				title: "Super Foo",
+			})
+		).status,
+		200,
+	);
+	superAdmin = false;
+	assert.equal(
+		(await request("admin.test", proof("foo", "foo-entry"), 18080, memberHeaders)).status,
+		403,
+	);
+	assert.equal(
+		(await request("admin.test", proof("bar", "bar-entry"), 18080, memberHeaders)).status,
+		200,
+	);
 	providerUnavailable = true;
+	assert.equal(
+		(await request("admin.test", proof("bar", "bar-entry"), 18080, memberHeaders)).status,
+		503,
+	);
 	assert.equal(
 		(await request("admin.test", noAccess, 18080, { Cookie: `__session=${valid}` })).status,
 		302,
