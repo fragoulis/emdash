@@ -1,6 +1,6 @@
 # Feature plans and RFCs
 
-Design a feature before opening its implementation pull request. Use a short feature plan for bounded, additive functionality within the existing architecture. Use a request for comments (RFC) for broader or harder-to-reverse decisions.
+A feature can be implemented directly in this fork. Use a short feature plan when a bounded feature needs design review. Use a request for comments (RFC) for broader or harder-to-reverse decisions.
 
 Both proposal types live in this directory, use descriptive filenames, and are reviewed in design pull requests. The design pull request number identifies the review and acceptance event; filenames do not use manually allocated numbers.
 
@@ -8,7 +8,7 @@ Both proposal types live in this directory, use descriptive filenames, and are r
 
 ### Direct implementation pull request
 
-Open an implementation pull request directly for changes that do not introduce a feature:
+Open an implementation pull request directly for a scoped feature or for:
 
 - bug fixes with regression evidence;
 - translations;
@@ -16,7 +16,7 @@ Open an implementation pull request directly for changes that do not introduce a
 - chores and dependency automation; and
 - behavior-preserving refactors and performance improvements.
 
-A refactor or performance change that alters observable behavior uses a feature plan or RFC.
+If a change needs design review, use a feature plan or RFC before implementation.
 
 ### Feature plan
 
@@ -48,13 +48,13 @@ Use the [design pull request template](../.github/PULL_REQUEST_TEMPLATE/design.m
 
 Draft design pull requests are encouraged. A draft can contain unresolved questions or lack a sponsor when it states what remains open.
 
-Prototyping is encouraged during design. Test feasibility, interfaces, performance, or interactions locally or in a fork, then link the findings from the design pull request. Do not open prototype implementation pull requests against EmDash before the design is accepted.
+Prototyping is encouraged during design. Test feasibility, interfaces, performance, or interactions locally or in a fork, then link the findings from the design pull request. Keep design-only pull requests free of implementation code.
 
 Set the proposal status to `accepted` in the revision that the Maintainers approve. Merging the design pull request accepts the design and permits implementation. Close the design pull request after rejection or withdrawal; do not keep it open during implementation.
 
 ## Implement an accepted design
 
-Every implementation pull request marked as a Feature links a merged design pull request in the EmDash repository. This applies to Maintainers, the Project Lead, Cloudflare employees, and external contributors. There is no routine exemption for small features.
+When an implementation follows an accepted design, link the merged design pull request.
 
 Implementation review verifies correctness, security, compatibility, tests, and conformance with the accepted design. If implementation exposes a design flaw, open a design pull request that amends the accepted proposal before changing the behavior.
 
@@ -77,12 +77,6 @@ Continue the conversation on the design pull request once it opens.
 A design pull request can amend, supersede, or withdraw an accepted proposal. Resolve conflicts between accepted or pending proposals before merging a conflicting design. The later proposal must update the affected existing proposal in the same design pull request so readers have one consistent plan of record.
 
 Small corrections that do not change the design can use a normal documentation pull request.
-
-## Transition for existing feature pull requests
-
-Feature pull requests opened before 3 October 2026, or opened with the pull request template from before this process, are not failed automatically for lacking a design PR. A settled design can be recorded retrospectively in a feature plan. When product or architecture decisions remain unresolved, move those decisions into a proposal before continuing implementation review.
-
-Ideas Discussions labelled `Approved for PR` under the previous process now carry the `Design PR welcome` label. They proceed with a feature plan like any other welcomed Idea, and an approved Discussion counts as the Ideas Discussion an RFC requires.
 
 ## Proposal index
 
