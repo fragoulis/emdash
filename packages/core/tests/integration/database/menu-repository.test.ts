@@ -9,15 +9,18 @@
  */
 
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { MenuGoneError, MenuRepository } from "../../../src/database/repositories/menu.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 describe("MenuRepository", () => {
 	let db: Kysely<Database>;
 	let repo: MenuRepository;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		db = await setupTestDatabase();

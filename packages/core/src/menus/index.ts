@@ -12,6 +12,7 @@ import type { Kysely } from "kysely";
 import { sql } from "kysely";
 
 import { menuTag } from "../cache/chrome-tags.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
 import {
@@ -47,10 +48,11 @@ export interface MenuQueryOptions {
 export async function getMenu(name: string, options: MenuQueryOptions = {}): Promise<Menu | null> {
 	const locale = resolveLocale(options.locale);
 	const trailingSlash = options.trailingSlash ?? (await getHostTrailingSlash());
-	return requestCached(`menu:${name}:${locale ?? "*"}:${trailingSlash}`, () =>
+	const siteId = selectedSiteId();
+	return requestCached(`menu:${siteId}:${name}:${locale ?? "*"}:${trailingSlash}`, () =>
 		cachedQuery({
 			namespace: CacheNamespace.MENUS,
-			key: `${name}:${locale ?? "*"}:${trailingSlash}`,
+			key: `${siteId}:${name}:${locale ?? "*"}:${trailingSlash}`,
 			load: async () => {
 				const db = await getDb();
 				return getMenuWithDb(name, db, { locale, trailingSlash });
@@ -83,7 +85,9 @@ export async function getMenuWithDb(
 
 	let query = db
 		.selectFrom("_emdash_menus as m")
-		.leftJoin("_emdash_menu_items as i", "i.menu_id", "m.id")
+		.leftJoin("_emdash_menu_items as i", (join) =>
+			join.onRef("i.menu_id", "=", "m.id").onRef("i.site_id", "=", "m.site_id"),
+		)
 		.selectAll("i")
 		.select([
 			"m.id as m_id",
@@ -93,6 +97,7 @@ export async function getMenuWithDb(
 			"m.translation_group as m_translation_group",
 		])
 		.where("m.name", "=", name)
+		.where("m.site_id", "=", selectedSiteId())
 		.orderBy("i.sort_order", "asc");
 	if (chain.length > 0) query = query.where("m.locale", "in", chain);
 	const rows = await query.execute();
@@ -145,6 +150,7 @@ export async function getMenusWithDb(
 	let query = db
 		.selectFrom("_emdash_menus")
 		.select(["id", "name", "label", "locale"])
+		.where("site_id", "=", selectedSiteId())
 		.orderBy("name", "asc");
 	if (locale !== undefined) query = query.where("locale", "=", locale);
 	return query.execute();
@@ -396,7 +402,7 @@ async function resolveContentReferences(
 					const result = await sql<ContentReferenceRow>`
 						SELECT id, slug, published_at, locale, translation_group
 						FROM ${sql.ref(`ec_${collection}`)}
-						WHERE translation_group IN (${sql.join(batch)})
+						WHERE translation_group IN (${sql.join(batch)}) AND site_id = ${selectedSiteId()}
 					`.execute(db);
 					for (const row of result.rows) {
 						const existing = localized.get(row.translation_group);
@@ -413,7 +419,7 @@ async function resolveContentReferences(
 				for (const batch of chunks(unresolved, SQL_BATCH_SIZE)) {
 					const result = await sql<Pick<ContentReferenceRow, "id" | "slug" | "published_at">>`
 						SELECT id, slug, published_at FROM ${sql.ref(`ec_${collection}`)}
-						WHERE id IN (${sql.join(batch)})
+						WHERE id IN (${sql.join(batch)}) AND site_id = ${selectedSiteId()}
 					`.execute(db);
 					for (const row of result.rows) {
 						lookup.set(row.id, { id: row.id, slug: row.slug, publishedAt: row.published_at });
@@ -503,6 +509,7 @@ async function resolveTaxonomyReferences(
 				.selectFrom("taxonomies")
 				.select(["id", "name", "slug", "locale", "translation_group"])
 				.where("translation_group", "in", batch)
+				.where("site_id", "=", selectedSiteId())
 				.$narrowType<{ translation_group: string }>()
 				.execute();
 			for (const row of rows) {
@@ -522,6 +529,7 @@ async function resolveTaxonomyReferences(
 				.selectFrom("taxonomies")
 				.select(["id", "name", "slug"])
 				.where("id", "in", batch)
+				.where("site_id", "=", selectedSiteId())
 				.execute();
 			for (const row of rows) lookup.set(row.id, { name: row.name, slug: row.slug });
 		}

@@ -1,10 +1,11 @@
 import type { Kysely } from "kysely";
 import { ulid } from "ulidx";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { exportSeed } from "../../../src/cli/commands/export-seed.js";
 import type { Database } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 async function insertMenu(
@@ -16,6 +17,7 @@ async function insertMenu(
 		.insertInto("_emdash_menus")
 		.values({
 			id: args.id,
+			site_id: "site-default",
 			name: args.name,
 			label: args.label,
 			created_at: now,
@@ -42,6 +44,7 @@ async function insertItem(
 		.insertInto("_emdash_menu_items")
 		.values({
 			id: args.id,
+			site_id: "site-default",
 			menu_id: args.menuId,
 			parent_id: null,
 			sort_order: args.sortOrder,
@@ -57,6 +60,8 @@ async function insertItem(
 
 describe("exportSeed: SeedMenuItem i18n", () => {
 	let db: Kysely<Database>;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	afterEach(async () => {
 		await teardownTestDatabase(db);

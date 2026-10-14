@@ -9,7 +9,7 @@
 
 import type { APIRoute } from "astro";
 
-import { requirePerm } from "#api/authorize.js";
+import { requirePerm, requireSelectedSite } from "#api/authorize.js";
 import { apiError, requireDb, unwrapResult } from "#api/error.js";
 import { handleImportAnalyze } from "#api/handlers/transfer.js";
 import { isParseError, parseOptionalBody } from "#api/parse.js";
@@ -30,6 +30,8 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
 	if (denied) return denied;
 	const scopeDenied = requireScope(locals, "transfer:analyze");
 	if (scopeDenied) return scopeDenied;
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	if (!emdash.storage) {
 		return apiError("STORAGE_NOT_CONFIGURED", "No storage backend is configured", 503);

@@ -13,12 +13,14 @@
  * single menu item survives content translations.
  */
 
-import type { Kysely, Selectable } from "kysely";
+import { sql, type Kysely, type Selectable } from "kysely";
 import { ulid } from "ulidx";
 
 import { invalidateMenuObjectCache } from "../../object-cache/index.js";
 import { withTransaction } from "../transaction.js";
 import type { Database, MenuItemTable, MenuTable } from "../types.js";
+import { validateIdentifier } from "../validate.js";
+import { selectedSiteId } from "./site-settings.js";
 
 /**
  * Thrown from inside a repository transaction when the menu the caller
@@ -193,6 +195,52 @@ function rowToMenuItem(row: Selectable<MenuItemTable>): MenuItem {
 export class MenuRepository {
 	constructor(private db: Kysely<Database>) {}
 
+	private async validateReference(
+		input: { type: string; referenceId?: string; referenceCollection?: string },
+		db: Kysely<Database> = this.db,
+	): Promise<void> {
+		if (!input.referenceId) return;
+		if (input.type === "taxonomy") {
+			const term = await db
+				.selectFrom("taxonomies")
+				.select("id")
+				.where("site_id", "=", selectedSiteId())
+				.where((eb) =>
+					eb.or([
+						eb("id", "=", input.referenceId!),
+						eb("translation_group", "=", input.referenceId!),
+					]),
+				)
+				.executeTakeFirst();
+			if (!term) throw new Error("Menu reference does not belong to the selected site");
+			return;
+		}
+		const collection =
+			input.referenceCollection ??
+			(input.type === "page" || input.type === "post" ? `${input.type}s` : undefined);
+		if (!collection) return;
+		validateIdentifier(collection, "menu item collection");
+		const row = await sql`
+			SELECT id FROM ${sql.ref(`ec_${collection}`)}
+			WHERE site_id = ${selectedSiteId()}
+			AND (id = ${input.referenceId} OR translation_group = ${input.referenceId})
+			LIMIT 1
+		`.execute(db);
+		if (!row.rows.length) throw new Error("Menu reference does not belong to the selected site");
+	}
+
+	private async validateParent(menuId: string, parentId: string | null | undefined): Promise<void> {
+		if (!parentId) return;
+		const parent = await this.db
+			.selectFrom("_emdash_menu_items")
+			.select("id")
+			.where("site_id", "=", selectedSiteId())
+			.where("menu_id", "=", menuId)
+			.where("id", "=", parentId)
+			.executeTakeFirst();
+		if (!parent) throw new Error("Menu parent does not belong to the selected menu");
+	}
+
 	// --- Menus -------------------------------------------------------------
 
 	/**
@@ -204,7 +252,10 @@ export class MenuRepository {
 		// Single LEFT JOIN + GROUP BY for the per-menu count. Avoids N+1.
 		let query = this.db
 			.selectFrom("_emdash_menus as m")
-			.leftJoin("_emdash_menu_items as i", "i.menu_id", "m.id")
+			.leftJoin("_emdash_menu_items as i", (join) =>
+				join.onRef("i.menu_id", "=", "m.id").onRef("i.site_id", "=", "m.site_id"),
+			)
+			.where("m.site_id", "=", selectedSiteId())
 			.select(({ fn }) => [
 				"m.id",
 				"m.name",
@@ -239,6 +290,7 @@ export class MenuRepository {
 				updated_at: row.updated_at,
 				locale: row.locale,
 				translation_group: row.translation_group,
+				site_id: selectedSiteId(),
 			}),
 		}));
 	}
@@ -253,6 +305,7 @@ export class MenuRepository {
 			.selectFrom("_emdash_menus")
 			.selectAll()
 			.where("name", "=", name)
+			.where("site_id", "=", selectedSiteId())
 			.orderBy("locale", "asc");
 		if (options.locale !== undefined) query = query.where("locale", "=", options.locale);
 		const rows = await query.execute();
@@ -264,6 +317,7 @@ export class MenuRepository {
 			.selectFrom("_emdash_menus")
 			.selectAll()
 			.where("id", "=", id)
+			.where("site_id", "=", selectedSiteId())
 			.executeTakeFirst();
 		return row ? rowToMenu(row) : null;
 	}
@@ -281,6 +335,7 @@ export class MenuRepository {
 			.selectFrom("_emdash_menu_items")
 			.selectAll()
 			.where("menu_id", "=", menuId)
+			.where("site_id", "=", selectedSiteId())
 			.orderBy("sort_order", "asc")
 			.execute();
 		return rows.map(rowToMenuItem);
@@ -296,6 +351,7 @@ export class MenuRepository {
 			.select("id")
 			.where("name", "=", name)
 			.where("locale", "=", locale)
+			.where("site_id", "=", selectedSiteId())
 			.executeTakeFirst();
 		return row !== undefined;
 	}
@@ -326,6 +382,7 @@ export class MenuRepository {
 				.insertInto("_emdash_menus")
 				.values({
 					id,
+					site_id: selectedSiteId(),
 					name: input.name,
 					label: input.label,
 					...(input.locale !== undefined ? { locale: input.locale } : {}),
@@ -338,6 +395,7 @@ export class MenuRepository {
 					.selectFrom("_emdash_menu_items")
 					.selectAll()
 					.where("menu_id", "=", sourceMenuId)
+					.where("site_id", "=", selectedSiteId())
 					.orderBy("sort_order", "asc")
 					.execute();
 				if (sourceItems.length > 0) {
@@ -350,6 +408,7 @@ export class MenuRepository {
 						.values(
 							sourceItems.map((item) => ({
 								id: idMap.get(item.id)!,
+								site_id: selectedSiteId(),
 								menu_id: id,
 								parent_id: item.parent_id ? (idMap.get(item.parent_id) ?? null) : null,
 								sort_order: item.sort_order,
@@ -385,7 +444,12 @@ export class MenuRepository {
 		if (input.label !== undefined) values.label = input.label;
 
 		if (Object.keys(values).length > 0) {
-			await this.db.updateTable("_emdash_menus").set(values).where("id", "=", id).execute();
+			await this.db
+				.updateTable("_emdash_menus")
+				.set(values)
+				.where("id", "=", id)
+				.where("site_id", "=", selectedSiteId())
+				.execute();
 			invalidateMenuObjectCache();
 		}
 
@@ -405,8 +469,16 @@ export class MenuRepository {
 		if (!existing) return false;
 
 		await withTransaction(this.db, async (trx) => {
-			await trx.deleteFrom("_emdash_menu_items").where("menu_id", "=", id).execute();
-			await trx.deleteFrom("_emdash_menus").where("id", "=", id).execute();
+			await trx
+				.deleteFrom("_emdash_menu_items")
+				.where("menu_id", "=", id)
+				.where("site_id", "=", selectedSiteId())
+				.execute();
+			await trx
+				.deleteFrom("_emdash_menus")
+				.where("id", "=", id)
+				.where("site_id", "=", selectedSiteId())
+				.execute();
 		});
 		invalidateMenuObjectCache();
 		return true;
@@ -425,6 +497,7 @@ export class MenuRepository {
 			.selectFrom("_emdash_menus")
 			.selectAll()
 			.where((eb) => eb.or([eb("id", "=", idOrGroup), eb("translation_group", "=", idOrGroup)]))
+			.where("site_id", "=", selectedSiteId())
 			.executeTakeFirst();
 		if (!anchor) return null;
 
@@ -433,6 +506,7 @@ export class MenuRepository {
 			.selectFrom("_emdash_menus")
 			.selectAll()
 			.where("translation_group", "=", group)
+			.where("site_id", "=", selectedSiteId())
 			.orderBy("locale", "asc")
 			.execute();
 
@@ -460,12 +534,16 @@ export class MenuRepository {
 	 * item's own id, matching the migration 036 backfill.
 	 */
 	async createItem(menuId: string, locale: string, input: CreateMenuItemInput): Promise<MenuItem> {
+		if (!(await this.findById(menuId))) throw new MenuGoneError(menuId);
+		await this.validateReference(input);
+		await this.validateParent(menuId, input.parentId);
 		let sortOrder = input.sortOrder ?? 0;
 		if (input.sortOrder === undefined) {
 			const maxOrder = await this.db
 				.selectFrom("_emdash_menu_items")
 				.select(({ fn }) => fn.max("sort_order").as("max"))
 				.where("menu_id", "=", menuId)
+				.where("site_id", "=", selectedSiteId())
 				.where("parent_id", "is", input.parentId ?? null)
 				.executeTakeFirst();
 			// eslint-disable-next-line typescript/no-unsafe-type-assertion -- Kysely fn.max returns unknown; always a number for sort_order column
@@ -477,6 +555,7 @@ export class MenuRepository {
 			.insertInto("_emdash_menu_items")
 			.values({
 				id,
+				site_id: selectedSiteId(),
 				menu_id: menuId,
 				parent_id: input.parentId ?? null,
 				sort_order: sortOrder,
@@ -499,6 +578,7 @@ export class MenuRepository {
 			.selectFrom("_emdash_menu_items")
 			.selectAll()
 			.where("id", "=", id)
+			.where("site_id", "=", selectedSiteId())
 			.executeTakeFirstOrThrow();
 		return rowToMenuItem(row);
 	}
@@ -518,8 +598,10 @@ export class MenuRepository {
 			.select("id")
 			.where("id", "=", itemId)
 			.where("menu_id", "=", menuId)
+			.where("site_id", "=", selectedSiteId())
 			.executeTakeFirst();
 		if (!existing) return null;
+		if (input.parentId !== undefined) await this.validateParent(menuId, input.parentId);
 
 		const values: Record<string, unknown> = {};
 		if (input.label !== undefined) values.label = input.label;
@@ -535,6 +617,7 @@ export class MenuRepository {
 				.updateTable("_emdash_menu_items")
 				.set(values)
 				.where("id", "=", itemId)
+				.where("site_id", "=", selectedSiteId())
 				.execute();
 			invalidateMenuObjectCache();
 		}
@@ -543,6 +626,7 @@ export class MenuRepository {
 			.selectFrom("_emdash_menu_items")
 			.selectAll()
 			.where("id", "=", itemId)
+			.where("site_id", "=", selectedSiteId())
 			.executeTakeFirstOrThrow();
 		return rowToMenuItem(row);
 	}
@@ -553,6 +637,7 @@ export class MenuRepository {
 			.deleteFrom("_emdash_menu_items")
 			.where("id", "=", itemId)
 			.where("menu_id", "=", menuId)
+			.where("site_id", "=", selectedSiteId())
 			.execute();
 		const deleted = result[0]?.numDeletedRows !== 0n;
 		if (deleted) invalidateMenuObjectCache();
@@ -584,10 +669,19 @@ export class MenuRepository {
 				.selectFrom("_emdash_menus")
 				.select("id")
 				.where("id", "=", menuId)
+				.where("site_id", "=", selectedSiteId())
 				.executeTakeFirst();
 			if (!stillThere) throw new MenuGoneError(menuId);
+			for (const item of items) {
+				// oxlint-disable-next-line no-await-in-loop -- validate before removing the old menu
+				await this.validateReference(item, trx);
+			}
 
-			await trx.deleteFrom("_emdash_menu_items").where("menu_id", "=", menuId).execute();
+			await trx
+				.deleteFrom("_emdash_menu_items")
+				.where("menu_id", "=", menuId)
+				.where("site_id", "=", selectedSiteId())
+				.execute();
 
 			const insertedIds: string[] = [];
 			for (let i = 0; i < items.length; i++) {
@@ -600,6 +694,7 @@ export class MenuRepository {
 					.insertInto("_emdash_menu_items")
 					.values({
 						id,
+						site_id: selectedSiteId(),
 						translation_group: id,
 						menu_id: menuId,
 						parent_id: parentId,
@@ -622,6 +717,7 @@ export class MenuRepository {
 				.updateTable("_emdash_menus")
 				.set({ updated_at: new Date().toISOString() })
 				.where("id", "=", menuId)
+				.where("site_id", "=", selectedSiteId())
 				.execute();
 		});
 
@@ -634,6 +730,7 @@ export class MenuRepository {
 	 * malicious payload cannot move foreign items into this menu's siblings.
 	 */
 	async reorderItems(menuId: string, items: ReorderItem[]): Promise<MenuItem[]> {
+		for (const item of items) await this.validateParent(menuId, item.parentId);
 		invalidateMenuObjectCache();
 		return withTransaction(this.db, async (trx) => {
 			for (const item of items) {
@@ -642,6 +739,7 @@ export class MenuRepository {
 					.set({ parent_id: item.parentId, sort_order: item.sortOrder })
 					.where("id", "=", item.id)
 					.where("menu_id", "=", menuId)
+					.where("site_id", "=", selectedSiteId())
 					.execute();
 			}
 
@@ -649,6 +747,7 @@ export class MenuRepository {
 				.selectFrom("_emdash_menu_items")
 				.selectAll()
 				.where("menu_id", "=", menuId)
+				.where("site_id", "=", selectedSiteId())
 				.orderBy("sort_order", "asc")
 				.execute();
 			return rows.map(rowToMenuItem);

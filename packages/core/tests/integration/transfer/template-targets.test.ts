@@ -11,6 +11,7 @@ import { afterEach, expect, it } from "vitest";
 
 import type { Database } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
+import { runWithContext } from "../../../src/request-context.js";
 import type { SeedFile } from "../../../src/seed/types.js";
 import { inspectPortableDomain } from "../../../src/transfer/domain.js";
 import {
@@ -76,7 +77,10 @@ describeEachDialect("importing into a template site", (dialect) => {
 			await seedTarget(target.db, await templateSeed(name));
 			setI18nConfig({ defaultLocale: "en", locales: ["en", "fr"] });
 
-			const domain = await inspectPortableDomain(target.db);
+			const domain = await runWithContext(
+				{ editMode: false, siteId: "site-default", db: target.db },
+				() => inspectPortableDomain(target.db),
+			);
 			expect(domain.blockers).toEqual([]);
 			expect(domain.empty).toBe(true);
 			const scaffoldTypes = new Set(domain.seededScaffold.map((item) => item.type));

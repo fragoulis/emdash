@@ -15,6 +15,7 @@
 		"astro": "catalog:",
 		"emdash": "workspace:*",
 		"jose": "^6.2.10",
+		"kysely": "catalog:",
 		"pg": "^8.0.0",
 		"react": "catalog:",
 		"react-dom": "catalog:"

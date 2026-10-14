@@ -564,6 +564,7 @@ export interface PluginIndexTable {
 // Navigation Menus
 
 export interface MenuTable {
+	site_id: string;
 	id: string;
 	name: string;
 	label: string;
@@ -574,6 +575,7 @@ export interface MenuTable {
 }
 
 export interface MenuItemTable {
+	site_id: string;
 	id: string;
 	menu_id: string;
 	parent_id: string | null;

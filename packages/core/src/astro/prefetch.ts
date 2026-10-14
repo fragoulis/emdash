@@ -23,6 +23,7 @@
  * must not affect the request -- the helpers will simply run on demand).
  */
 
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import { getDb } from "../loader.js";
 import { getMenu } from "../menus/index.js";
 import { cachedQuery, CacheNamespace } from "../object-cache/index.js";
@@ -58,10 +59,15 @@ async function prefetchMenus(): Promise<void> {
 	// discover every menu name and warm them all (small, bounded chrome table).
 	const names = await cachedQuery({
 		namespace: CacheNamespace.MENUS,
-		key: "names",
+		key: `names:${selectedSiteId()}`,
 		load: async () => {
 			const db = await getDb();
-			const rows = await db.selectFrom("_emdash_menus").select("name").distinct().execute();
+			const rows = await db
+				.selectFrom("_emdash_menus")
+				.select("name")
+				.where("site_id", "=", selectedSiteId())
+				.distinct()
+				.execute();
 			return [...new Set(rows.map((r) => r.name))];
 		},
 	});

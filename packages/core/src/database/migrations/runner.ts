@@ -106,6 +106,7 @@ import * as m095 from "./095_published_content_sites.js";
 import * as m096 from "./096_editorial_site_ownership.js";
 import * as m097 from "./097_site_settings.js";
 import * as m098 from "./098_site_taxonomies.js";
+import * as m099 from "./099_site_menus.js";
 
 const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
 	"001_initial": m001,
@@ -205,6 +206,7 @@ const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
 	"096_editorial_site_ownership": m096,
 	"097_site_settings": m097,
 	"098_site_taxonomies": m098,
+	"099_site_menus": m099,
 });
 
 /** Ordered names from the statically registered migration set. */

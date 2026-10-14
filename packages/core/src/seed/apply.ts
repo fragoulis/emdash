@@ -27,8 +27,7 @@ import { ContentRepository } from "../database/repositories/content.js";
 import { MediaRepository } from "../database/repositories/media.js";
 import { RedirectRepository } from "../database/repositories/redirect.js";
 import { RevisionRepository } from "../database/repositories/revision.js";
-import { selectedSiteId } from "../database/repositories/site-settings.js";
-import { SiteSettingsRepository } from "../database/repositories/site-settings.js";
+import { SiteSettingsRepository, selectedSiteId } from "../database/repositories/site-settings.js";
 import {
 	findTaxonomyStructure,
 	saveTaxonomyStructure,
@@ -1102,6 +1101,7 @@ async function applySeedWrites(
 					.selectFrom("_emdash_menus")
 					.selectAll()
 					.where("name", "=", menu.name)
+					.where("site_id", "=", selectedSiteId())
 					.where("locale", "=", locale);
 				const existingMenu = await lookup.executeTakeFirst();
 
@@ -1112,7 +1112,11 @@ async function applySeedWrites(
 					menuId = existingMenu.id;
 					translationGroup = existingMenu.translation_group ?? existingMenu.id;
 					// Clear existing items (menus are recreated)
-					await db.deleteFrom("_emdash_menu_items").where("menu_id", "=", menuId).execute();
+					await db
+						.deleteFrom("_emdash_menu_items")
+						.where("menu_id", "=", menuId)
+						.where("site_id", "=", selectedSiteId())
+						.execute();
 				} else {
 					menuId = ulid();
 					// Resolve translationOf to the source menu's translation_group.
@@ -1129,6 +1133,7 @@ async function applySeedWrites(
 						.insertInto("_emdash_menus")
 						.values({
 							id: menuId,
+							site_id: selectedSiteId(),
 							name: menu.name,
 							label: menu.label,
 							created_at: new Date().toISOString(),
@@ -2092,6 +2097,7 @@ async function applyMenuItems(
 			.insertInto("_emdash_menu_items")
 			.values({
 				id: itemId,
+				site_id: selectedSiteId(),
 				menu_id: menuId,
 				parent_id: parentId,
 				sort_order: order,

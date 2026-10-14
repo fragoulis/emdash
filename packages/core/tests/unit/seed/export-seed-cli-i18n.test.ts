@@ -1,11 +1,12 @@
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import { ulid } from "ulidx";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { exportSeed } from "../../../src/cli/commands/export-seed.js";
 import type { Database } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { validateSeed } from "../../../src/seed/validate.js";
 import {
 	setupTestDatabase,
@@ -70,6 +71,7 @@ async function insertMenu(
 		.insertInto("_emdash_menus")
 		.values({
 			id: args.id,
+			site_id: "site-default",
 			name: args.name,
 			label: args.label,
 			created_at: now,
@@ -82,6 +84,8 @@ async function insertMenu(
 
 describe("exportSeed: CLI (no runtime i18n config) stays locale-aware (#1330)", () => {
 	let db: Kysely<Database>;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(() => {
 		// Mirror the CLI: the i18n config is never initialized.

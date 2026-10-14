@@ -51,6 +51,7 @@ export interface PlanOrigin {
 
 export interface PlanTarget {
 	siteId: string;
+	selectedSiteId: string;
 	dialect: TargetDialect;
 	emdashVersion: string;
 }

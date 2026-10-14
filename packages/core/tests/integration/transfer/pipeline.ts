@@ -183,13 +183,17 @@ export async function analyze(
 	targetContext: AnalysisTargetContext = TARGET_CONTEXT,
 ) {
 	for (;;) {
-		const result = await analyzeImportStep({
-			db: target.db,
-			storage,
-			operationId,
-			budget: target.budget() ?? new TransferStepBudget(),
-			targetContext,
-		});
+		const result = await runWithContext(
+			{ editMode: false, siteId: "site-default", db: target.db },
+			() =>
+				analyzeImportStep({
+					db: target.db,
+					storage,
+					operationId,
+					budget: target.budget() ?? new TransferStepBudget(),
+					targetContext,
+				}),
+		);
 		target.steps++;
 		if (result.done) return result;
 		if (target.steps > MAX_STEPS)
@@ -271,7 +275,9 @@ export async function seedTarget(
 	db: Kysely<Database>,
 	seed: SeedFile = defaultSeed,
 ): Promise<void> {
-	await applySeed(db, seed, { includeContent: false, onConflict: "skip" });
+	await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+		applySeed(db, seed, { includeContent: false, onConflict: "skip" }),
+	);
 	await db
 		.insertInto("users")
 		.values({

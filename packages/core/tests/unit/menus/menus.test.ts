@@ -1,18 +1,21 @@
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import { ulid } from "ulidx";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, aroundEach } from "vitest";
 
 import { createMenuItemBody, updateMenuItemBody } from "../../../src/api/schemas/menus.js";
 import { createDatabase } from "../../../src/database/connection.js";
 import { runMigrations } from "../../../src/database/migrations/runner.js";
 import type { Database } from "../../../src/database/types.js";
 import { getMenuWithDb, getMenusWithDb } from "../../../src/menus/index.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { sanitizeHref } from "../../../src/utils/url.js";
 
 describe("Navigation Menus", () => {
 	let db: Kysely<Database>;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		// Fresh in-memory database for each test
@@ -65,6 +68,7 @@ describe("Navigation Menus", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: id1,
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary Navigation",
 				})
@@ -75,6 +79,7 @@ describe("Navigation Menus", () => {
 					.insertInto("_emdash_menus")
 					.values({
 						id: id2,
+						site_id: "site-default",
 						name: "primary",
 						label: "Primary Again",
 					})
@@ -107,9 +112,9 @@ describe("Navigation Menus", () => {
 			await db
 				.insertInto("_emdash_menus")
 				.values([
-					{ id: ulid(), name: "footer", label: "Footer Links" },
-					{ id: ulid(), name: "primary", label: "Primary Navigation" },
-					{ id: ulid(), name: "social", label: "Social Links" },
+					{ id: ulid(), site_id: "site-default", name: "footer", label: "Footer Links" },
+					{ id: ulid(), site_id: "site-default", name: "primary", label: "Primary Navigation" },
+					{ id: ulid(), site_id: "site-default", name: "social", label: "Social Links" },
 				])
 				.execute();
 
@@ -133,6 +138,7 @@ describe("Navigation Menus", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: menuId,
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary Navigation",
 				})
@@ -155,6 +161,7 @@ describe("Navigation Menus", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: menuId,
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary Navigation",
 				})
@@ -167,6 +174,7 @@ describe("Navigation Menus", () => {
 					menu_id: menuId,
 					sort_order: 0,
 					type: "custom",
+					site_id: "site-default",
 					custom_url: "https://github.com",
 					label: "GitHub",
 					target: "_blank",
@@ -190,7 +198,7 @@ describe("Navigation Menus", () => {
 
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: menuId, name: "primary", label: "Primary" })
+				.values({ id: menuId, site_id: "site-default", name: "primary", label: "Primary" })
 				.execute();
 
 			await db
@@ -200,6 +208,7 @@ describe("Navigation Menus", () => {
 					menu_id: menuId,
 					sort_order: 0,
 					type: "custom",
+					site_id: "site-default",
 					custom_url: "javascript:alert(1)",
 					label: "XSS",
 				})
@@ -217,7 +226,7 @@ describe("Navigation Menus", () => {
 
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: menuId, name: "primary", label: "Primary" })
+				.values({ id: menuId, site_id: "site-default", name: "primary", label: "Primary" })
 				.execute();
 
 			await db
@@ -227,6 +236,7 @@ describe("Navigation Menus", () => {
 					menu_id: menuId,
 					sort_order: 0,
 					type: "custom",
+					site_id: "site-default",
 					custom_url: "data:text/html,<script>alert(1)</script>",
 					label: "XSS",
 				})
@@ -244,7 +254,7 @@ describe("Navigation Menus", () => {
 
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: menuId, name: "primary", label: "Primary" })
+				.values({ id: menuId, site_id: "site-default", name: "primary", label: "Primary" })
 				.execute();
 
 			await db
@@ -254,6 +264,7 @@ describe("Navigation Menus", () => {
 					menu_id: menuId,
 					sort_order: 0,
 					type: "custom",
+					site_id: "site-default",
 					custom_url: "vbscript:MsgBox",
 					label: "XSS",
 				})
@@ -274,6 +285,7 @@ describe("Navigation Menus", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: menuId,
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary Navigation",
 				})
@@ -284,6 +296,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: itemId,
 					menu_id: menuId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "page",
 					reference_collection: "pages",
@@ -307,6 +320,7 @@ describe("Navigation Menus", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: menuId,
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary Navigation",
 				})
@@ -318,6 +332,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: parentId,
 					menu_id: menuId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "custom",
 					custom_url: "/about",
@@ -331,6 +346,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: childId,
 					menu_id: menuId,
+					site_id: "site-default",
 					parent_id: parentId,
 					sort_order: 0,
 					type: "custom",
@@ -354,6 +370,7 @@ describe("Navigation Menus", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: menuId,
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary Navigation",
 				})
@@ -367,6 +384,7 @@ describe("Navigation Menus", () => {
 						menu_id: menuId,
 						sort_order: 2,
 						type: "custom",
+						site_id: "site-default",
 						custom_url: "/contact",
 						label: "Contact",
 					},
@@ -375,6 +393,7 @@ describe("Navigation Menus", () => {
 						menu_id: menuId,
 						sort_order: 0,
 						type: "custom",
+						site_id: "site-default",
 						custom_url: "/home",
 						label: "Home",
 					},
@@ -383,6 +402,7 @@ describe("Navigation Menus", () => {
 						menu_id: menuId,
 						sort_order: 1,
 						type: "custom",
+						site_id: "site-default",
 						custom_url: "/about",
 						label: "About",
 					},
@@ -423,12 +443,13 @@ describe("Navigation Menus", () => {
 			const menuId = ulid();
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: menuId, name: "primary", label: "Primary" })
+				.values({ id: menuId, site_id: "site-default", name: "primary", label: "Primary" })
 				.execute();
 			await db
 				.insertInto("_emdash_menu_items")
 				.values({
 					id: ulid(),
+					site_id: "site-default",
 					menu_id: menuId,
 					sort_order: 0,
 					type: "collection",
@@ -664,7 +685,10 @@ describe("Navigation Menus", () => {
 
 		async function setupMenu(name: string, locale = "en"): Promise<string> {
 			const id = ulid();
-			await db.insertInto("_emdash_menus").values({ id, name, label: name, locale }).execute();
+			await db
+				.insertInto("_emdash_menus")
+				.values({ id, site_id: "site-default", name, label: name, locale })
+				.execute();
 			return id;
 		}
 
@@ -705,6 +729,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: otherItemId,
 					menu_id: otherMenuId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "custom",
 					custom_url: "/x",
@@ -776,6 +801,7 @@ describe("Navigation Menus", () => {
 					{
 						id: ulid(),
 						menu_id: enMenuId,
+						site_id: "site-default",
 						sort_order: 0,
 						type: "custom",
 						custom_url: "/en-home",
@@ -785,6 +811,7 @@ describe("Navigation Menus", () => {
 					{
 						id: ulid(),
 						menu_id: frMenuId,
+						site_id: "site-default",
 						sort_order: 0,
 						type: "custom",
 						custom_url: "/fr-ancien",
@@ -846,8 +873,8 @@ describe("Navigation Menus", () => {
 			await db
 				.insertInto("_emdash_menus")
 				.values([
-					{ id: enId, name, label: name, locale: "en" },
-					{ id: frId, name, label: name, locale: "fr-fr" },
+					{ id: enId, site_id: "site-default", name, label: name, locale: "en" },
+					{ id: frId, site_id: "site-default", name, label: name, locale: "fr-fr" },
 				])
 				.execute();
 			return { enId, frId };
@@ -883,6 +910,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: itemId,
 					menu_id: enId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "custom",
 					custom_url: "/",
@@ -914,6 +942,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: itemId,
 					menu_id: enId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "custom",
 					custom_url: "/",
@@ -945,6 +974,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: itemId,
 					menu_id: enId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "custom",
 					custom_url: "/",
@@ -994,7 +1024,13 @@ describe("Navigation Menus", () => {
 			const sourceId = ulid();
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: sourceId, name: "primary", label: "Primary", locale: "en" })
+				.values({
+					id: sourceId,
+					site_id: "site-default",
+					name: "primary",
+					label: "Primary",
+					locale: "en",
+				})
 				.execute();
 
 			const result = await handleMenuCreate(db, {
@@ -1028,7 +1064,13 @@ describe("Navigation Menus", () => {
 			const sourceId = ulid();
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: sourceId, name: "primary", label: "Primary", locale: "en" })
+				.values({
+					id: sourceId,
+					site_id: "site-default",
+					name: "primary",
+					label: "Primary",
+					locale: "en",
+				})
 				.execute();
 
 			const result = await handleMenuCreate(db, {
@@ -1056,6 +1098,7 @@ describe("Navigation Menus", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: sourceId,
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary",
 					locale: "en",
@@ -1068,6 +1111,7 @@ describe("Navigation Menus", () => {
 				.values({
 					id: sourceItemId,
 					menu_id: sourceId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "custom",
 					custom_url: "/",
