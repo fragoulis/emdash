@@ -7,8 +7,8 @@ This policy covers generative AI agents. Ordinary CI automation, dependency upda
 ## Human responsibility
 
 - Disclose material AI assistance and name the model or tool used.
-- Review all generated work before submitting it. Inspect the complete diff, run the relevant tests, and exercise changed behavior yourself.
-- Authorise each external action separately. An agent can open a particular implementation pull request or issue only after a human explicitly authorises that item.
+- Review all generated work before merging it. Inspect the complete diff, run the relevant tests, and exercise changed behavior yourself.
+- Authorise each external action separately. An explicit request to implement a specific change and open its implementation pull request authorises that pull request; no second confirmation is required after the code is written. Opening an issue still requires separate authorisation for that issue.
 - Do not give an agent standing permission to choose work and open pull requests or issues. Autonomous contribution agents such as Claws are not permitted.
 - Do not use an agent to reply to a human except for the implementation-pull-request review cases permitted below.
 
@@ -30,9 +30,9 @@ Explain your connection to the change and how you verified it in the pull reques
 
 ## Code and pull requests
 
-AI-generated code is held to the same quality standard as human-written code. The submitter must understand, review, test, and be able to maintain the change.
+AI-generated code is held to the same quality standard as human-written code. Before merging, the human contributor must understand, review, test, and be able to maintain the change.
 
-An agent can create commits, draft a pull request description, and open an implementation pull request under direct human control. The human must authorise that specific pull request and review the complete change before submission.
+An agent can create commits, draft a pull request description, and open an implementation pull request under direct human control. A human request that identifies both the change and the implementation pull request authorises opening it without a further confirmation step. The human must review and verify the complete change before merging it, not before opening the pull request.
 
 Use the repository pull request template and complete every applicable section. The AI disclosure names every model or tool that materially generated code or pull request text. The template disclosure is sufficient for the pull request body; it does not need a separate bot signature.
 
