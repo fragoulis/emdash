@@ -7,6 +7,7 @@
 
 import { sql } from "kysely";
 
+import { selectedSiteId } from "../../database/repositories/site-settings.js";
 import { processDueMediaUsageCollectionDeletions } from "../../media/usage/collection-deletion-processor.js";
 import {
 	invalidateMenuObjectCache,
@@ -146,7 +147,11 @@ async function removeItem(context: ImportContext, item: ScaffoldItemRef): Promis
 				.execute();
 			return;
 		case "menu_item":
-			await db.deleteFrom("_emdash_menu_items").where("id", "=", item.id).execute();
+			await db
+				.deleteFrom("_emdash_menu_items")
+				.where("id", "=", item.id)
+				.where("site_id", "=", selectedSiteId())
+				.execute();
 			return;
 		case "widget":
 			await db.deleteFrom("_emdash_widgets").where("id", "=", item.id).execute();
@@ -171,6 +176,7 @@ async function removeItem(context: ImportContext, item: ScaffoldItemRef): Promis
 			await db
 				.deleteFrom("_emdash_menus")
 				.where("id", "=", item.id)
+				.where("site_id", "=", selectedSiteId())
 				.where((eb) =>
 					eb.not(
 						eb.exists(

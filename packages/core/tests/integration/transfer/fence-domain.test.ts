@@ -1,9 +1,10 @@
 import { sql, type Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { OptionsRepository } from "../../../src/database/repositories/options.js";
 import type { Database } from "../../../src/database/types.js";
 import { createContentAccessWithWrite } from "../../../src/plugins/context.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { BlockTypeRegistry } from "../../../src/schema/block-type-registry.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { applySeed } from "../../../src/seed/apply.js";
@@ -282,6 +283,8 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 	});
 
 	describe("inspectPortableDomain", () => {
+		aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
+
 		async function seedDefault(): Promise<void> {
 			await applySeed(ctx.db, defaultSeed, { includeContent: false, onConflict: "skip" });
 		}
@@ -309,11 +312,18 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 				.execute();
 			await ctx.db
 				.insertInto("_emdash_menus")
-				.values({ id: "m1", name: "primary", label: "Primary" })
+				.values({ id: "m1", site_id: "site-default", name: "primary", label: "Primary" })
 				.execute();
 			await ctx.db
 				.insertInto("_emdash_menu_items")
-				.values({ id: "i1", menu_id: "m1", sort_order: 0, type: "custom", label: "Home" })
+				.values({
+					id: "i1",
+					site_id: "site-default",
+					menu_id: "m1",
+					sort_order: 0,
+					type: "custom",
+					label: "Home",
+				})
 				.execute();
 			await ctx.db
 				.insertInto("_emdash_widget_areas")
@@ -345,6 +355,45 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 			expect(position("term:t1")).toBeLessThan(position("taxonomy_def:taxdef_tag"));
 			expect(position("menu_item:i1")).toBeLessThan(position("menu:m1"));
 			expect(position("widget:wd1")).toBeLessThan(position("widget_area:w1"));
+		});
+
+		it("keeps another site's navigation out of the scaffold", async () => {
+			await seedDefault();
+			await ctx.db
+				.insertInto("_emdash_menus")
+				.values([
+					{ id: "local", site_id: "site-default", name: "primary", label: "Local" },
+					{ id: "foreign", site_id: "bar", name: "primary", label: "Foreign" },
+				])
+				.execute();
+			await ctx.db
+				.insertInto("_emdash_menu_items")
+				.values([
+					{
+						id: "local-link",
+						site_id: "site-default",
+						menu_id: "local",
+						sort_order: 0,
+						type: "custom",
+						label: "Local",
+					},
+					{
+						id: "foreign-link",
+						site_id: "bar",
+						menu_id: "foreign",
+						sort_order: 0,
+						type: "custom",
+						label: "Foreign",
+					},
+				])
+				.execute();
+			const domain = await inspectPortableDomain(ctx.db);
+			expect(
+				domain.seededScaffold.filter((item) => item.type === "menu" || item.type === "menu_item"),
+			).toEqual([
+				{ type: "menu_item", id: "local-link", menuId: "local", label: "Local" },
+				{ type: "menu", id: "local", name: "primary", locale: "en" },
+			]);
 		});
 
 		it("treats a taxonomy attached only to missing collections as scaffold", async () => {

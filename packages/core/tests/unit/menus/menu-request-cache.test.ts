@@ -1,6 +1,6 @@
 import { Kysely, SqliteDialect } from "kysely";
 import { ulid } from "ulidx";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
@@ -37,6 +37,8 @@ function collectionPatternQueries(): string[] {
 describe("getMenu collection-pattern request cache", () => {
 	let db: Kysely<DatabaseSchema>;
 
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
+
 	beforeEach(async () => {
 		queries = [];
 		db = new Kysely<DatabaseSchema>({
@@ -68,6 +70,7 @@ describe("getMenu collection-pattern request cache", () => {
 				id: entryId,
 				slug: "hello",
 				status: "published",
+				site_id: "site-default",
 				locale: "en",
 				translation_group: entryId,
 			} as never)
@@ -76,12 +79,16 @@ describe("getMenu collection-pattern request cache", () => {
 		// Two menus that both reference the same collection.
 		for (const name of ["primary", "footer"]) {
 			const menuId = ulid();
-			await db.insertInto("_emdash_menus").values({ id: menuId, name, label: name }).execute();
+			await db
+				.insertInto("_emdash_menus")
+				.values({ id: menuId, site_id: "site-default", name, label: name })
+				.execute();
 			await db
 				.insertInto("_emdash_menu_items")
 				.values({
 					id: ulid(),
 					menu_id: menuId,
+					site_id: "site-default",
 					sort_order: 0,
 					type: "post",
 					reference_collection: "post",
@@ -102,11 +109,14 @@ describe("getMenu collection-pattern request cache", () => {
 	it("queries collection url_patterns once for multiple menus in one request", async () => {
 		queries = [];
 
-		const [primary, footer] = await runWithContext({ editMode: false }, async () => {
-			const first = await getMenu("primary");
-			const second = await getMenu("footer");
-			return [first, second];
-		});
+		const [primary, footer] = await runWithContext(
+			{ editMode: false, siteId: "site-default" },
+			async () => {
+				const first = await getMenu("primary");
+				const second = await getMenu("footer");
+				return [first, second];
+			},
+		);
 
 		expect(primary?.items.map((i) => i.url)).toEqual(["/blog/hello"]);
 		expect(footer?.items.map((i) => i.url)).toEqual(["/blog/hello"]);
@@ -115,24 +125,23 @@ describe("getMenu collection-pattern request cache", () => {
 		expect(queries.filter((q) => q.includes('"_emdash_menu_items"'))).toHaveLength(2);
 	});
 
-	it("returns identical results with and without a request context", async () => {
-		const cached = await runWithContext({ editMode: false }, () => getMenu("primary"));
-		const uncached = await getMenu("primary");
-
-		expect(cached).toEqual(uncached);
+	it("rejects menu reads without a selected site", async () => {
+		await expect(runWithContext({ editMode: false }, () => getMenu("primary"))).rejects.toThrow(
+			"server-selected site",
+		);
 	});
 
 	it("does not leak the cached patterns across requests", async () => {
-		await runWithContext({ editMode: false }, () => getMenu("primary"));
+		await runWithContext({ editMode: false, siteId: "site-default" }, () => getMenu("primary"));
 		queries = [];
 
-		await runWithContext({ editMode: false }, () => getMenu("footer"));
+		await runWithContext({ editMode: false, siteId: "site-default" }, () => getMenu("footer"));
 
 		expect(collectionPatternQueries()).toHaveLength(1);
 	});
 
 	it("prefetchLayoutData warms menus so layout getMenu calls hit the cache", async () => {
-		await runWithContext({ editMode: false }, async () => {
+		await runWithContext({ editMode: false, siteId: "site-default" }, async () => {
 			// Eager prefetch discovers every menu name and warms them up front.
 			await prefetchLayoutData();
 
@@ -187,7 +196,8 @@ describe("getMenu collection-pattern request cache", () => {
 			queries.filter((q) => q.includes('"_emdash_menus"') && q.includes("distinct"));
 
 		it("serves discovered menu names from the object cache until a menu is created", async () => {
-			const prefetch = () => runWithContext({ editMode: false, db }, () => prefetchLayoutData());
+			const prefetch = () =>
+				runWithContext({ editMode: false, siteId: "site-default", db }, () => prefetchLayoutData());
 
 			await prefetch();
 			await flush();

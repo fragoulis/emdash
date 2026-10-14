@@ -436,7 +436,7 @@ For a bug fix, add an automated regression test when the failure is deterministi
 - **Mocking the unit under test**, or a mock that returns the very value the assertion checks. The test then verifies the mock, not the code.
 - **Tests that only exercise third-party code**: Kysely, Zod, and Lingui have their own test suites. Test your behavior, not theirs.
 
-**Never change a test just to make it pass.** Understand why it's failing first -- the test may be the only thing that's right. If you can't work out why, stop and say so.
+**Never change a test just to make it pass.** Understand why it's failing first -- the test may be the only thing that's right. If you can't work out why, stop and say so. When a test fails because a request or resumed operation lacks site context, trace how the trusted site ID reaches each step. Keep the production boundary fail-closed; fix context propagation or the test fixture rather than removing the context or substituting an installation-wide ID. Leave the change uncommitted if the correct site identity is not yet available.
 
 # Toolchain
 

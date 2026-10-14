@@ -12,6 +12,7 @@ import type { Kysely } from "kysely";
 import { sql } from "kysely";
 
 import { menuTag } from "../cache/chrome-tags.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
 import { getLocaleChainRank, getLocaleRank } from "../i18n/config.js";
@@ -68,7 +69,8 @@ const lastResolvedNamespaces: Map<string, string[]> =
 export async function getMenu(name: string, options: MenuQueryOptions = {}): Promise<Menu | null> {
 	const locale = resolveLocale(options.locale);
 	const trailingSlash = options.trailingSlash ?? (await getHostTrailingSlash());
-	const key = `${name}:${locale ?? "*"}:${trailingSlash}`;
+	const siteId = selectedSiteId();
+	const key = `${siteId}:${name}:${locale ?? "*"}:${trailingSlash}`;
 	return requestCached(`menu:${key}`, async () => {
 		if (!(await isObjectCacheActive())) {
 			return getMenuWithDb(name, await getDb(), { locale, trailingSlash });
@@ -77,7 +79,7 @@ export async function getMenu(name: string, options: MenuQueryOptions = {}): Pro
 			let epoch: number | undefined;
 			const rows = await cachedQueryWithEpochs({
 				namespace: CacheNamespace.MENUS,
-				key: `rows:${name}:${locale ?? "*"}`,
+				key: `rows:${siteId}:${name}:${locale ?? "*"}`,
 				load: async () => loadMenuRows(name, await getDb(), locale),
 				onEpochs: ([menus]) => {
 					epoch = menus;
@@ -174,7 +176,9 @@ async function loadMenuRows(
 
 	let query = db
 		.selectFrom("_emdash_menus as m")
-		.leftJoin("_emdash_menu_items as i", "i.menu_id", "m.id")
+		.leftJoin("_emdash_menu_items as i", (join) =>
+			join.onRef("i.menu_id", "=", "m.id").onRef("i.site_id", "=", "m.site_id"),
+		)
 		.selectAll("i")
 		.select([
 			"m.id as m_id",
@@ -184,6 +188,7 @@ async function loadMenuRows(
 			"m.translation_group as m_translation_group",
 		])
 		.where("m.name", "=", name)
+		.where("m.site_id", "=", selectedSiteId())
 		.orderBy("i.sort_order", "asc");
 	if (chain.length > 0) {
 		query = query.where((eb) => eb.or(chain.map((locale) => localeMatches("m.locale", locale))));
@@ -253,6 +258,7 @@ export async function getMenusWithDb(
 	let query = db
 		.selectFrom("_emdash_menus")
 		.select(["id", "name", "label", "locale"])
+		.where("site_id", "=", selectedSiteId())
 		.orderBy("name", "asc");
 	if (locale !== undefined) query = query.where(localeMatches("locale", locale));
 	return query.execute();
@@ -510,7 +516,7 @@ async function resolveContentReferences(
 					const result = await sql<ContentReferenceRow>`
 						SELECT id, slug, published_at, locale, translation_group, status, deleted_at
 						FROM ${sql.ref(`ec_${collection}`)}
-						WHERE translation_group IN (${sql.join(batch)})
+						WHERE translation_group IN (${sql.join(batch)}) AND site_id = ${selectedSiteId()}
 					`.execute(db);
 					for (const row of result.rows) {
 						// A hidden row still counts as found, so the legacy id lookup below is skipped.
@@ -532,7 +538,7 @@ async function resolveContentReferences(
 						Pick<ContentReferenceRow, "id" | "slug" | "published_at" | "status" | "deleted_at">
 					>`
 						SELECT id, slug, published_at, status, deleted_at FROM ${sql.ref(`ec_${collection}`)}
-						WHERE id IN (${sql.join(batch)})
+						WHERE id IN (${sql.join(batch)}) AND site_id = ${selectedSiteId()}
 					`.execute(db);
 					for (const row of result.rows) {
 						if (!isVisible(row)) continue;
@@ -625,6 +631,7 @@ async function resolveTaxonomyReferences(
 				.selectFrom("taxonomies")
 				.select(["id", "name", "slug", "locale", "translation_group"])
 				.where("translation_group", "in", batch)
+				.where("site_id", "=", selectedSiteId())
 				.$narrowType<{ translation_group: string }>()
 				.execute();
 			for (const row of rows) {
@@ -644,6 +651,7 @@ async function resolveTaxonomyReferences(
 				.selectFrom("taxonomies")
 				.select(["id", "name", "slug"])
 				.where("id", "in", batch)
+				.where("site_id", "=", selectedSiteId())
 				.execute();
 			for (const row of rows) lookup.set(row.id, { name: row.name, slug: row.slug });
 		}

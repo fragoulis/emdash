@@ -8,6 +8,7 @@ import type { Kysely } from "kysely";
 import { ulid } from "ulidx";
 
 import type { WxrNavMenu, WxrNavMenuItem } from "../cli/wxr/parser.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import type { MenuItemType } from "../menus/types.js";
 import { invalidateMenuObjectCache } from "../object-cache/index.js";
@@ -76,6 +77,7 @@ export async function importMenusFromWxr(
 				.selectFrom("_emdash_menus")
 				.select("id")
 				.where("name", "=", menu.name)
+				.where("site_id", "=", selectedSiteId())
 				.executeTakeFirst();
 
 			if (existing) {
@@ -89,6 +91,7 @@ export async function importMenusFromWxr(
 				.insertInto("_emdash_menus")
 				.values({
 					id: menuId,
+					site_id: selectedSiteId(),
 					name: menu.name,
 					label: menu.label,
 				})
@@ -139,6 +142,7 @@ export async function importMenusFromPlugin(
 				.selectFrom("_emdash_menus")
 				.select("id")
 				.where("name", "=", menu.name)
+				.where("site_id", "=", selectedSiteId())
 				.executeTakeFirst();
 
 			if (existing) {
@@ -152,6 +156,7 @@ export async function importMenusFromPlugin(
 				.insertInto("_emdash_menus")
 				.values({
 					id: menuId,
+					site_id: selectedSiteId(),
 					name: menu.name,
 					label: menu.label,
 				})
@@ -203,6 +208,7 @@ async function importWxrMenuItems(
 			.values({
 				id: itemId,
 				menu_id: menuId,
+				site_id: selectedSiteId(),
 				parent_id: null, // Will be set in second pass
 				sort_order: item.sortOrder,
 				type,
@@ -263,6 +269,7 @@ async function importPluginMenuItems(
 			.values({
 				id: itemId,
 				menu_id: menuId,
+				site_id: selectedSiteId(),
 				parent_id: null,
 				sort_order: item.sort_order,
 				type,

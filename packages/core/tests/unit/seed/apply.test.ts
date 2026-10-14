@@ -982,6 +982,7 @@ describe("applySeed", () => {
 				.insertInto("_emdash_menus")
 				.values({
 					id: "menu-1",
+					site_id: "site-default",
 					name: "main",
 					label: "Main",
 					created_at: new Date().toISOString(),
@@ -993,6 +994,7 @@ describe("applySeed", () => {
 				.insertInto("_emdash_menu_items")
 				.values({
 					id: "item-1",
+					site_id: "site-default",
 					menu_id: "menu-1",
 					parent_id: null,
 					sort_order: 0,

@@ -629,7 +629,7 @@ export { getComments, getCommentCount } from "./comments/query.js";
 export type { GetCommentsOptions, GetCommentsResult } from "./comments/query.js";
 
 // Menus
-export { getMenu, getMenuWithCacheHint, getMenus } from "./menus/index.js";
+export { getMenu, getMenuWithDb, getMenuWithCacheHint, getMenus } from "./menus/index.js";
 export type {
 	Menu,
 	MenuItem,

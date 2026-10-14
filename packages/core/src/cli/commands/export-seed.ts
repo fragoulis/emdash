@@ -16,7 +16,10 @@ import { getExactMigrationStatus } from "../../database/migrations/runner.js";
 import { BylineRepository } from "../../database/repositories/byline.js";
 import { ContentRepository } from "../../database/repositories/content.js";
 import { MediaRepository } from "../../database/repositories/media.js";
-import { SiteSettingsRepository } from "../../database/repositories/site-settings.js";
+import {
+	SiteSettingsRepository,
+	selectedSiteId,
+} from "../../database/repositories/site-settings.js";
 import {
 	parseTaxonomyCollections,
 	selectTaxonomyDefs,
@@ -625,6 +628,7 @@ async function exportMenus(
 	const menus = await db
 		.selectFrom("_emdash_menus")
 		.selectAll()
+		.where("site_id", "=", selectedSiteId())
 		// Chained, not `orderBy(["name", "locale"])`: kysely deprecated the array
 		// form and announces it with `console.log`, which lands in the seed
 		// document this command writes to stdout.
@@ -647,6 +651,7 @@ async function exportMenus(
 			.selectFrom("_emdash_menu_items")
 			.selectAll()
 			.where("menu_id", "=", menu.id)
+			.where("site_id", "=", selectedSiteId())
 			.orderBy("sort_order", "asc")
 			.execute();
 

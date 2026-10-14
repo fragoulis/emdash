@@ -9,7 +9,7 @@
  */
 
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
 	handleMenuCreate,
@@ -22,6 +22,7 @@ import {
 import { createMenuItemBody, updateMenuItemBody } from "../../../src/api/schemas/menus.js";
 import type { Database } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 describe("menu schemas", () => {
@@ -95,6 +96,8 @@ describe("menu schemas", () => {
 
 describe("menu handlers — camelCase responses & customUrl persistence", () => {
 	let db: Kysely<Database>;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		db = await setupTestDatabase();
@@ -237,6 +240,8 @@ describe("menu handlers — camelCase responses & customUrl persistence", () => 
 
 describe("handleMenuSetItems — concurrent delete race", () => {
 	let db: Kysely<Database>;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		db = await setupTestDatabase();

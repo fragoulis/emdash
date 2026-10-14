@@ -6,11 +6,12 @@ import type {
 	RootOperationNode,
 	UnknownRow,
 } from "kysely";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, expect, it } from "vitest";
 
 import { setI18nConfig } from "../../../src/i18n/config.js";
 import { _resetAstroI18nCacheForTests } from "../../../src/i18n/resolve.js";
 import { getMenuWithDb } from "../../../src/menus/index.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
@@ -33,6 +34,8 @@ class QueryCountingPlugin implements KyselyPlugin {
 
 describeEachDialect("batched menu reference resolution", (dialect) => {
 	let ctx: DialectTestContext;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		ctx = await setupForDialectWithCollections(dialect);
@@ -212,7 +215,13 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 
 		await ctx.db
 			.insertInto("_emdash_menus")
-			.values({ id: "menu-primary-fr", name: "primary", label: "Primary", locale: "fr" })
+			.values({
+				id: "menu-primary-fr",
+				site_id: "site-default",
+				name: "primary",
+				label: "Primary",
+				locale: "fr",
+			})
 			.execute();
 		const contentItems: Array<[string, number, string, string, string, string]> = [
 			["item-page-local", 1, "page", "page", "page-local", "Contact"],
@@ -236,6 +245,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				{
 					id: "item-custom",
 					menu_id: "menu-primary-fr",
+					site_id: "site-default",
 					sort_order: 0,
 					type: "custom",
 					custom_url: "https://example.com/docs",
@@ -245,6 +255,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				...contentItems.map(([id, sortOrder, type, collection, referenceId, label]) => ({
 					id,
 					menu_id: "menu-primary-fr",
+					site_id: "site-default",
 					sort_order: sortOrder,
 					type,
 					reference_collection: collection,
@@ -255,6 +266,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				{
 					id: "item-collection-archive",
 					menu_id: "menu-primary-fr",
+					site_id: "site-default",
 					sort_order: 7,
 					type: "collection",
 					reference_collection: "page",
@@ -264,6 +276,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				...taxonomyItems.map(([id, sortOrder, referenceId, label]) => ({
 					id,
 					menu_id: "menu-primary-fr",
+					site_id: "site-default",
 					sort_order: sortOrder,
 					type: "taxonomy",
 					reference_id: referenceId,
@@ -308,10 +321,34 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 		await ctx.db
 			.insertInto("_emdash_menus")
 			.values([
-				{ id: "menu-footer-en", name: "footer", label: "Footer", locale: "en" },
-				{ id: "menu-footer-fr", name: "footer", label: "Pied de page", locale: "fr" },
-				{ id: "menu-social-en", name: "social", label: "Social", locale: "en" },
-				{ id: "menu-empty-fr", name: "empty", label: "Empty", locale: "fr" },
+				{
+					id: "menu-footer-en",
+					site_id: "site-default",
+					name: "footer",
+					label: "Footer",
+					locale: "en",
+				},
+				{
+					id: "menu-footer-fr",
+					site_id: "site-default",
+					name: "footer",
+					label: "Pied de page",
+					locale: "fr",
+				},
+				{
+					id: "menu-social-en",
+					site_id: "site-default",
+					name: "social",
+					label: "Social",
+					locale: "en",
+				},
+				{
+					id: "menu-empty-fr",
+					site_id: "site-default",
+					name: "empty",
+					label: "Empty",
+					locale: "fr",
+				},
 			])
 			.execute();
 		await ctx.db
@@ -325,6 +362,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				].map(([id, menuId, sortOrder, label, locale]) => ({
 					id: id as string,
 					menu_id: menuId as string,
+					site_id: "site-default",
 					sort_order: sortOrder as number,
 					type: "custom",
 					custom_url: "https://example.com",
