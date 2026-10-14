@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { handleImportAdvance } from "../../../../src/api/handlers/transfer.js";
 import type { Database } from "../../../../src/database/types.js";
 import { activateMediaUsageCapture } from "../../../../src/media/usage/activation.js";
+import { runWithContext } from "../../../../src/request-context.js";
 import { findSiteWriteFenceError } from "../../../../src/transfer/fence.js";
 import { canonicalJson } from "../../../../src/transfer/format/canonical.js";
 import {
@@ -73,61 +74,85 @@ describeEachDialect("site import resumption", (dialect) => {
 		await teardownForDialect(ctx);
 	});
 
+	it("imports navigation into the selected site, not the installation identity", async () => {
+		const staged = await stageGoldenImport(ctx.db, storage, dialect);
+		expect(staged.plan.target.selectedSiteId).toBe("site-default");
+		expect(staged.plan.target.siteId).not.toBe("site-default");
+		await driveImport(ctx.db, storage, staged.operationId);
+		const menus = await ctx.db.selectFrom("_emdash_menus").select("site_id").execute();
+		const items = await ctx.db.selectFrom("_emdash_menu_items").select("site_id").execute();
+		expect(menus).toEqual(
+			expect.arrayContaining([expect.objectContaining({ site_id: "site-default" })]),
+		);
+		expect(menus.every((menu) => menu.site_id === "site-default")).toBe(true);
+		expect(items.every((item) => item.site_id === "site-default")).toBe(true);
+	});
+
+	it("rejects an advance request made under another selected site", async () => {
+		const staged = await stageGoldenImport(ctx.db, storage, dialect);
+		await expect(
+			runWithContext({ editMode: false, siteId: "bar" }, () =>
+				advanceImport({ db: ctx.db, storage, operationId: staged.operationId, verify: verifyOk }),
+			),
+		).rejects.toMatchObject({ code: "TRANSFER_SITE_MISMATCH" });
+		expect(
+			(await new TransferOperationRepository(ctx.db).require(staged.operationId)).state,
+		).not.toBe("failed");
+		expect(await ctx.db.selectFrom("_emdash_menus").select("id").execute()).toEqual([]);
+	});
+
 	it(
 		"survives a crash after every statement and converges on the uninterrupted result",
 		{ timeout: 600_000 },
 		async () => {
-			const reference = await setupForDialect(dialect);
-			try {
-				const referenceStorage = createMemoryStorage();
-				await seedTarget(reference.db);
-				const clean = await stageGoldenImport(reference.db, referenceStorage, dialect);
-				await driveImport(reference.db, referenceStorage, clean.operationId);
-				const expected = await normalizedDump(reference.db);
+			const referenceStorage = createMemoryStorage();
+			const clean = await stageGoldenImport(ctx.db, referenceStorage, dialect);
+			await driveImport(ctx.db, referenceStorage, clean.operationId);
+			const expected = await normalizedDump(ctx.db);
+			await teardownForDialect(ctx);
+			ctx = await setupForDialect(dialect);
+			await seedTarget(ctx.db);
 
-				const staged = await stageGoldenImport(ctx.db, storage, dialect);
-				const { db, faults } = withFaults(ctx.db);
-				const ops = new TransferOperationRepository(ctx.db);
-				let offset = 1;
-				let lastCursor = "";
-				let crashes = 0;
-				for (;;) {
-					faults.failAfter(offset);
-					try {
-						const result = await advanceImport({
-							db,
-							storage,
-							operationId: staged.operationId,
-							verify: verifyOk,
-						});
-						const crashed = faults.crashed;
-						faults.disarm();
-						if (!crashed && result.nextRequestInMs === null) break;
-						if (!crashed) continue;
-					} catch (error) {
-						expect(faults.crashed).toBe(true);
-						faults.disarm();
-						expect((error as Error).message).toContain("injected crash");
-					}
-					crashes++;
-					await expireLeases(ctx.db);
-					const operation = await ops.require(staged.operationId);
-					const cursor = canonicalJson(operation.cursor ?? null);
-					if (cursor === lastCursor) offset++;
-					else {
-						lastCursor = cursor;
-						offset = 1;
-					}
+			const staged = await stageGoldenImport(ctx.db, storage, dialect);
+			const { db, faults } = withFaults(ctx.db);
+			const ops = new TransferOperationRepository(ctx.db);
+			let offset = 1;
+			let lastCursor = "";
+			let crashes = 0;
+			for (;;) {
+				faults.failAfter(offset);
+				try {
+					const result = await advanceImport({
+						db,
+						storage,
+						operationId: staged.operationId,
+						verify: verifyOk,
+					});
+					const crashed = faults.crashed;
+					faults.disarm();
+					if (!crashed && result.nextRequestInMs === null) break;
+					if (!crashed) continue;
+				} catch (error) {
+					expect(faults.crashed).toBe(true);
+					faults.disarm();
+					expect((error as Error).message).toContain("injected crash");
 				}
-
+				crashes++;
+				await expireLeases(ctx.db);
 				const operation = await ops.require(staged.operationId);
-				expect(operation.state).toBe("complete");
-				expect(crashes).toBeGreaterThan(100);
-				await expectTargetMatchesGolden(ctx.db, staged.golden, staged.plan);
-				expect(await normalizedDump(ctx.db)).toEqual(expected);
-			} finally {
-				await teardownForDialect(reference);
+				const cursor = canonicalJson(operation.cursor ?? null);
+				if (cursor === lastCursor) offset++;
+				else {
+					lastCursor = cursor;
+					offset = 1;
+				}
 			}
+
+			const operation = await ops.require(staged.operationId);
+			expect(operation.state).toBe("complete");
+			expect(crashes).toBeGreaterThan(100);
+			await expectTargetMatchesGolden(ctx.db, staged.golden, staged.plan);
+			expect(await normalizedDump(ctx.db)).toEqual(expected);
 		},
 	);
 
@@ -421,7 +446,13 @@ describeEachDialect("site import resumption", (dialect) => {
 			inserted = true;
 			await ctx.db
 				.insertInto("_emdash_menus")
-				.values({ id: "unrelated_menu", name: "primary", label: "Other", locale: "fr" })
+				.values({
+					id: "unrelated_menu",
+					site_id: "site-default",
+					name: "primary",
+					label: "Other",
+					locale: "fr",
+				})
 				.execute();
 		};
 		const results = await driveImport(db, storage, staged.operationId);
@@ -471,47 +502,45 @@ describeEachDialect("site import resumption", (dialect) => {
 		"imports with media-usage capture active and deletes the seeded collections first",
 		{ timeout: 60_000 },
 		async () => {
-			const fresh = await setupForDialect(dialect);
-			try {
-				const freshStorage = createMemoryStorage();
-				expect(await activateMediaUsageCapture(fresh.db, { writersDrained: true })).toMatchObject({
-					outcome: "active",
-				});
-				await seedTarget(fresh.db);
-				const staged = await stageGoldenImport(fresh.db, freshStorage, dialect);
-				const results = await driveImport(fresh.db, freshStorage, staged.operationId);
-				expect(results.at(-1)!.operation.state).toBe("complete");
-				await expectTargetMatchesGolden(fresh.db, staged.golden, staged.plan);
+			await teardownForDialect(ctx);
+			ctx = await setupForDialect(dialect);
+			const fresh = ctx;
+			const freshStorage = createMemoryStorage();
+			expect(await activateMediaUsageCapture(fresh.db, { writersDrained: true })).toMatchObject({
+				outcome: "active",
+			});
+			await seedTarget(fresh.db);
+			const staged = await stageGoldenImport(fresh.db, freshStorage, dialect);
+			const results = await driveImport(fresh.db, freshStorage, staged.operationId);
+			expect(results.at(-1)!.operation.state).toBe("complete");
+			await expectTargetMatchesGolden(fresh.db, staged.golden, staged.plan);
 
-				const statuses = await fresh.db
-					.selectFrom("_emdash_media_usage_index_status")
-					.select(["scope_key", "collection_id", "capture_state", "status"])
-					.where("adapter_id", "=", "content-media")
-					.where("scope_type", "=", "collection")
-					.orderBy("scope_key")
-					.execute();
-				expect(statuses).toEqual([
-					{
-						scope_key: "pages",
-						collection_id: ids.pages,
-						capture_state: "active",
-						status: "stale",
-					},
-					{
-						scope_key: "posts",
-						collection_id: ids.posts,
-						capture_state: "active",
-						status: "stale",
-					},
-				]);
-				const deletions = await fresh.db
-					.selectFrom("_emdash_media_usage_collection_deletions")
-					.selectAll()
-					.execute();
-				expect(deletions).toEqual([]);
-			} finally {
-				await teardownForDialect(fresh);
-			}
+			const statuses = await fresh.db
+				.selectFrom("_emdash_media_usage_index_status")
+				.select(["scope_key", "collection_id", "capture_state", "status"])
+				.where("adapter_id", "=", "content-media")
+				.where("scope_type", "=", "collection")
+				.orderBy("scope_key")
+				.execute();
+			expect(statuses).toEqual([
+				{
+					scope_key: "pages",
+					collection_id: ids.pages,
+					capture_state: "active",
+					status: "stale",
+				},
+				{
+					scope_key: "posts",
+					collection_id: ids.posts,
+					capture_state: "active",
+					status: "stale",
+				},
+			]);
+			const deletions = await fresh.db
+				.selectFrom("_emdash_media_usage_collection_deletions")
+				.selectAll()
+				.execute();
+			expect(deletions).toEqual([]);
 		},
 	);
 });

@@ -10,6 +10,7 @@ if (!/^(foo|bar|admin)$/.test(site ?? "")) throw new Error("Set PROOF_SITE to fo
 export default defineConfig({
 	output: "server",
 	adapter: node({ mode: "standalone" }),
+	vite: { ssr: { external: ["emdash"] } },
 	outDir: `./dist/${site}`,
 	srcDir: fileURLToPath(new URL(`./src/${site}/`, import.meta.url)),
 	publicDir: fileURLToPath(new URL(`./src/${site}/public/`, import.meta.url)),

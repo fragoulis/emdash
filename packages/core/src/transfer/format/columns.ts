@@ -371,6 +371,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "_emdash_menus",
 		kind: "menu",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			name: f("name"),
 			label: f("label"),
@@ -384,6 +385,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "_emdash_menu_items",
 		kind: "menu_item",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			menu_id: f("menuId"),
 			parent_id: f("parentId"),

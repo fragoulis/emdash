@@ -24,6 +24,7 @@ import { getPortableTableSpecForKind } from "../format/columns.js";
 import type { ColumnCodec } from "../format/columns.js";
 import type { RecordKind, RecordOfKind, SitePackageRecord } from "../format/kinds.js";
 import { rowsPerInsert } from "../format/limits.js";
+import { selectedPlanSiteId } from "../format/plan.js";
 import { DECIDED_SETTING_NAMES } from "../format/settings.js";
 import { applyTransformations } from "../format/transformations.js";
 import { applyRewrittenIds, type ImportContext } from "./context.js";
@@ -70,8 +71,8 @@ const FLAT_KINDS: Readonly<Record<FlatKind, FlatKindConfig>> = {
 	content_byline: { key: ID_KEY },
 	content_reference: { key: ID_KEY },
 	seo: { key: ["collection", "content_id"] },
-	menu: { key: ID_KEY },
-	menu_item: { key: ID_KEY },
+	menu: { key: ID_KEY, derived: (context) => ({ site_id: selectedPlanSiteId(context.plan) }) },
+	menu_item: { key: ID_KEY, derived: (context) => ({ site_id: selectedPlanSiteId(context.plan) }) },
 	widget_area: { key: ID_KEY },
 	widget: { key: ID_KEY },
 	section: { key: ID_KEY },
@@ -321,6 +322,13 @@ async function writeResolved<K extends FlatKind>(
 			...encodeRecord(context.db, spec.columns, target, { kind, id: record.id }),
 			...(config.derived ? await config.derived(context, record) : {}),
 		};
+		if (kind === "setting") {
+			const name = String(row.name);
+			row.site_id = name.startsWith("site:") ? selectedPlanSiteId(context.plan) : null;
+			row.name = name.startsWith("site:")
+				? `site:${selectedPlanSiteId(context.plan)}:${name.slice(5)}`
+				: name;
+		}
 		const extra = options.extra?.(record);
 		if (extra) {
 			Object.assign(row, extra.row);

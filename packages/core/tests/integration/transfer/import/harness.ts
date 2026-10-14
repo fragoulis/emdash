@@ -16,6 +16,7 @@ import {
 } from "kysely";
 
 import type { Database } from "../../../../src/database/types.js";
+import { runWithContext } from "../../../../src/request-context.js";
 import { applySeed } from "../../../../src/seed/apply.js";
 import { defaultSeed } from "../../../../src/seed/default.js";
 import { inspectPortableDomain } from "../../../../src/transfer/domain.js";
@@ -97,7 +98,9 @@ export async function stageGoldenImport(
 	for await (const { entry } of golden.reader.index()) files.push(entry);
 	await new TransferStagedFileRepository(db).declareMany(operation.id, files, "verified");
 
-	const domain = await inspectPortableDomain(db);
+	const domain = await runWithContext({ editMode: false, siteId: "site-default", db }, () =>
+		inspectPortableDomain(db),
+	);
 	const scaffold = domain.seededScaffold.map((item) => ({ type: item.type, id: item.id }));
 	const counts: Partial<Record<(typeof RECORD_KINDS)[number], number>> = {};
 	for (const kind of RECORD_KINDS) {
@@ -123,7 +126,12 @@ export async function stageGoldenImport(
 			createdAt: golden.manifest.createdAt,
 			createdByEmDashVersion: golden.manifest.createdByEmDashVersion,
 		},
-		target: { siteId: await getOrCreateSiteId(db), dialect, emdashVersion: "dev" },
+		target: {
+			siteId: await getOrCreateSiteId(db),
+			selectedSiteId: "site-default",
+			dialect,
+			emdashVersion: "dev",
+		},
 		counts,
 		bytes: { records: golden.manifest.files.totalBytes, media: golden.manifest.media.totalBytes },
 		principals: [
