@@ -8,7 +8,14 @@
 import type { Permission, RoleLevel } from "@emdash-cms/auth";
 import { hasPermission, canActOnOwn, hasScope } from "@emdash-cms/auth";
 
+import { getRequestContext } from "../request-context.js";
 import { apiError } from "./error.js";
+
+export function requireSelectedSite(): Response | null {
+	return getRequestContext()?.siteId
+		? null
+		: apiError("SITE_REQUIRED", "A server-selected site is required", 403);
+}
 
 interface UserLike {
 	id: string;

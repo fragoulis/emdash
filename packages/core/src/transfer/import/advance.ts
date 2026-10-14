@@ -16,6 +16,7 @@ import type { z } from "zod";
 
 import { isPostgres } from "../../database/dialect-helpers.js";
 import type { Database } from "../../database/types.js";
+import { getRequestContext, runWithContext } from "../../request-context.js";
 import type { Storage } from "../../storage/types.js";
 import { chunks, SQL_BATCH_SIZE } from "../../utils/chunks.js";
 import { isMissingTableError } from "../../utils/db-errors.js";
@@ -25,7 +26,12 @@ import { isTransferError, TransferError, type TransferErrorCode } from "../error
 import { planDigest, type Sha256Digest } from "../format/digest.js";
 import { IMPORT_RECORD_STAGES } from "../format/kinds.js";
 import { TRANSFER_LIMITS } from "../format/limits.js";
-import { isPlanExecutable, siteImportPlanSchema, type SiteImportPlan } from "../format/plan.js";
+import {
+	isPlanExecutable,
+	selectedPlanSiteId,
+	siteImportPlanSchema,
+	type SiteImportPlan,
+} from "../format/plan.js";
 import { sealReceipt } from "../format/receipt.js";
 import { SITE_PACKAGE_FORMAT_VERSION } from "../format/version.js";
 import { TransferStepBudget } from "../ops/budget.js";
@@ -207,10 +213,17 @@ async function advanceClaimed(
 			return result(await ops.release(operation.id, leaseToken), IMPORT_RETRY_MS);
 		}
 		const context = await loadContext(options, ops, operation, leaseToken);
-		return await runStep(context, options.verify);
+		return await runWithContext(
+			{ editMode: false, siteId: selectedPlanSiteId(context.plan), db: context.db },
+			() => runStep(context, options.verify),
+		);
 	} catch (error) {
 		if (error instanceof ImportCancelledSignal) {
 			return result(await ops.finishCancelled(operation.id, leaseToken), 0);
+		}
+		if (isTransferError(error) && error.code === "TRANSFER_SITE_MISMATCH") {
+			await ops.release(operation.id, leaseToken);
+			throw error;
 		}
 		if (isTransferError(error) && LEASE_CODES.has(error.code)) throw error;
 		const code: TransferErrorCode = isTransferError(error) ? error.code : "TRANSFER_IMPORT_ERROR";
@@ -282,6 +295,12 @@ async function loadContext(
 		throw new TransferError("TRANSFER_PLAN_DIGEST_MISMATCH", "Import plan does not match");
 	}
 	const plan = parsed.data;
+	const selectedSite = plan.target.selectedSiteId;
+	if (!selectedSite)
+		throw new TransferError("TRANSFER_PLAN_DIGEST_MISMATCH", "Import plan has no selected site");
+	const requestedSite = getRequestContext()?.siteId;
+	if (requestedSite && requestedSite !== selectedSite)
+		throw new TransferError("TRANSFER_SITE_MISMATCH", "Import plan is for another site");
 	if (plan.packageDigest !== packageDigest) {
 		throw new TransferError("TRANSFER_PLAN_DIGEST_MISMATCH", "Plan is for another package");
 	}
@@ -453,15 +472,19 @@ async function runVerify(
 	verify: VerifyImportStep,
 	start: unknown,
 ): Promise<StepResult> {
-	const step = await verify({
-		db: context.db,
-		storage: context.storage,
-		operationId: context.operationId,
-		reader: context.reader,
-		plan: context.plan,
-		cursor: start,
-		budget: context.budget,
-	});
+	const step = await runWithContext(
+		{ editMode: false, siteId: selectedPlanSiteId(context.plan), db: context.db },
+		() =>
+			verify({
+				db: context.db,
+				storage: context.storage,
+				operationId: context.operationId,
+				reader: context.reader,
+				plan: context.plan,
+				cursor: start,
+				budget: context.budget,
+			}),
+	);
 	// The verifier runs until its budget is spent, so an unfinished step ends this one.
 	if (!step.done) {
 		await checkpoint(context, {

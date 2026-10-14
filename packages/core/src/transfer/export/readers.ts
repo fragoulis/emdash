@@ -200,11 +200,16 @@ function entryExists(
 }
 
 /** A row of `table` has translation group (or, without one, id) `group`. */
-function groupExists(table: string, group: RawBuilder<unknown>): RawBuilder<boolean> {
+function groupExists(
+	table: string,
+	group: RawBuilder<unknown>,
+	siteId?: string,
+): RawBuilder<boolean> {
 	return sql<boolean>`EXISTS (
 		SELECT 1 FROM ${sql.ref(table)} AS __grouped
-		WHERE __grouped.translation_group = ${group}
-			OR (__grouped.translation_group IS NULL AND __grouped.id = ${group})
+		WHERE ${siteId ? sql`__grouped.site_id = ${siteId} AND` : sql``}
+			(__grouped.translation_group = ${group}
+			OR (__grouped.translation_group IS NULL AND __grouped.id = ${group}))
 	)`;
 }
 
@@ -714,18 +719,27 @@ function configFor(kind: RecordKind): TableReaderConfig {
 						commentValid(context),
 					)}`,
 			};
+		case "menu":
+			return {
+				...tableConfig("menu"),
+				filter: () => sql<boolean>`_emdash_menus.site_id = ${selectedSiteId()}`,
+				countFilter: () => sql<boolean>`_emdash_menus.site_id = ${selectedSiteId()}`,
+			};
 		case "menu_item":
 			return {
 				...tableConfig("menu_item"),
 				parentColumn: "parent_id",
+				countFilter: () => sql<boolean>`_emdash_menu_items.site_id = ${selectedSiteId()}`,
 				treeValid: (context) => {
 					const reference = col("_emdash_menu_items", "reference_id");
+					const siteId = selectedSiteId();
 					return sql<boolean>`(
-						_emdash_menu_items.menu_id IN (SELECT id FROM _emdash_menus)
+						_emdash_menu_items.site_id = ${siteId}
+						AND _emdash_menu_items.menu_id IN (SELECT id FROM _emdash_menus WHERE site_id = ${siteId})
 						AND (
 							${reference} IS NULL
-							OR ${groupExists("taxonomies", reference)}
-							OR ${anyOf(context.slugs.map((slug) => groupExists(contentTable(slug), reference)))}
+							OR ${groupExists("taxonomies", reference, siteId)}
+							OR ${anyOf(context.slugs.map((slug) => groupExists(contentTable(slug), reference, siteId)))}
 						)
 					)`;
 				},

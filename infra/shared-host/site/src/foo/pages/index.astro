@@ -1,6 +1,7 @@
 ---
 import { Client } from "pg";
 import { getRequestContext } from "emdash/request-context";
+import { getNavigation } from "../../navigation.mjs";
 
 const siteId = getRequestContext()?.siteId;
 if (!siteId) throw new Error("Site not resolved");
@@ -22,6 +23,7 @@ try {
 	await client.end();
 }
 if (!greeting) throw new Error("Site not provisioned");
+const menu = await getNavigation();
 ---
 
 <!doctype html>
@@ -36,6 +38,9 @@ if (!greeting) throw new Error("Site not provisioned");
 		<p>Site ID: {siteId}</p>
 		<p>{greeting}</p>
 		<p>Published entry: {title}</p>
+		<nav aria-label="Primary navigation">
+			{menu?.items.map((item) => <a href={item.url}>{item.label}</a>)}
+		</nav>
 		<img src="/mark.svg" alt={`${site} mark`} />
 	</body>
 </html>

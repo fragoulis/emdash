@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
+import { runWithContext } from "../../../../src/request-context.js";
 import { applySeed } from "../../../../src/seed/apply.js";
 import { defaultSeed } from "../../../../src/seed/default.js";
 import { analyzeImportStep } from "../../../../src/transfer/analyze/step.js";
@@ -38,6 +39,8 @@ const TARGET = analysisTargetContext({
 describeEachDialect("site import analysis: values the site's write paths refuse", (dialect) => {
 	let ctx: DialectTestContext;
 	let storage: MemoryStorage;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		ctx = await setupForDialect(dialect);

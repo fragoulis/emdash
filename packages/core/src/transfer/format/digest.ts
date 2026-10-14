@@ -6,8 +6,8 @@
  * - `packageDigest = "sha256:" + hex(sha256(utf8(canonicalJson(manifest))))`
  * - `planDigest = "sha256:" + hex(sha256(utf8(canonicalJson(plan))))` over the
  *   complete {@link SiteImportPlan} including its `decisions`, `packageDigest`
- *   and `target.siteId`, so a plan cannot be replayed against another package
- *   or target.
+ *   and `target.siteId` / `target.selectedSiteId`, so a plan cannot be replayed
+ *   against another package, installation, or selected site.
  * - `receiptDigest` covers the receipt with its `receiptDigest` property
  *   removed.
  * - A record's hash is the hex SHA-256 of its canonical JSON (the NDJSON line

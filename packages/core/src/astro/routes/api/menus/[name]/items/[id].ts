@@ -7,7 +7,7 @@
 
 import type { APIRoute } from "astro";
 
-import { requirePerm } from "#api/authorize.js";
+import { requirePerm, requireSelectedSite } from "#api/authorize.js";
 import { apiError, handleError, unwrapResult } from "#api/error.js";
 import { handleMenuItemDelete, handleMenuItemUpdate } from "#api/handlers/menus.js";
 import { isParseError, parseBody, parseQuery } from "#api/parse.js";
@@ -18,6 +18,8 @@ import { invalidateRouteCache } from "#cache/route-cache.js";
 export const prerender = false;
 
 export const PUT: APIRoute = async ({ params, request, locals, cache }) => {
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 	const { emdash, user } = locals;
 	const name = params.name!;
 	const itemId = params.id;
@@ -48,6 +50,8 @@ export const PUT: APIRoute = async ({ params, request, locals, cache }) => {
 };
 
 export const DELETE: APIRoute = async ({ params, request, locals, cache }) => {
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 	const { emdash, user } = locals;
 	const name = params.name!;
 	const itemId = params.id;

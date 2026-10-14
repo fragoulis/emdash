@@ -1,10 +1,11 @@
 import type { Kysely } from "kysely";
 import { ulid } from "ulidx";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { exportSeed } from "../../src/cli/commands/export-seed.js";
 import type { Database } from "../../src/database/types.js";
 import { setI18nConfig } from "../../src/i18n/config.js";
+import { runWithContext } from "../../src/request-context.js";
 import { applySeed } from "../../src/seed/apply.js";
 import { setupTestDatabaseWithCollections, teardownTestDatabase } from "../utils/test-db.js";
 
@@ -23,6 +24,8 @@ import { setupTestDatabaseWithCollections, teardownTestDatabase } from "../utils
 describe("seed round-trip preserves a non-en default locale (#1421)", () => {
 	let source: Kysely<Database>;
 	let target: Kysely<Database>;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(() => {
 		setI18nConfig(null);
@@ -50,6 +53,7 @@ describe("seed round-trip preserves a non-en default locale (#1421)", () => {
 			.insertInto("_emdash_menus")
 			.values({
 				id: ulid(),
+				site_id: "site-default",
 				name: "primary",
 				label: "Hauptmenü",
 				created_at: now,

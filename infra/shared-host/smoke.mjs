@@ -107,7 +107,7 @@ try {
 		"-U",
 		"postgres",
 		"-c",
-		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar'); CREATE TABLE ec_posts (id text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id), slug text NOT NULL, locale text NOT NULL, status text NOT NULL, title text NOT NULL, UNIQUE(site_id, slug, locale)); INSERT INTO ec_posts VALUES ('foo-entry', 'site-foo', 'shared', 'en', 'published', 'Foo story'), ('bar-entry', 'site-bar', 'shared', 'en', 'published', 'Bar story'), ('foo-only', 'site-foo', 'exclusive', 'en', 'published', 'Only Foo')",
+		"CREATE TABLE proof_sites (name text PRIMARY KEY, greeting text NOT NULL); INSERT INTO proof_sites VALUES ('foo', 'Hello from Foo'), ('bar', 'Hello from Bar'); CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text UNIQUE NOT NULL, active integer NOT NULL DEFAULT 1); CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo'), ('site-bar', 'bar'); INSERT INTO _emdash_site_hosts VALUES ('foo.test', 'site-foo'), ('bar.test', 'site-bar'); CREATE TABLE ec_posts (id text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id), slug text NOT NULL, locale text NOT NULL, status text NOT NULL, title text NOT NULL, UNIQUE(site_id, slug, locale)); INSERT INTO ec_posts VALUES ('foo-entry', 'site-foo', 'shared', 'en', 'published', 'Foo story'), ('bar-entry', 'site-bar', 'shared', 'en', 'published', 'Bar story'), ('foo-only', 'site-foo', 'exclusive', 'en', 'published', 'Only Foo'); CREATE TABLE _emdash_menus (id text PRIMARY KEY, site_id text NOT NULL, name text NOT NULL, label text NOT NULL, locale text NOT NULL, translation_group text, UNIQUE(site_id, name, locale)); CREATE TABLE _emdash_menu_items (id text PRIMARY KEY, site_id text NOT NULL, menu_id text NOT NULL, parent_id text, sort_order integer NOT NULL, type text NOT NULL, reference_collection text, reference_id text, custom_url text, label text NOT NULL, title_attr text, target text, css_classes text, locale text NOT NULL, translation_group text); INSERT INTO _emdash_menus (id, site_id, name, label, locale) VALUES ('foo-menu', 'site-foo', 'primary', 'Foo navigation', 'en'), ('bar-menu', 'site-bar', 'primary', 'Bar navigation', 'en'); INSERT INTO _emdash_menu_items (id, site_id, menu_id, sort_order, type, custom_url, label, locale) VALUES ('foo-link', 'site-foo', 'foo-menu', 0, 'custom', '/foo', 'Foo link', 'en'), ('bar-link', 'site-bar', 'bar-menu', 0, 'custom', '/bar', 'Bar link', 'en')",
 	]);
 
 	let sessionActive = true;
@@ -220,6 +220,14 @@ try {
 		assert.match(html, new RegExp(greeting));
 		assert.match(html, new RegExp(`Site ID: site-${site}`));
 		assert.match(html, new RegExp(`Published entry: ${site === "foo" ? "Foo" : "Bar"} story`));
+		assert.match(html, new RegExp(`<a href="/${site}">${site === "foo" ? "Foo" : "Bar"} link</a>`));
+		assert.doesNotMatch(html, new RegExp(`<a href="/${site === "foo" ? "bar" : "foo"}">`));
+		const warm = await request(`${site}.test`);
+		assert.equal(warm.status, 200);
+		assert.match(
+			warm.text(),
+			new RegExp(`<a href="/${site}">${site === "foo" ? "Foo" : "Bar"} link</a>`),
+		);
 		const ownEntry = await request(`${site}.test`, "/entry/shared.json");
 		assert.equal(ownEntry.status, 200);
 		assert.deepEqual(JSON.parse(ownEntry.text()), {

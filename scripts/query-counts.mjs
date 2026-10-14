@@ -241,11 +241,15 @@ const emdashCliPath = resolve(repoRoot, "packages/core/dist/cli/index.mjs");
 function seedSqliteCli() {
 	for (const step of ["init", "seed"]) {
 		process.stdout.write(`$ (cd ${fixtureDir}) node <emdash-cli> ${step}\n`);
-		const r = spawnSync("node", [emdashCliPath, step], {
-			cwd: fixtureDir,
-			stdio: "inherit",
-			env: { ...process.env, EMDASH_FIXTURE_TARGET: "sqlite" },
-		});
+		const r = spawnSync(
+			"node",
+			[emdashCliPath, step, ...(step === "seed" ? ["--site-id", "site-default"] : [])],
+			{
+				cwd: fixtureDir,
+				stdio: "inherit",
+				env: { ...process.env, EMDASH_FIXTURE_TARGET: "sqlite" },
+			},
+		);
 		if (r.status !== 0) throw new Error(`emdash ${step} failed`);
 	}
 }

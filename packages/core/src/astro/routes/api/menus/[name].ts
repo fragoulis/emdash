@@ -8,7 +8,7 @@
 
 import type { APIRoute } from "astro";
 
-import { requirePerm } from "#api/authorize.js";
+import { requirePerm, requireSelectedSite } from "#api/authorize.js";
 import { handleError, unwrapResult } from "#api/error.js";
 import { handleMenuDelete, handleMenuGet, handleMenuUpdate } from "#api/handlers/menus.js";
 import { isParseError, parseBody, parseQuery } from "#api/parse.js";
@@ -24,6 +24,8 @@ export const GET: APIRoute = async ({ params, request, locals }) => {
 
 	const denied = requirePerm(user, "menus:read");
 	if (denied) return denied;
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	const query = parseQuery(new URL(request.url), localeFilterQuery);
 	if (isParseError(query)) return query;
@@ -42,6 +44,8 @@ export const PUT: APIRoute = async ({ params, request, locals, cache }) => {
 
 	const denied = requirePerm(user, "menus:manage");
 	if (denied) return denied;
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	const query = parseQuery(new URL(request.url), localeFilterQuery);
 	if (isParseError(query)) return query;
@@ -65,6 +69,8 @@ export const DELETE: APIRoute = async ({ params, request, locals, cache }) => {
 
 	const denied = requirePerm(user, "menus:manage");
 	if (denied) return denied;
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	const query = parseQuery(new URL(request.url), localeFilterQuery);
 	if (isParseError(query)) return query;

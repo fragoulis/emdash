@@ -11,9 +11,10 @@
 import { Role } from "@emdash-cms/auth";
 import type { Kysely } from "kysely";
 import { ulid } from "ulidx";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	connectMcpHarness,
 	extractJson,
@@ -21,6 +22,8 @@ import {
 	type McpHarness,
 } from "../../utils/mcp-runtime.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
+
+aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 const ADMIN_ID = "user_admin";
 const SUBSCRIBER_ID = "user_subscriber";
@@ -43,6 +46,7 @@ async function seedMenu(
 		.insertInto("_emdash_menus" as never)
 		.values({
 			id: menuId,
+			site_id: "site-default",
 			name,
 			label,
 			locale: options.locale ?? "en",
@@ -58,6 +62,7 @@ async function seedMenu(
 			.values({
 				id: ulid(),
 				menu_id: menuId,
+				site_id: "site-default",
 				label: item.label,
 				custom_url: item.url ?? null,
 				type: "custom",

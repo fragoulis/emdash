@@ -16,7 +16,9 @@ export function siteSettingsTag(): string {
 }
 
 export function menuTag(name: string): string {
-	return `${PREFIX}:menu:${name}`;
+	const siteId = getRequestContext()?.siteId;
+	if (!siteId) throw new Error("A server-selected site is required for menus");
+	return `${PREFIX}:menu:${siteId}:${name}`;
 }
 
 export function taxonomyTag(name: string): string {
