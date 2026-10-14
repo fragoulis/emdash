@@ -97,7 +97,7 @@ Core changes propagate to the demo automatically.
 
 ## Checks
 
-Run before pushing:
+For Markdown-only changes, run `git diff --check` and check changed links and frontmatter. Skip all `pnpm` commands. For code or MDX changes, run the applicable checks before pushing:
 
 ```bash
 pnpm typecheck   # TypeScript (packages)
@@ -191,7 +191,7 @@ If the body contains `![Settings screen after the change](./after.png)`, pass `-
 - Branch from `main`.
 - Fill out the PR template completely. **PRs with an empty or missing template will be closed automatically.** The template is loaded by the GitHub UI; if you create a PR via API/CLI, copy `.github/PULL_REQUEST_TEMPLATE.md` into the body.
 - For a design PR, use [the design template](.github/PULL_REQUEST_TEMPLATE/design.md), prefix the title with `design:`, and limit the change to `proposals/`. In the GitHub web interface, add `?template=design.md` to the new-PR URL to load the design template.
-- `pnpm typecheck` and `pnpm lint` must pass before pushing.
+- For code or MDX changes, `pnpm typecheck` and `pnpm lint` must pass before pushing. For Markdown-only changes, use the checks in [Checks](#checks).
 - Run relevant tests.
 - Include screenshots for every UI change.
 - Commit messages describe _why_, not just _what_.

@@ -88,14 +88,6 @@ When asked for an audit only, report prioritized, concrete findings without edit
 
 ## Verify
 
-Run the narrowest checks that cover the changed artifact. Common checks include:
+For Markdown-only changes, run `git diff --check` and inspect changed links and frontmatter. Skip all `pnpm` commands. Validate skill frontmatter and relative links when editing skills.
 
-```bash
-pnpm lint:quick
-pnpm --dir docs build
-git diff --check
-```
-
-Use the docs build for public docs, docs configuration, or shared content consumed by that build; do not run it merely because another Markdown file changed. Validate skill frontmatter and relative links when editing skills. Use additional tests when code samples or generated reference material depend on executable behavior.
-
-If validation fails because declaration output is missing, run the root build and retry. Treat a remaining failure as introduced by the current work rather than establishing a pre-edit failure baseline.
+For MDX, docs configuration, or shared source consumed by the docs build, run the narrowest applicable checks, such as `pnpm lint:quick` and `pnpm --dir docs build`. Use additional tests when code samples or generated reference material depend on executable behavior. If validation fails because declaration output is missing, run the root build and retry. Treat a remaining failure as introduced by the current work rather than establishing a pre-edit failure baseline.
