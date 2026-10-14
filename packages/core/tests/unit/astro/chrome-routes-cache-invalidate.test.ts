@@ -5,7 +5,7 @@
 
 import { Role } from "@emdash-cms/auth";
 import { ulid } from "ulidx";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleMenuCreate, handleMenuItemCreate } from "../../../src/api/handlers/menus.js";
 import { handleTaxonomyCreate, handleTermCreate } from "../../../src/api/handlers/taxonomies.js";
@@ -40,12 +40,15 @@ import {
 	PUT as putWidget,
 } from "../../../src/astro/routes/api/widget-areas/[name]/widgets/[id].js";
 import { POST as postWidgetAreas } from "../../../src/astro/routes/api/widget-areas/index.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 describe("Chrome write routes — edge cache invalidation", () => {
 	let db: Awaited<ReturnType<typeof setupTestDatabase>>;
 
 	const admin = { id: "user-1", role: Role.ADMIN };
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	function makeContext<const P extends Record<string, string>>(params: P) {
 		const invalidate = vi.fn().mockResolvedValue(undefined);
@@ -87,7 +90,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 
 			expect(response.status).toBe(200);
 			expect(invalidate).toHaveBeenCalledTimes(1);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:settings"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:settings:site-default"] });
 		});
 	});
 
@@ -118,7 +121,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 			} as Parameters<typeof postMenus>[0]);
 
 			expect(response.status).toBe(201);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:primary"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:site-default:primary"] });
 		});
 
 		it("returns the created menu when the purge is rejected", async () => {
@@ -153,7 +156,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 			} as Parameters<typeof putMenu>[0]);
 
 			expect(response.status).toBe(200);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:primary"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:site-default:primary"] });
 		});
 
 		it("invalidates on item create", async () => {
@@ -174,7 +177,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 			} as Parameters<typeof postMenuItem>[0]);
 
 			expect(response.status).toBe(201);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:primary"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:site-default:primary"] });
 		});
 
 		it("invalidates on item update", async () => {
@@ -191,7 +194,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 			} as Parameters<typeof putMenuItem>[0]);
 
 			expect(response.status).toBe(200);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:primary"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:site-default:primary"] });
 		});
 
 		it("invalidates on item reorder", async () => {
@@ -210,7 +213,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 			} as Parameters<typeof reorderMenuItems>[0]);
 
 			expect(response.status).toBe(200);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:primary"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:site-default:primary"] });
 		});
 
 		it("invalidates on item delete", async () => {
@@ -227,7 +230,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 			} as Parameters<typeof deleteMenuItem>[0]);
 
 			expect(response.status).toBe(200);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:primary"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:site-default:primary"] });
 		});
 
 		it("invalidates on menu delete", async () => {
@@ -244,7 +247,7 @@ describe("Chrome write routes — edge cache invalidation", () => {
 			} as Parameters<typeof deleteMenu>[0]);
 
 			expect(response.status).toBe(200);
-			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:primary"] });
+			expect(invalidate).toHaveBeenCalledWith({ tags: ["emdash:menu:site-default:primary"] });
 		});
 	});
 

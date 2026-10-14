@@ -10,7 +10,7 @@
 	"scripts": {
 		"dev": "astro dev",
 		"build": "astro build",
-		"bootstrap": "emdash init && emdash seed",
+		"bootstrap": "emdash init && emdash seed --site-id site-default",
 		"typecheck": "astro check"
 	},
 	"dependencies": {

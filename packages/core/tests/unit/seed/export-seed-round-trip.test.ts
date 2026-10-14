@@ -1,7 +1,17 @@
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import { ulid } from "ulidx";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	afterAll,
+	afterEach,
+	aroundEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 
 import { exportSeed } from "../../../src/cli/commands/export-seed.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
@@ -9,6 +19,7 @@ import { MediaRepository } from "../../../src/database/repositories/media.js";
 import { RedirectRepository } from "../../../src/database/repositories/redirect.js";
 import type { Database } from "../../../src/database/types.js";
 import { setDefaultDnsResolver } from "../../../src/import/ssrf.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { applySeed } from "../../../src/seed/apply.js";
 import type { SeedFile } from "../../../src/seed/types.js";
@@ -76,6 +87,8 @@ async function applyToFreshDatabase(
 
 describe("exportSeed → applySeed round trip", () => {
 	let db: Kysely<Database>;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		db = await setupTestDatabase();
@@ -295,7 +308,13 @@ describe("exportSeed → applySeed round trip", () => {
 		const menuId = ulid();
 		await db
 			.insertInto("_emdash_menus")
-			.values({ id: menuId, name: "primary", label: "Primary", locale: "en" })
+			.values({
+				id: menuId,
+				site_id: "site-default",
+				name: "primary",
+				label: "Primary",
+				locale: "en",
+			})
 			.execute();
 		await db
 			.insertInto("_emdash_menu_items")
@@ -307,6 +326,7 @@ describe("exportSeed → applySeed round trip", () => {
 					type: "page",
 					reference_collection: "pages",
 					reference_id: about.translationGroup ?? about.id,
+					site_id: "site-default",
 					label: "About",
 					locale: "en",
 				},
@@ -317,6 +337,7 @@ describe("exportSeed → applySeed round trip", () => {
 					type: "collection",
 					reference_collection: "products",
 					reference_id: widget.translationGroup ?? widget.id,
+					site_id: "site-default",
 					label: "Widget",
 					locale: "en",
 				},
@@ -327,6 +348,7 @@ describe("exportSeed → applySeed round trip", () => {
 					type: "collection",
 					reference_collection: "products",
 					reference_id: null,
+					site_id: "site-default",
 					label: "All products",
 					locale: "en",
 				},
@@ -393,7 +415,13 @@ describe("exportSeed → applySeed round trip", () => {
 		const menuId = ulid();
 		await db
 			.insertInto("_emdash_menus")
-			.values({ id: menuId, name: "primary", label: "Primary", locale: "fr" })
+			.values({
+				id: menuId,
+				site_id: "site-default",
+				name: "primary",
+				label: "Primary",
+				locale: "fr",
+			})
 			.execute();
 		await db
 			.insertInto("_emdash_menu_items")
@@ -404,6 +432,7 @@ describe("exportSeed → applySeed round trip", () => {
 				type: "page",
 				reference_collection: "pages",
 				reference_id: about.translationGroup ?? about.id,
+				site_id: "site-default",
 				label: "À propos",
 				locale: "fr",
 			})

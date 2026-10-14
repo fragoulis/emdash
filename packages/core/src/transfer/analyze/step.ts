@@ -13,7 +13,10 @@ import type { Kysely } from "kysely";
 import { z } from "zod";
 
 import { detectDialect } from "../../database/dialect-helpers.js";
-import { SiteSettingsRepository } from "../../database/repositories/site-settings.js";
+import {
+	SiteSettingsRepository,
+	selectedSiteId,
+} from "../../database/repositories/site-settings.js";
 import type { Database } from "../../database/types.js";
 import { runWithContext } from "../../request-context.js";
 import type { Storage } from "../../storage/types.js";
@@ -265,6 +268,7 @@ async function buildAnalysisPlan(
 	const { db, targetContext } = input;
 	const target = {
 		siteId: await getOrCreateSiteId(db),
+		selectedSiteId: selectedSiteId(),
 		dialect: detectDialect(db),
 		emdashVersion: targetContext.emdashVersion,
 	};
@@ -290,7 +294,9 @@ async function buildAnalysisPlan(
 	}
 
 	const summary = summarizeValidation(validation.state);
-	const domain = await inspectTargetDomain(db, summary.collectionSlugs);
+	const domain = await runWithContext({ editMode: false, siteId: target.selectedSiteId, db }, () =>
+		inspectTargetDomain(db, summary.collectionSlugs),
+	);
 	const redirectLoops = await findRedirectLoops(
 		manifest,
 		stage,
@@ -320,7 +326,7 @@ async function buildAnalysisPlan(
 			redirectLoops,
 			localeRecasing: localeRecasing(manifest, targetContext),
 			suggestions: await suggestPrincipalUsers(db, summary.principals),
-			targetSettings: await runWithContext({ editMode: false, siteId: target.siteId }, () =>
+			targetSettings: await runWithContext({ editMode: false, siteId: target.selectedSiteId }, () =>
 				readTargetSettings(db),
 			),
 		},

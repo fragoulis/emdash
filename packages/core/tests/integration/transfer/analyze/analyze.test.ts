@@ -1,6 +1,7 @@
 import { sql } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
+import { runWithContext } from "../../../../src/request-context.js";
 import { SchemaRegistry } from "../../../../src/schema/registry.js";
 import { applySeed } from "../../../../src/seed/apply.js";
 import { defaultSeed } from "../../../../src/seed/default.js";
@@ -61,6 +62,8 @@ function replace<T extends SitePackageRecord>(
 describeEachDialect("site import analysis", (dialect) => {
 	let ctx: DialectTestContext;
 	let storage: MemoryStorage;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		ctx = await setupForDialect(dialect);
@@ -136,6 +139,8 @@ describeEachDialect("site import analysis", (dialect) => {
 				packageId: ids.packageId,
 			});
 			expect(plan.target.dialect).toBe(dialect);
+			expect(plan.target.selectedSiteId).toBe("site-default");
+			expect(plan.target.siteId).not.toBe(plan.target.selectedSiteId);
 
 			expect(plan.principals).toEqual([
 				{

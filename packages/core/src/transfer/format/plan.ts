@@ -121,6 +121,7 @@ export const siteImportPlanSchema = z.strictObject({
 	}),
 	target: z.strictObject({
 		siteId: portableIdSchema,
+		selectedSiteId: portableIdSchema.optional(),
 		dialect: z.enum(["sqlite", "postgres"]),
 		emdashVersion: z.string().max(128),
 	}),
@@ -139,6 +140,11 @@ export const siteImportPlanSchema = z.strictObject({
 });
 
 export type SiteImportPlan = z.infer<typeof siteImportPlanSchema>;
+
+export function selectedPlanSiteId(plan: SiteImportPlan): string {
+	if (!plan.target.selectedSiteId) throw new Error("Import plan has no selected site");
+	return plan.target.selectedSiteId;
+}
 
 /** Merge submitted decisions over a plan's defaults. Unknown principal ids are ignored. */
 export function mergeDecisions(

@@ -24,6 +24,7 @@
 
 import { sql, type Kysely } from "kysely";
 
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
 
@@ -188,6 +189,7 @@ export async function inspectPortableDomain(
 	const menuItems = await db
 		.selectFrom("_emdash_menu_items")
 		.select(["id", "menu_id", "label"])
+		.where("site_id", "=", selectedSiteId())
 		.orderBy("id")
 		.execute();
 	for (const item of menuItems) {
@@ -202,6 +204,7 @@ export async function inspectPortableDomain(
 	const menus = await db
 		.selectFrom("_emdash_menus")
 		.select(["id", "name", "locale"])
+		.where("site_id", "=", selectedSiteId())
 		.orderBy("id")
 		.execute();
 	for (const menu of menus) {

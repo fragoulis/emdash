@@ -21,7 +21,7 @@ import {
 	type SitePackageRecord,
 } from "../../../../src/transfer/format/kinds.js";
 import { relativizePlaceholderUrls } from "../../../../src/transfer/format/media-refs.js";
-import type { SiteImportPlan } from "../../../../src/transfer/format/plan.js";
+import { selectedPlanSiteId, type SiteImportPlan } from "../../../../src/transfer/format/plan.js";
 import { applyTransformations } from "../../../../src/transfer/format/transformations.js";
 import type { GoldenPackage } from "../../../utils/transfer/golden-package.js";
 
@@ -163,6 +163,13 @@ export async function expectTargetMatchesGolden(
 			expected = expected.map(({ searchConfig: _ignored, ...rest }) => rest);
 		}
 		if (kind === "setting") {
+			const sitePrefix = `site:${selectedPlanSiteId(plan)}:`;
+			rows = rows.map((row) => ({
+				...row,
+				id: String(row.id).startsWith(sitePrefix)
+					? `site:${String(row.id).slice(sitePrefix.length)}`
+					: row.id,
+			}));
 			const names = new Set(records.map((record) => record.id));
 			rows = rows.filter((row) => names.has(String(row.id)));
 		}
@@ -205,7 +212,21 @@ export async function dumpTarget(db: Kysely<Database>): Promise<Record<string, s
 									!volatile.has(column) &&
 									!(table === "_emdash_transfer_identity_map" && column === "created_at"),
 							)
-							.map(([column, value]) => [column, value === undefined ? null : value]),
+							.map(([column, value]) => {
+								if (table === "options" && typeof row.site_id === "string" && column === "name") {
+									return [column, `site:${String(value).slice(`site:${row.site_id}:`.length)}`];
+								}
+								if (
+									(table === "options" ||
+										table === "_emdash_menus" ||
+										table === "_emdash_menu_items") &&
+									typeof row.site_id === "string" &&
+									column === "site_id"
+								) {
+									return [column, "<target site>"];
+								}
+								return [column, value === undefined ? null : value];
+							}),
 					),
 				),
 			)

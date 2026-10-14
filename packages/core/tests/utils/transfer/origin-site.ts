@@ -779,6 +779,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 			uniform([
 				{
 					id: fixtureId(1300),
+					site_id: "site-default",
 					name: "primary",
 					label: "Primary",
 					locale: "en",
@@ -786,6 +787,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 				},
 				{
 					id: fixtureId(1301),
+					site_id: "site-default",
 					name: "primary",
 					label: "Principal",
 					locale: "fr",
@@ -800,6 +802,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 			uniform([
 				{
 					id: fixtureId(1310),
+					site_id: "site-default",
 					menu_id: fixtureId(1300),
 					sort_order: 0,
 					type: "custom",
@@ -810,6 +813,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 				},
 				{
 					id: fixtureId(1311),
+					site_id: "site-default",
 					menu_id: fixtureId(1300),
 					sort_order: 1,
 					type: "page",
@@ -821,6 +825,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 				},
 				{
 					id: fixtureId(1312),
+					site_id: "site-default",
 					menu_id: fixtureId(1300),
 					parent_id: fixtureId(1311),
 					sort_order: 0,
