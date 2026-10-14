@@ -80,6 +80,9 @@ const TOOLBAR_MESSAGES = {
 
 const CENTRAL_ADMIN_MESSAGES = {
 	noSiteAccess: msg`No site access`,
+	sites: msg`Sites`,
+	switchSite: msg`Switch site`,
+	loadSitesError: msg`Could not load sites. Try again.`,
 	signIn: msg`Sign in to EmDash`,
 	noSiteAccessTitle: msg`No site access - EmDash`,
 	signInTitle: msg`Sign in - EmDash`,
@@ -93,6 +96,9 @@ const CENTRAL_ADMIN_MESSAGES = {
 export function translateCentralAdminLabels(messages: Messages) {
 	return {
 		noSiteAccess: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.noSiteAccess),
+		sites: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.sites),
+		switchSite: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.switchSite),
+		loadSitesError: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.loadSitesError),
 		signIn: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signIn),
 		noSiteAccessTitle: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.noSiteAccessTitle),
 		signInTitle: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signInTitle),
