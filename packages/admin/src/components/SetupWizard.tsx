@@ -38,8 +38,7 @@ interface SetupStatusResponse {
 		title?: string;
 		tagline?: string;
 	};
-	/** Auth mode - "cloudflare-access" or "passkey" */
-	authMode?: "cloudflare-access" | "passkey";
+	authMode?: string;
 }
 
 interface SetupSiteRequest {
@@ -395,13 +394,12 @@ function AuthMethodStep({ adminData, providers, startWith, onBack }: AuthMethodS
 
 interface StepIndicatorProps {
 	currentStep: WizardStep;
-	useAccessAuth?: boolean;
+	useExternalAuth?: boolean;
 }
 
-function StepIndicator({ currentStep, useAccessAuth }: StepIndicatorProps) {
+function StepIndicator({ currentStep, useExternalAuth }: StepIndicatorProps) {
 	const { t } = useLingui();
-	// In Access mode, only show the site step
-	const steps = useAccessAuth
+	const steps = useExternalAuth
 		? ([{ key: "site", label: t`Site Settings` }] as const)
 		: ([
 				{ key: "site", label: t`Site` },
@@ -509,8 +507,7 @@ export function SetupWizard() {
 		queryFn: fetchManifest,
 	});
 
-	// Check if using Cloudflare Access auth
-	const useAccessAuth = status?.authMode === "cloudflare-access";
+	const useExternalAuth = status?.authMode !== undefined && status.authMode !== "passkey";
 
 	// Site setup mutation
 	const siteMutation = useMutation({
@@ -627,8 +624,11 @@ export function SetupWizard() {
 						{currentStep === "admin" && t`Create your account`}
 						{currentStep === "passkey" && t`Secure your account`}
 					</h1>
-					{useAccessAuth && currentStep === "site" && (
+					{status?.authMode === "cloudflare-access" && currentStep === "site" && (
 						<p className="text-sm text-kumo-subtle mt-2">{t`You're signed in via Cloudflare Access`}</p>
+					)}
+					{status?.authMode === "clerk" && currentStep === "site" && (
+						<p className="text-sm text-kumo-subtle mt-2">{t`You're signed in with Clerk`}</p>
 					)}
 				</div>
 
@@ -640,7 +640,7 @@ export function SetupWizard() {
 				)}
 
 				{/* Progress */}
-				<StepIndicator currentStep={currentStep} useAccessAuth={useAccessAuth} />
+				<StepIndicator currentStep={currentStep} useExternalAuth={useExternalAuth} />
 
 				{/* Form Card */}
 				<div className="bg-kumo-base border rounded-lg shadow-sm p-6">
