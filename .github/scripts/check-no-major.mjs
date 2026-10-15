@@ -25,15 +25,16 @@ for await (const file of glob("**/package.json", {
 	if (pkg.private || !pkg.name || !pkg.version) continue;
 	seen.push(`${pkg.name}@${pkg.version}`);
 	const major = Number.parseInt(pkg.version.split(".")[0], 10);
-	const allowedMajor = fixedGroup.has(pkg.name) ? 1 : 0;
-	if (major !== allowedMajor || pkg.version === BURNED_VERSION) {
+	const allowedMajors =
+		pkg.name === "create-emdash" ? [1, 2] : fixedGroup.has(pkg.name) ? [1] : [0];
+	if (!allowedMajors.includes(major) || pkg.version === BURNED_VERSION) {
 		offenders.push(`${pkg.name}@${pkg.version} (${file})`);
 	}
 }
 
 if (offenders.length > 0) {
 	console.error(
-		"::error::Unexpected package versions. The fixed group must stay on 1.x (never 1.0.0) and every other package on 0.x. A new major needs a deliberate change to this check:",
+		"::error::Unexpected package versions. The fixed group must stay on 1.x (never 1.0.0), create-emdash may transition from 1.x to 2.x, and every other package must stay on 0.x:",
 	);
 	for (const o of offenders) console.error(`  ${o}`);
 	process.exit(1);

@@ -203,6 +203,15 @@ export function parseFlags(argv: string[]): ParsedFlags {
 		}
 	}
 	flags.platform = platformFromFlag ?? platformFromTemplate;
+	if (
+		flags.platform !== "cloudflare" &&
+		flags.template !== undefined &&
+		flags.template !== "blog"
+	) {
+		throw new FlagError(
+			`The Node.js multi-site scaffold supports only the blog template (got "${flags.template}").`,
+		);
+	}
 
 	// Package manager: --pm or --package-manager (the latter for parity with
 	// other ecosystem CLIs). If both are given they must agree — otherwise
@@ -259,16 +268,18 @@ export const HELP_TEXT = `Usage: npm create emdash@latest [name] [options]
 
 Scaffold a new EmDash project.
 
-When a flag is omitted, an interactive prompt is shown for that field.
-With --yes, omitted fields fall back to defaults (cloudflare, blog, the
-detected package manager, my-site for an unset name).
+Creates a multi-site Node.js/PostgreSQL installation with the blog as its
+default site. --platform node and --template blog do the same. Cloudflare
+templates remain available with --platform cloudflare or a cloudflare: prefix.
+With --yes, other omitted fields use the detected package manager and my-site
+for an unset name.
 
 Arguments:
   [name]                       Project directory name, or "." for cwd
 
 Options:
-  --template <key>             blog | starter | marketing | portfolio
-                               or "<platform>:<key>" (e.g. cloudflare:blog)
+  --template <key>             blog for Node.js; blog | starter | marketing |
+                               portfolio for Cloudflare (use cloudflare:<key>)
   --platform <key>             node | cloudflare
   --pm <key>                   pnpm | npm | yarn | bun
   --package-manager <key>      Alias of --pm
@@ -286,5 +297,5 @@ Examples:
   npm create emdash@latest
   npm create emdash@latest my-blog
   npm create emdash@latest my-blog -- --template cloudflare:blog --pm pnpm --yes
-  npm create emdash@latest . -- --template starter --platform node --yes --force
+  npm create emdash@latest . -- --template blog --platform node --yes --force
 `;
