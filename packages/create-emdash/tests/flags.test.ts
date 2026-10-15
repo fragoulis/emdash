@@ -89,11 +89,22 @@ describe("validateProjectName", () => {
 });
 
 describe("parseFlags — --template", () => {
-	it("accepts a bare template key", () => {
+	it("accepts the blog template for Node.js", () => {
 		expect(parseFlags(argv("--template", "blog")).template).toBe("blog");
-		expect(parseFlags(argv("--template", "starter")).template).toBe("starter");
-		expect(parseFlags(argv("--template", "marketing")).template).toBe("marketing");
-		expect(parseFlags(argv("--template", "portfolio")).template).toBe("portfolio");
+		expect(parseFlags(argv("--template", "node:blog")).template).toBe("blog");
+	});
+
+	it("rejects unsupported Node.js presentations but keeps Cloudflare templates", () => {
+		for (const name of ["starter", "marketing", "portfolio"]) {
+			expect(() => parseFlags(argv("--template", name))).toThrow(/supports only the blog/);
+			expect(() => parseFlags(argv("--template", `node:${name}`))).toThrow(
+				/supports only the blog/,
+			);
+			expect(() => parseFlags(argv("--platform", "node", "--template", name))).toThrow(
+				/supports only the blog/,
+			);
+			expect(parseFlags(argv("--template", `cloudflare:${name}`)).template).toBe(name);
+		}
 	});
 
 	it("rejects unknown template keys", () => {
@@ -107,9 +118,9 @@ describe("parseFlags — --template", () => {
 		expect(flags.template).toBe("blog");
 	});
 
-	it("accepts node:starter via the combined form", () => {
-		const flags = parseFlags(argv("--template", "node:starter"));
-		expect(flags.platform).toBe("node");
+	it("accepts an explicit Cloudflare platform with a bare template", () => {
+		const flags = parseFlags(argv("--platform", "cloudflare", "--template", "starter"));
+		expect(flags.platform).toBe("cloudflare");
 		expect(flags.template).toBe("starter");
 	});
 
@@ -335,7 +346,7 @@ describe("parseFlags — full one-shot install line", () => {
 				"--platform",
 				"node",
 				"--template",
-				"starter",
+				"blog",
 				"--pm",
 				"npm",
 				"--no-install",
@@ -345,7 +356,7 @@ describe("parseFlags — full one-shot install line", () => {
 		expect(flags).toEqual({
 			name: "my-blog",
 			platform: "node",
-			template: "starter",
+			template: "blog",
 			packageManager: "npm",
 			install: false,
 			yes: true,

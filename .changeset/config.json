@@ -15,8 +15,7 @@
 			"@emdash-cms/blocks",
 			"@emdash-cms/cloudflare",
 			"@emdash-cms/gutenberg-to-portable-text",
-			"@emdash-cms/x402",
-			"create-emdash"
+			"@emdash-cms/x402"
 		]
 	],
 	"___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {

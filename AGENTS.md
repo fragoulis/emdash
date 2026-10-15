@@ -42,6 +42,12 @@ When writing, revising, or reviewing documentation, load the `writing-emdash-doc
 
 ## Workflow
 
+For multi-site scaffold, host, or Clerk work in a fresh worktree, complete this prerequisite before editing or testing:
+
+1. Copy the operator's existing local `.env` with `install -m 600 /path/to/existing/.env .env`.
+2. Require nonempty `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_BOOTSTRAP_USER_ID`. The bootstrap ID identifies the existing development Clerk super admin. Check presence without printing values.
+3. If a value or the source file is missing, ask the operator to supply it in the local `.env` and stop until it is available. Keep `.env` untracked. Never place credentials or the bootstrap ID in a generated scaffold, logs, tests, or a PR. CI uses local Clerk verification fixtures.
+
 Main is kept green. Do not run checks before editing merely to establish a baseline, and do not dismiss validation failures as pre-existing. Before committing code:
 
 - Run `pnpm format`.

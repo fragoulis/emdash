@@ -27,6 +27,7 @@ import {
 	validateProjectName,
 	wantsHelp,
 } from "./flags.js";
+import { prepareDefaultPresentation } from "./multisite.js";
 import {
 	isDirNonEmpty,
 	replacePackageManagerCommands,
@@ -92,7 +93,7 @@ const CLOUDFLARE_TEMPLATES = {
 } as const satisfies Record<TemplateKey, TemplateConfig>;
 
 /** Defaults applied under `--yes` when the user omits a flag. */
-const DEFAULT_PLATFORM: Platform = "cloudflare";
+const DEFAULT_PLATFORM: Platform = "node";
 const DEFAULT_TEMPLATE: TemplateKey = "blog";
 /** Used by `--yes` when the user omits the project name positional. */
 const DEFAULT_PROJECT_NAME = "my-site";
@@ -356,8 +357,9 @@ async function main() {
 	}
 	const { projectName, projectDir, isCurrentDir } = location;
 
-	const platform = await resolvePlatform(flags);
-	const templateKey = await resolveTemplate(flags, platform);
+	const multiSite = flags.platform !== "cloudflare";
+	const platform = multiSite ? "node" : await resolvePlatform(flags);
+	const templateKey = multiSite ? "blog" : await resolveTemplate(flags, platform);
 	const templateConfig = getTemplateConfig(platform, templateKey);
 	const pm = await resolvePackageManager(flags);
 	const shouldInstall = await resolveShouldInstall(flags);
@@ -374,6 +376,7 @@ async function main() {
 			dir: projectDir,
 			force: true,
 		});
+		if (multiSite) prepareDefaultPresentation(projectDir);
 
 		// Set project name in package.json
 		const pkgPath = resolve(projectDir, "package.json");
@@ -381,6 +384,19 @@ async function main() {
 		if (existsSync(pkgPath)) {
 			const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
 			pkg.name = projectName;
+			if (multiSite) {
+				pkg.dependencies.pg = "^8.0.0";
+				pkg.dependencies.ulidx = "^2.4.1";
+				pkg.dependencies["@clerk/backend"] = "^3.23.1";
+				pkg.dependencies["@clerk/shared"] = "^4.39.1";
+				pkg.dependencies["@clerk/clerk-js"] = "^6.38.1";
+				pkg.dependencies["@cloudflare/kumo"] = "^2.6.0";
+				pkg.dependencies["@emdash-cms/admin"] = "^1.2.0";
+				pkg.scripts.build =
+					"node --env-file-if-exists=.env ./node_modules/astro/bin/astro.mjs build";
+				pkg.scripts.start = "node --env-file-if-exists=.env ./host.mjs";
+				pkg.scripts.dev = "npm run build && npm run start";
+			}
 			scripts = Object.keys(pkg.scripts ?? {});
 
 			// Templates ship with `packageManager: "pnpm@X"` baked in by the
@@ -472,6 +488,7 @@ async function main() {
 		const steps: string[] = [];
 		if (!isCurrentDir) steps.push(`cd ${projectName}`);
 		if (!shouldInstall) steps.push(installCmd);
+		if (multiSite) steps.push("Set DATABASE_URL and Clerk values in .env (see README.md)");
 		steps.push(runCmd("dev"));
 
 		p.note(steps.join("\n"), "Next steps");
