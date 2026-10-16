@@ -13,8 +13,7 @@ import { resolve } from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-const downloadTemplate = vi.hoisted(() => vi.fn());
-vi.mock("giget", () => ({ downloadTemplate }));
+import { main } from "../src/cli.js";
 import { startClerkFixture } from "./clerk-fixture.js";
 import { linkScaffoldDependencies } from "./scaffold-dependencies.js";
 
@@ -77,8 +76,14 @@ async function waitFor(check: () => Promise<boolean>): Promise<void> {
 it("sets up a generated site through Clerk and renders the default site", async () => {
 	const workdir = resolve(template, "../.astro");
 	mkdirSync(workdir, { recursive: true });
-	const workspace = mkdtempSync(resolve(workdir, "install-test-"));
+	const keep = process.env.EMDASH_KEEP_INSTALL === "1";
+	const workspace = keep
+		? resolve(workdir, "local-install")
+		: mkdtempSync(resolve(workdir, "install-test-"));
+	if (keep) mkdirSync(workspace, { recursive: true });
 	const project = resolve(workspace, "site");
+	if (keep && existsSync(project)) throw new Error("Reset the existing local installation first");
+	let completed = false;
 	const originalCwd = process.cwd();
 	const originalArgv = process.argv;
 	const password = crypto.randomUUID();
@@ -116,13 +121,13 @@ it("sets up a generated site through Clerk and renders the default site", async 
 				return false;
 			}
 		});
-		downloadTemplate.mockImplementation(async (_source, options: { dir: string }) => {
+		const localTemplate = async (_source: string, options: { dir: string }) => {
 			cpSync(template, options.dir, {
 				recursive: true,
 				filter: (source) =>
 					!source.split("/").some((part) => ["dist", "node_modules", ".astro"].includes(part)),
 			});
-		});
+		};
 		vi.spyOn(console, "clear").mockImplementation(() => {});
 		process.chdir(workspace);
 		process.argv = [
@@ -138,7 +143,7 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			"--no-install",
 			"--yes",
 		];
-		await import("../src/index.js");
+		await main(localTemplate);
 		await vi.waitFor(() => expect(existsSync(resolve(project, ".env"))).toBe(true));
 		process.chdir(originalCwd);
 		const seedPath = resolve(project, "seed/seed.json");
@@ -197,8 +202,8 @@ it("sets up a generated site through Clerk and renders the default site", async 
 				encoding: "utf8",
 				timeout: 30_000,
 			});
-		expect(() => siteCommand("second")).toThrow("Complete initial setup");
-		expect(existsSync(resolve(project, "src/second"))).toBe(false);
+		expect(() => siteCommand("foo")).toThrow("Complete initial setup");
+		expect(existsSync(resolve(project, "src/foo"))).toBe(false);
 		const cookie = { Cookie: `__session=${clerk.jwt()}` };
 		const status = await request(port, "localhost", "/_emdash/api/setup/status", cookie);
 		expect(status.status).toBe(200);
@@ -257,9 +262,9 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			const collectionsBefore = query("SELECT count(*) FROM _emdash_collections");
 			const fieldsBefore = query("SELECT count(*) FROM _emdash_fields");
 			const defaultPosts = query("SELECT count(*) FROM ec_posts WHERE site_id = 'site-default'");
-			expect(siteCommand("second")).toContain("Site second registered");
+			expect(siteCommand("foo")).toContain("Site foo registered");
 			const seeded = query(
-				"SELECT (SELECT count(*) FROM ec_posts WHERE site_id = s.id), (SELECT count(*) FROM taxonomies WHERE site_id = s.id), (SELECT count(*) FROM _emdash_bylines WHERE site_id = s.id), (SELECT count(*) FROM _emdash_menus WHERE site_id = s.id), (SELECT count(*) FROM options WHERE site_id = s.id) FROM _emdash_sites s WHERE slug = 'second'",
+				"SELECT (SELECT count(*) FROM ec_posts WHERE site_id = s.id), (SELECT count(*) FROM taxonomies WHERE site_id = s.id), (SELECT count(*) FROM _emdash_bylines WHERE site_id = s.id), (SELECT count(*) FROM _emdash_menus WHERE site_id = s.id), (SELECT count(*) FROM options WHERE site_id = s.id) FROM _emdash_sites s WHERE slug = 'foo'",
 			);
 			expect(
 				seeded
@@ -272,10 +277,10 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			expect(query("SELECT count(*) FROM ec_posts WHERE site_id = 'site-default'")).toBe(
 				defaultPosts,
 			);
-			const home = resolve(project, "src/second/pages/index.astro");
+			const home = resolve(project, "src/foo/pages/index.astro");
 			const edited = `${readFileSync(home, "utf8")}\n<p>Edited presentation marker</p>\n`;
 			writeFileSync(home, edited);
-			siteCommand("second");
+			siteCommand("foo");
 			expect(readFileSync(home, "utf8")).toBe(edited);
 			const siteRows = execFileSync(
 				"docker",
@@ -290,7 +295,7 @@ it("sets up a generated site through Clerk and renders the default site", async 
 					"-t",
 					"-A",
 					"-c",
-					"SELECT count(*), count(DISTINCT id) FROM _emdash_sites WHERE slug = 'second'",
+					"SELECT count(*), count(DISTINCT id) FROM _emdash_sites WHERE slug = 'foo'",
 				],
 				{ encoding: "utf8" },
 			);
@@ -308,21 +313,21 @@ it("sets up a generated site through Clerk and renders the default site", async 
 					"-t",
 					"-A",
 					"-c",
-					"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second')",
+					"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo')",
 				],
 				{ encoding: "utf8" },
 			);
 			expect(Number(entries.trim())).toBeGreaterThan(0);
 			expect(
 				query(
-					"SELECT (SELECT count(*) FROM ec_posts WHERE site_id = s.id), (SELECT count(*) FROM taxonomies WHERE site_id = s.id), (SELECT count(*) FROM _emdash_bylines WHERE site_id = s.id), (SELECT count(*) FROM _emdash_menus WHERE site_id = s.id), (SELECT count(*) FROM options WHERE site_id = s.id) FROM _emdash_sites s WHERE slug = 'second'",
+					"SELECT (SELECT count(*) FROM ec_posts WHERE site_id = s.id), (SELECT count(*) FROM taxonomies WHERE site_id = s.id), (SELECT count(*) FROM _emdash_bylines WHERE site_id = s.id), (SELECT count(*) FROM _emdash_menus WHERE site_id = s.id), (SELECT count(*) FROM options WHERE site_id = s.id) FROM _emdash_sites s WHERE slug = 'foo'",
 				),
 			).toBe(seeded);
 			query(
-				"UPDATE ec_posts SET title = 'Second site only story' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second') AND slug = 'a-weekend-with-a-side-project'",
+				"UPDATE ec_posts SET title = 'Foo site only story' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo') AND slug = 'a-weekend-with-a-side-project'",
 			);
 			query(
-				"UPDATE _emdash_menu_items SET label = 'Second site navigation' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second') AND label = 'About'",
+				"UPDATE _emdash_menu_items SET label = 'Foo site navigation' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo') AND label = 'About'",
 			);
 			mkdirSync(resolve(project, "src/occupied"));
 			expect(() => siteCommand("occupied")).toThrow(
@@ -346,27 +351,27 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			stdio: ["ignore", "ignore", "pipe"],
 		});
 		host.stderr?.on("data", (chunk) => console.error("[fixture host]", String(chunk)));
-		await waitFor(async () => (await request(port, "second.localhost", "/")).status === 200);
-		const second = await request(port, "second.localhost", "/");
-		expect(second.body).toContain("Second site only story");
-		expect(second.body).toContain("Edited presentation marker");
-		expect(second.body).toContain("Second site navigation");
-		expect(second.body).not.toContain("A Weekend with a Side Project");
-		expect(second.body).toContain("second");
+		await waitFor(async () => (await request(port, "foo.localhost", "/")).status === 200);
+		const foo = await request(port, "foo.localhost", "/");
+		expect(foo.body).toContain("Foo site only story");
+		expect(foo.body).toContain("Edited presentation marker");
+		expect(foo.body).toContain("Foo site navigation");
+		expect(foo.body).not.toContain("A Weekend with a Side Project");
+		expect(foo.body).toContain("foo");
 		const defaultPage = await request(port, "default.localhost", "/");
 		expect(defaultPage.status).toBe(200);
 		expect(defaultPage.body).toContain("Sample Blog");
 		expect(defaultPage.body).toContain("A Weekend with a Side Project");
-		expect(defaultPage.body).not.toContain("Second site only story");
+		expect(defaultPage.body).not.toContain("Foo site only story");
 		expect(defaultPage.body).not.toContain("Edited presentation marker");
-		expect(defaultPage.body).not.toContain("Second site navigation");
-		const secondCategory = await request(port, "second.localhost", "/category/development");
-		expect(secondCategory.status).toBe(200);
-		expect(secondCategory.body).toContain("Second site only story");
+		expect(defaultPage.body).not.toContain("Foo site navigation");
+		const fooCategory = await request(port, "foo.localhost", "/category/development");
+		expect(fooCategory.status).toBe(200);
+		expect(fooCategory.body).toContain("Foo site only story");
 		const defaultCategory = await request(port, "default.localhost", "/category/development");
 		expect(defaultCategory.status).toBe(200);
 		expect(defaultCategory.body).toContain("A Weekend with a Side Project");
-		expect(defaultCategory.body).not.toContain("Second site only story");
+		expect(defaultCategory.body).not.toContain("Foo site only story");
 		const countPosts = () =>
 			execFileSync(
 				"docker",
@@ -381,15 +386,15 @@ it("sets up a generated site through Clerk and renders the default site", async 
 					"-t",
 					"-A",
 					"-c",
-					"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second')",
+					"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo')",
 				],
 				{ encoding: "utf8" },
 			).trim();
 		const countBeforeRecovery = countPosts();
-		rmSync(resolve(project, "src/second"), { recursive: true });
-		siteCommand("second");
-		expect(existsSync(resolve(project, "src/second/pages/index.astro"))).toBe(true);
-		expect(readFileSync(resolve(project, "src/second/pages/index.astro"), "utf8")).not.toContain(
+		rmSync(resolve(project, "src/foo"), { recursive: true });
+		siteCommand("foo");
+		expect(existsSync(resolve(project, "src/foo/pages/index.astro"))).toBe(true);
+		expect(readFileSync(resolve(project, "src/foo/pages/index.astro"), "utf8")).not.toContain(
 			"Edited presentation marker",
 		);
 		expect(countPosts()).toBe(countBeforeRecovery);
@@ -408,14 +413,14 @@ it("sets up a generated site through Clerk and renders the default site", async 
 					"-t",
 					"-A",
 					"-c",
-					"SELECT title FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second') AND slug = 'a-weekend-with-a-side-project'",
+					"SELECT title FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo') AND slug = 'a-weekend-with-a-side-project'",
 				],
 				{ encoding: "utf8" },
 			).trim(),
-		).toBe("Second site only story");
+		).toBe("Foo site only story");
 		expect((await request(port, "unknown.localhost", "/")).status).toBe(421);
 		expect(
-			(await request(port, "second.localhost", "/", { "X-Forwarded-Host": "default.localhost" }))
+			(await request(port, "foo.localhost", "/", { "X-Forwarded-Host": "default.localhost" }))
 				.status,
 		).toBe(421);
 		expect((await request(port, "localhost", "/admin")).status).toBe(302);
@@ -437,13 +442,17 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			{ encoding: "utf8" },
 		);
 		expect(user.trim()).toBe("user_fixture");
+		completed = true;
+		if (keep) writeFileSync(resolve(workspace, "postgres-container"), container);
 	} finally {
 		process.chdir(originalCwd);
 		process.argv = originalArgv;
 		vi.restoreAllMocks();
 		host?.kill();
 		await clerk?.close();
-		execFileSync("docker", ["rm", "-f", container], { stdio: "ignore" });
-		rmSync(workspace, { recursive: true, force: true });
+		if (!keep || !completed) {
+			execFileSync("docker", ["rm", "-f", container], { stdio: "ignore" });
+			rmSync(workspace, { recursive: true, force: true });
+		}
 	}
 }, 360_000);
