@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { buildSource } from "./multisite-build.js";
 import { clerkSource } from "./multisite-clerk.js";
 import { defaultHostSource } from "./multisite-host.js";
 import { clerkLoginPageSource, clerkLoginSource } from "./multisite-login.js";
@@ -32,14 +33,18 @@ export function prepareDefaultPresentation(projectDir: string): void {
 		configPath,
 		config
 			.replace(nodeDatabase, 'import { postgres } from "emdash/db";')
-			.replace('\toutput: "server",', '\tsrcDir: "./src/default",\n\toutput: "server",')
+			.replace(
+				'\toutput: "server",',
+				'\tsrcDir: `./src/${process.env.EMDASH_BUILD_SITE || "default"}`,\n\toutDir: `./dist/sites/${process.env.EMDASH_BUILD_SITE || "default"}`,\n\toutput: "server",',
+			)
 			.replace(sqliteConfig, "database: postgres({ connectionString: process.env.DATABASE_URL }),")
 			.replace(
 				integrationAnchor,
-				'\t\temdash({\n\t\t\tsiteUrl: process.env.EMDASH_SITE_URL || "http://default.localhost:4321",\n\t\t\tauth: { type: "clerk", entrypoint: new URL("./clerk.mjs", import.meta.url).pathname, config: { autoProvision: false } },',
+				'\t\temdash({\n\t\t\tsiteUrl: process.env.EMDASH_BUILD_SITE && process.env.EMDASH_BUILD_SITE !== "default" ? `http://${process.env.EMDASH_BUILD_SITE}.localhost:4321` : process.env.EMDASH_SITE_URL || "http://default.localhost:4321",\n\t\t\tauth: { type: "clerk", entrypoint: new URL("./clerk.mjs", import.meta.url).pathname, config: { autoProvision: false } },',
 			),
 	);
 	writeFileSync(resolve(projectDir, "host.mjs"), defaultHostSource);
+	writeFileSync(resolve(projectDir, "build.mjs"), buildSource);
 	writeFileSync(resolve(projectDir, "clerk.mjs"), clerkSource);
 	writeFileSync(resolve(destination, "pages/clerk-login.astro"), clerkLoginPageSource);
 	writeFileSync(resolve(destination, "components/ClerkLogin.tsx"), clerkLoginSource);

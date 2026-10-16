@@ -19,6 +19,19 @@ pnpm dev
 
 4. Open \`http://localhost:4321/admin\`, sign in with the configured Clerk user, and complete setup with the starter content selected. Read the seeded blog at \`http://default.localhost:4321\`.
 
+## Add a local site
+
+From the installation directory, run \`npm create emdash@latest site\` to choose a slug, or pass one as \`npm create emdash@latest site second\`. The command requires completed setup and a reachable PostgreSQL database. It registers \`second.localhost\`, copies the default presentation to \`src/second/\`, and seeds that site's content and settings without changing the shared collection definitions. It does not replace files or reapply seed data if you run it again.
+
+Build both presentations and restart the Node host to make the new site available:
+
+\`\`\`sh
+npm run build
+npm run start
+\`\`\`
+
+Open \`http://second.localhost:4321\`. To edit the presentation, change files under \`src/second/\`, then build and restart again. A build does not restart a running host.
+
 Production uses \`pnpm build\` and \`pnpm start\`. Set \`EMDASH_ADMIN_HOST\`, \`EMDASH_DEFAULT_HOST\`, \`EMDASH_ADMIN_ORIGIN\`, and \`EMDASH_SITE_URL\` for deployed domains. Keep the Node origin bound to loopback. When a reverse proxy forwards requests, set \`EMDASH_PROXY_TOKEN\` on the host and send it as \`X-EmDash-Proxy-Token\` with a matching \`Host\` and \`X-Forwarded-Host\` from the proxy. Verify the custom domains and TLS before exposing the host.
 
 The central admin's site-owned settings and content routes remain closed until site selection and membership enforcement are installed. Public pages and first-run setup remain available.

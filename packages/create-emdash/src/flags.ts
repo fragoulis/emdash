@@ -265,8 +265,9 @@ export function validateProjectName(name: string): string | undefined {
  * Help text printed for `--help` / `-h`. Kept in sync with {@link parseFlags}.
  */
 export const HELP_TEXT = `Usage: npm create emdash@latest [name] [options]
+       npm create emdash@latest site [slug]
 
-Scaffold a new EmDash project.
+Scaffold a new EmDash project, or add a site to a set-up installation.
 
 Creates a multi-site Node.js/PostgreSQL installation with the blog as its
 default site. --platform node and --template blog do the same. Cloudflare
@@ -296,6 +297,7 @@ Options:
 Examples:
   npm create emdash@latest
   npm create emdash@latest my-blog
+  npm create emdash@latest site second   (from a generated installation)
   npm create emdash@latest my-blog -- --template cloudflare:blog --pm pnpm --yes
   npm create emdash@latest . -- --template blog --platform node --yes --force
 `;
