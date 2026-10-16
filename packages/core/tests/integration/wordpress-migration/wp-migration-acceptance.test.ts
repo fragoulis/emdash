@@ -67,7 +67,7 @@ vi.mock("#import/ssrf.js", () => ({
 
 import { handleTaxonomyCreate } from "../../../src/api/handlers/taxonomies.js";
 import {
-	importContent,
+	importContent as importForSite,
 	type ImportConfig,
 	type ImportResult,
 } from "../../../src/astro/routes/api/import/wordpress/execute.js";
@@ -84,13 +84,18 @@ import { parseWxrString } from "../../../src/cli/wxr/parser.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
 import { importReusableBlocksAsSections } from "../../../src/import/sections.js";
-import { preImportWxrTaxonomies } from "../../../src/import/wxr-taxonomies.js";
+import { preImportWxrTaxonomies as preImportForSite } from "../../../src/import/wxr-taxonomies.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import type { Storage } from "../../../src/storage/types.js";
 import { createTestRuntime, handlersFromRuntime } from "../../utils/mcp-runtime.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 const FIXTURE_PATH = join(import.meta.dirname, "fixtures", "realistic-export.xml");
+const preImportWxrTaxonomies: typeof preImportForSite = (...args) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => preImportForSite(...args));
+const importContent: typeof importForSite = (...args) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => importForSite(...args));
 
 function fakeStorage(): Storage {
 	return {
@@ -336,7 +341,7 @@ describe("WordPress migration acceptance (#1691)", () => {
 	it("imports taxonomies: hierarchical categories, tags, and the custom taxonomy", async () => {
 		expect(importResult.taxonomies?.missingTaxonomies).toEqual([]);
 
-		const repo = new TaxonomyRepository(db);
+		const repo = new TaxonomyRepository(db, "site-default");
 		const categories = await repo.findByName("category");
 		expect(categories.map((c) => c.slug).toSorted()).toEqual(["guides", "howto", "news"]);
 		const tags = await repo.findByName("tag");

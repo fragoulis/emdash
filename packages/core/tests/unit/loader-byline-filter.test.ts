@@ -5,7 +5,6 @@ import { handleContentCreate } from "../../src/api/index.js";
 import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../src/database/types.js";
 import { emdashLoader, resetTaxonomyNamesCache } from "../../src/loader.js";
-import { runWithContext } from "../../src/request-context.js";
 import { SchemaRegistry } from "../../src/schema/registry.js";
 import {
 	describeEachDialect,
@@ -14,6 +13,7 @@ import {
 	type DialectName,
 	type DialectTestContext,
 } from "../utils/test-db.js";
+import { runWithDefaultSite as runWithContext } from "../utils/test-site-context.js";
 
 describeEachDialect("Loader byline credit filter", (dialectName: DialectName) => {
 	let ctx: DialectTestContext;
@@ -157,6 +157,7 @@ describeEachDialect("Loader byline credit filter", (dialectName: DialectName) =>
 			.insertInto("taxonomies" as never)
 			.values({
 				id: "tax_cat_news",
+				site_id: "site-default",
 				name: "category",
 				slug: "news",
 				label: "News",
@@ -172,7 +173,7 @@ describeEachDialect("Loader byline credit filter", (dialectName: DialectName) =>
 		await credit(b.id, "byline_bob", 0);
 		// Attach through the repository so the pivot row carries the denormalized
 		// filter/sort columns the pivot-drive listing seeks on (migration 051).
-		await new TaxonomyRepository(db).attachToEntry("post", a.id, "tax_cat_news");
+		await new TaxonomyRepository(db, "site-default").attachToEntry("post", a.id, "tax_cat_news");
 
 		const result = await load({ byline: "byline_bob", category: "news" });
 
@@ -210,6 +211,7 @@ describeEachDialect("Loader byline credit filter", (dialectName: DialectName) =>
 			.insertInto("taxonomies" as never)
 			.values({
 				id: "tax_cat_news",
+				site_id: "site-default",
 				name: "category",
 				slug: "news",
 				label: "News",
@@ -219,7 +221,12 @@ describeEachDialect("Loader byline credit filter", (dialectName: DialectName) =>
 		const post = await createPost("Anything");
 		await db
 			.insertInto("content_taxonomies" as never)
-			.values({ collection: "post", entry_id: post.id, taxonomy_id: "tax_cat_news" } as never)
+			.values({
+				site_id: "site-default",
+				collection: "post",
+				entry_id: post.id,
+				taxonomy_id: "tax_cat_news",
+			} as never)
 			.execute();
 
 		// An empty taxonomy array must short-circuit, not emit `t.slug IN ()`.

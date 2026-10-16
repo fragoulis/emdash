@@ -314,6 +314,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "content_taxonomies",
 		kind: "content_term",
 		columns: {
+			site_id: TARGET_LOCAL,
 			collection: f("collection"),
 			entry_id: f("entryGroup"),
 			taxonomy_id: f("termGroup"),

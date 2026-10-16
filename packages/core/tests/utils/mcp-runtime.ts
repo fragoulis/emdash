@@ -26,6 +26,7 @@ import { createMcpServer, type PluginMcpRegistration } from "../../src/mcp/serve
 import { createHookPipeline } from "../../src/plugins/hooks.js";
 import type { ResolvedPlugin } from "../../src/plugins/types.js";
 import { invalidateUrlPatternCache } from "../../src/query.js";
+import { runWithContext } from "../../src/request-context.js";
 import type { Storage } from "../../src/storage/types.js";
 
 // ---------------------------------------------------------------------------
@@ -50,19 +51,21 @@ class AuthInjectingTransport extends InMemoryTransport {
 				? // eslint-disable-next-line typescript/no-unsafe-type-assertion -- narrowed by typeof + 'in' check
 					(options.authInfo.extra as Record<string, unknown>)
 				: {};
-		return super.send(message, {
-			...options,
-			authInfo: {
-				token: "",
-				clientId: "test",
-				scopes: [],
-				...options?.authInfo,
-				extra: {
-					...this.authInfo,
-					...existingExtra,
+		return runWithContext({ editMode: false, siteId: "site-default" }, () =>
+			super.send(message, {
+				...options,
+				authInfo: {
+					token: "",
+					clientId: "test",
+					scopes: [],
+					...options?.authInfo,
+					extra: {
+						...this.authInfo,
+						...existingExtra,
+					},
 				},
-			},
-		});
+			}),
+		);
 	}
 }
 

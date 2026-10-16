@@ -25,14 +25,15 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { importContent } from "../../../src/astro/routes/api/import/wordpress/execute.js";
 import type { EmDashHandlers, EmDashManifest } from "../../../src/astro/types.js";
 import { parseWxrString } from "../../../src/cli/wxr/parser.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
 import {
 	mirrorTermsToLocales,
 	preImportWxrTaxonomies,
 } from "../../../src/import/wxr-taxonomies.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import { handlersFromRuntime, createTestRuntime } from "../../utils/mcp-runtime.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
@@ -83,7 +84,7 @@ async function setup(): Promise<Harness> {
  * between `preImportWxrTaxonomies`, `mirrorTermsToLocales`, and
  * `importContent`.
  */
-async function runImport(
+async function runImportForSite(
 	harness: Harness,
 	wxrText: string,
 	opts: { locale?: string; skipExisting?: boolean } = {},
@@ -122,6 +123,9 @@ async function runImport(
 
 	return { wxrData, plan, result };
 }
+
+const runImport: typeof runImportForSite = (...args) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => runImportForSite(...args));
 
 describe("WXR import: WPML translations (#1080)", () => {
 	let harness: Harness;

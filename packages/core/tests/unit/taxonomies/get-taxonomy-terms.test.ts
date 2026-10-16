@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
@@ -22,7 +23,7 @@ describeEachDialect("getTaxonomyTerms", (dialect) => {
 
 	beforeEach(async () => {
 		ctx = await setupForDialectWithCollections(dialect);
-		taxRepo = new TaxonomyRepository(ctx.db);
+		taxRepo = new TaxonomyRepository(ctx.db, "site-default");
 		vi.mocked(getDb).mockResolvedValue(ctx.db);
 		invalidateTermCache();
 	});
@@ -43,7 +44,9 @@ describeEachDialect("getTaxonomyTerms", (dialect) => {
 		});
 		await taxRepo.create({ name: "tag", slug: "wellness", label: "Wellness" });
 
-		const terms = await getTaxonomyTerms("tag");
+		const terms = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+			getTaxonomyTerms("tag"),
+		);
 
 		expect(terms.map((t) => t.slug)).toEqual(["longevity", "wellness"]);
 		expect(terms[0].description).toBe("Healthy aging. wikidata:Q380274");
@@ -59,7 +62,9 @@ describeEachDialect("getTaxonomyTerms", (dialect) => {
 			data: { description: "All things tech" },
 		});
 
-		const terms = await getTaxonomyTerms("category");
+		const terms = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+			getTaxonomyTerms("category"),
+		);
 
 		expect(terms).toHaveLength(1);
 		expect(terms[0].description).toBe("All things tech");

@@ -17,7 +17,6 @@ import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js"
 import { encodeCursor } from "../../src/database/repositories/types.js";
 import { emdashLoader, resetTaxonomyNamesCache, type SortDirection } from "../../src/loader.js";
 import { getEmDashCollection } from "../../src/query.js";
-import { runWithContext } from "../../src/request-context.js";
 import { SchemaRegistry } from "../../src/schema/registry.js";
 import {
 	describeEachDialect,
@@ -26,6 +25,7 @@ import {
 	teardownForDialect,
 	type DialectTestContext,
 } from "../utils/test-db.js";
+import { runWithDefaultSite as runWithContext } from "../utils/test-site-context.js";
 
 afterAll(destroySharedPool);
 
@@ -60,7 +60,7 @@ describeEachDialect("public collection cursor pages over nullable sort fields", 
 			.execute();
 		resetTaxonomyNamesCache();
 		repo = new ContentRepository(ctx.db);
-		taxonomies = new TaxonomyRepository(ctx.db);
+		taxonomies = new TaxonomyRepository(ctx.db, "site-default");
 	});
 
 	afterEach(async () => {
@@ -95,7 +95,14 @@ describeEachDialect("public collection cursor pages over nullable sort fields", 
 			const id = `term-${slug}`;
 			await ctx.db
 				.insertInto("taxonomies")
-				.values({ id, name: "category", slug, label: slug, translation_group: id })
+				.values({
+					id,
+					site_id: "site-default",
+					name: "category",
+					slug,
+					label: slug,
+					translation_group: id,
+				})
 				.execute();
 			termIds.push(id);
 		}

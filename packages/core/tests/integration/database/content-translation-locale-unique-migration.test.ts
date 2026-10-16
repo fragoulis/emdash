@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import * as migration080 from "../../../src/database/migrations/080_content_translation_locale_unique.js";
+import * as migration098 from "../../../src/database/migrations/098_site_taxonomies.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
+import { restoreLegacyTaxonomyAssignments } from "../../utils/legacy-taxonomy-assignments.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
@@ -24,7 +26,7 @@ describeEachDialect("content translation locale uniqueness migration", (dialect)
 
 	it("splits existing duplicate locales, preserves terms, and is retry-safe", async () => {
 		const content = new ContentRepository(ctx.db);
-		const taxonomies = new TaxonomyRepository(ctx.db);
+		const taxonomies = new TaxonomyRepository(ctx.db, "site-default");
 		const source = await content.create({
 			type: "post",
 			slug: "source",
@@ -56,8 +58,10 @@ describeEachDialect("content translation locale uniqueness migration", (dialect)
 			})
 			.execute();
 
+		await restoreLegacyTaxonomyAssignments(ctx.db);
 		await migration080.up(ctx.db);
 		await migration080.up(ctx.db);
+		await migration098.up(ctx.db);
 
 		await expect(content.findById("post", source.id)).resolves.toMatchObject({
 			translationGroup: source.translationGroup,

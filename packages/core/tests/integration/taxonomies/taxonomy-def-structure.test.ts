@@ -139,11 +139,12 @@ describeEachDialect("taxonomy structure is shared by every locale", (dialect) =>
 	it("lists the terms of a locale that has no definition of its own", async () => {
 		setI18nConfig({ defaultLocale: "ja", locales: ["ja", "en"] });
 		await createTopic();
-		const terms = new TaxonomyRepository(ctx.db);
+		const terms = new TaxonomyRepository(ctx.db, "site-default");
 		await terms.create({ name: "topic", slug: "ai", label: "AI", locale: "ja" });
 
-		const listed = await runWithContext({ editMode: false, db: ctx.db }, () =>
-			getTaxonomyTerms("topic", { locale: "ja", includeCounts: false }),
+		const listed = await runWithContext(
+			{ editMode: false, siteId: "site-default", db: ctx.db },
+			() => getTaxonomyTerms("topic", { locale: "ja", includeCounts: false }),
 		);
 		expect(listed.map((term) => term.slug)).toEqual(["ai"]);
 	});

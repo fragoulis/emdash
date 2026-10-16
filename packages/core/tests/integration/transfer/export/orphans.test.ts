@@ -100,6 +100,7 @@ async function insertOrphans(db: Kysely<Database>, site: OriginSite): Promise<st
 			.values([
 				{
 					id: fixtureId(9003),
+					site_id: "site-default",
 					name: "category",
 					slug: "lost",
 					label: "Lost",
@@ -109,6 +110,7 @@ async function insertOrphans(db: Kysely<Database>, site: OriginSite): Promise<st
 				},
 				{
 					id: fixtureId(9004),
+					site_id: "site-default",
 					name: "category",
 					slug: "lost-child",
 					label: "Lost child",

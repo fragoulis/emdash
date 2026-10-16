@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { BylineRepository } from "../../../../src/database/repositories/byline.js";
 import { ContentRepository } from "../../../../src/database/repositories/content.js";
 import { RevisionRepository } from "../../../../src/database/repositories/revision.js";
-import { TaxonomyRepository } from "../../../../src/database/repositories/taxonomy.js";
 import { getMenuWithDb } from "../../../../src/menus/index.js";
 import { fingerprintBlockFields } from "../../../../src/schema/block-type-contract.js";
 import { BlockTypeRegistry } from "../../../../src/schema/block-type-registry.js";
@@ -15,6 +14,7 @@ import { verifyImportStep } from "../../../../src/transfer/export/verify.js";
 import { inferredCreditId } from "../../../../src/transfer/format/kinds.js";
 import { verifyReceiptDigest } from "../../../../src/transfer/format/receipt.js";
 import { advanceImport, INFERRED_CREDIT_ENTITY } from "../../../../src/transfer/import/index.js";
+import { TaxonomyRepository } from "../../../utils/default-site-taxonomy-repository.js";
 import {
 	describeEachDialect,
 	setupForDialect,

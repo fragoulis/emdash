@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import * as migration068 from "../../../src/database/migrations/068_content_taxonomy_entry_groups.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
+import { restoreLegacyTaxonomyAssignments } from "../../utils/legacy-taxonomy-assignments.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
@@ -23,7 +24,7 @@ describeEachDialect("content taxonomy entry-group migration", (dialect) => {
 
 	it("preserves assignments and collapses sibling-locale duplicates", async () => {
 		const content = new ContentRepository(ctx.db);
-		const taxonomies = new TaxonomyRepository(ctx.db);
+		const taxonomies = new TaxonomyRepository(ctx.db, "site-default");
 		const enPost = await content.create({
 			type: "post",
 			slug: "hello",
@@ -44,16 +45,19 @@ describeEachDialect("content taxonomy entry-group migration", (dialect) => {
 			.insertInto("content_taxonomies")
 			.values([
 				{
+					site_id: "site-default",
 					collection: "post",
 					entry_id: frPost.id,
 					taxonomy_id: news.translationGroup ?? news.id,
 				},
 				{
+					site_id: "site-default",
 					collection: "post",
 					entry_id: enPost.id,
 					taxonomy_id: sports.translationGroup ?? sports.id,
 				},
 				{
+					site_id: "site-default",
 					collection: "post",
 					entry_id: frPost.id,
 					taxonomy_id: sports.translationGroup ?? sports.id,
@@ -61,6 +65,7 @@ describeEachDialect("content taxonomy entry-group migration", (dialect) => {
 			])
 			.execute();
 
+		await restoreLegacyTaxonomyAssignments(ctx.db);
 		await migration068.up(ctx.db);
 
 		const rows = await ctx.db

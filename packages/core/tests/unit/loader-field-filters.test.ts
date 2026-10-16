@@ -5,9 +5,9 @@ import { handleContentCreate } from "../../src/api/index.js";
 import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../src/database/types.js";
 import { emdashLoader, resetTaxonomyNamesCache } from "../../src/loader.js";
-import { runWithContext } from "../../src/request-context.js";
 import { SchemaRegistry } from "../../src/schema/registry.js";
 import { setupTestDatabaseWithCollections, teardownTestDatabase } from "../utils/test-db.js";
+import { runWithDefaultSite as runWithContext } from "../utils/test-site-context.js";
 
 describe("Loader field filters", () => {
 	let db: Kysely<Database>;
@@ -337,6 +337,7 @@ describe("Loader field filters", () => {
 			.insertInto("taxonomies" as never)
 			.values({
 				id: "tax_cat_news",
+				site_id: "site-default",
 				name: "category",
 				slug: "news",
 				label: "News",
@@ -354,8 +355,18 @@ describe("Loader field filters", () => {
 		await db
 			.insertInto("content_taxonomies" as never)
 			.values([
-				{ collection: "post", entry_id: postA.id, taxonomy_id: "tax_cat_news" },
-				{ collection: "post", entry_id: postB.id, taxonomy_id: "tax_cat_news" },
+				{
+					site_id: "site-default",
+					collection: "post",
+					entry_id: postA.id,
+					taxonomy_id: "tax_cat_news",
+				},
+				{
+					site_id: "site-default",
+					collection: "post",
+					entry_id: postB.id,
+					taxonomy_id: "tax_cat_news",
+				},
 			] as never)
 			.execute();
 
@@ -379,6 +390,7 @@ describe("Loader field filters", () => {
 			.insertInto("taxonomies" as never)
 			.values({
 				id: "tax_cat_tech",
+				site_id: "site-default",
 				name: "category",
 				slug: "tech",
 				label: "Tech",
@@ -391,7 +403,11 @@ describe("Loader field filters", () => {
 
 		// Attach through the repository so the pivot row is stamped with the
 		// entry's denormalized filter/sort columns (migration 051).
-		await new TaxonomyRepository(db).attachToEntry("post", postA.id, "tax_cat_tech");
+		await new TaxonomyRepository(db, "site-default").attachToEntry(
+			"post",
+			postA.id,
+			"tax_cat_tech",
+		);
 
 		const loader = emdashLoader();
 		const result = await runWithContext({ editMode: false, db }, () =>
@@ -427,6 +443,7 @@ describe("Loader field filters", () => {
 			.insertInto("taxonomies" as never)
 			.values({
 				id: "tax_cat_range",
+				site_id: "site-default",
 				name: "category",
 				slug: "test",
 				label: "Test",

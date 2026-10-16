@@ -329,7 +329,7 @@ describe("taxonomy_list_terms", () => {
 			id: p1.items[1]!.id,
 		});
 
-		const repo = new TaxonomyRepo(db);
+		const repo = new TaxonomyRepo(db, "site-default");
 		const bravo = await repo.findBySlug("categories", "bravo");
 		if (!bravo) throw new Error("bravo fixture is missing");
 		await db.deleteFrom("taxonomies").where("id", "=", bravo.id).execute();
@@ -344,7 +344,7 @@ describe("taxonomy_list_terms", () => {
 
 	it("rejects a cursor from another taxonomy", async () => {
 		harness = await connectMcpHarness({ db, userId: ADMIN_ID, userRole: Role.ADMIN });
-		const repo = new TaxonomyRepo(db);
+		const repo = new TaxonomyRepo(db, "site-default");
 		const tag = await repo.create({ name: "tags", slug: "tag", label: "Tag" });
 
 		const result = await harness.client.callTool({
@@ -360,7 +360,7 @@ describe("taxonomy_list_terms", () => {
 
 	it("rejects a cursor from another locale", async () => {
 		harness = await connectMcpHarness({ db, userId: ADMIN_ID, userRole: Role.ADMIN });
-		const repo = new TaxonomyRepo(db);
+		const repo = new TaxonomyRepo(db, "site-default");
 		const french = await repo.create({
 			name: "categories",
 			slug: "bonjour",
@@ -393,7 +393,7 @@ describe("taxonomy_list_terms", () => {
 			});
 		}
 
-		const repo = new TaxonomyRepo(db);
+		const repo = new TaxonomyRepo(db, "site-default");
 		const alpha = await repo.findBySlug("categories", "alpha");
 		if (!alpha) throw new Error("alpha fixture is missing");
 
@@ -419,7 +419,7 @@ describe("taxonomy_list_terms", () => {
 			});
 		}
 
-		const repo = new TaxonomyRepo(db);
+		const repo = new TaxonomyRepo(db, "site-default");
 		const alpha = await repo.findBySlug("categories", "alpha");
 		if (!alpha) throw new Error("alpha fixture is missing");
 		const cursor = encodeCursor(alpha.label, alpha.id);
@@ -736,7 +736,7 @@ describe("taxonomy_update_term (bug #13 / F2 / F12)", () => {
 	});
 
 	it("updates only the translation named by locale when translations share a slug", async () => {
-		const repo = new TaxonomyRepo(db);
+		const repo = new TaxonomyRepo(db, "site-default");
 		await repo.create({ name: "tags", slug: "shared", label: "Shared", locale: "en" });
 		await repo.create({ name: "tags", slug: "shared", label: "Partagé", locale: "fr" });
 
@@ -833,7 +833,7 @@ describe("taxonomy_update_term (bug #13 / F2 / F12)", () => {
 
 	it("accepts a chain of exactly MAX_DEPTH (100) ancestors", async () => {
 		const { TaxonomyRepository } = await import("../../../src/database/repositories/taxonomy.js");
-		const repo = new TaxonomyRepository(db);
+		const repo = new TaxonomyRepository(db, "site-default");
 		// Build root → 1 → 2 → ... → 100. 101 terms total. The deepest
 		// term has 100 ancestors; setting it as parent of a new term means
 		// validateParentTerm walks 100 hops up before exhausting the chain.
@@ -863,7 +863,7 @@ describe("taxonomy_update_term (bug #13 / F2 / F12)", () => {
 
 	it("rejects a chain that exceeds MAX_DEPTH", async () => {
 		const { TaxonomyRepository } = await import("../../../src/database/repositories/taxonomy.js");
-		const repo = new TaxonomyRepository(db);
+		const repo = new TaxonomyRepository(db, "site-default");
 		// Build a 102-term chain. The deepest term has 101 ancestors —
 		// one more than MAX_DEPTH allows.
 		let parentId: string | undefined;
@@ -961,7 +961,7 @@ describe("taxonomy_delete_term (bug #13 / F12)", () => {
 	});
 
 	it("deletes only the translation named by locale when translations share a slug", async () => {
-		const repo = new TaxonomyRepo(db);
+		const repo = new TaxonomyRepo(db, "site-default");
 		await repo.create({ name: "tags", slug: "shared", label: "Shared", locale: "en" });
 		await repo.create({ name: "tags", slug: "shared", label: "Partagé", locale: "fr" });
 
