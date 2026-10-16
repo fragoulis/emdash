@@ -6,7 +6,7 @@ export function ClerkLogin({ publishableKey, signInUrl, title, description, cont
   useEffect(() => {
     const client = new Clerk(publishableKey);
     void client.load().then(() => {
-      if (client.user) window.location.replace("/_emdash/admin/setup");
+      if (client.user) window.location.replace("/admin");
     }).catch(() => {});
   }, [publishableKey]);
 
@@ -34,7 +34,7 @@ export const prerender = false;
 const locale = resolveLocale(Astro.request);
 const labels = translateCentralAdminLabels(await loadMessages(locale));
 const hostedSignIn = new URL(signInUrl);
-hostedSignIn.searchParams.set("redirect_url", process.env.EMDASH_ADMIN_ORIGIN + "/clerk-login");
+hostedSignIn.searchParams.set("redirect_url", process.env.EMDASH_ADMIN_ORIGIN + "/admin");
 Astro.response.headers.set("Cache-Control", "private, no-store");
 ---
 <!doctype html>
