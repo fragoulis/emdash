@@ -26,7 +26,11 @@ function request(
 	headers: Record<string, string> = {},
 	body?: object,
 ) {
-	return new Promise<{ status: number; body: string }>((done, fail) => {
+	return new Promise<{
+		status: number;
+		body: string;
+		headers: import("node:http").IncomingHttpHeaders;
+	}>((done, fail) => {
 		const payload = body && JSON.stringify(body);
 		const req = httpRequest(
 			{
@@ -44,7 +48,9 @@ function request(
 				let text = "";
 				res.setEncoding("utf8");
 				res.on("data", (chunk: string) => (text += chunk));
-				res.on("end", () => done({ status: res.statusCode ?? 0, body: text }));
+				res.on("end", () =>
+					done({ status: res.statusCode ?? 0, body: text, headers: res.headers }),
+				);
 			},
 		);
 		req.on("error", fail);
@@ -245,6 +251,11 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			if (setupResult.data?.seedComplete) break;
 		}
 		expect(setupResult).toMatchObject({ data: { setupComplete: true, seedComplete: true } });
+		const oneSite = await request(port, "localhost", "/admin", cookie);
+		expect(oneSite.headers.location).toBe("/site/default");
+		expect((await request(port, "localhost", "/site/default", cookie)).body).toContain("default");
+		expect((await request(port, "localhost", "/site/unknown", cookie)).status).toBe(404);
+		expect((await request(port, "default.localhost", "/site/default", cookie)).status).toBe(421);
 		expect(await request(port, "localhost", "/_emdash/api/manifest", cookie)).toMatchObject({
 			status: 401,
 		});
@@ -423,7 +434,80 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			(await request(port, "foo.localhost", "/", { "X-Forwarded-Host": "default.localhost" }))
 				.status,
 		).toBe(421);
-		expect((await request(port, "localhost", "/admin")).status).toBe(302);
+		expect((await request(port, "localhost", "/admin", cookie)).headers.location).toBe("/sites");
+		const sites = await request(port, "localhost", "/sites", cookie);
+		expect(sites.status).toBe(200);
+		expect(sites.body).toContain("/site/foo");
+		expect(sites.body).toContain("/site/default");
+		const arabicSites = await request(port, "localhost", "/sites", {
+			...cookie,
+			"Accept-Language": "ar",
+		});
+		expect(arabicSites.body).toContain('dir="rtl"');
+		const selected = await request(port, "localhost", "/site/foo", cookie);
+		expect(selected.status).toBe(200);
+		expect(selected.headers["set-cookie"]?.[0]).toContain("emdash_last_site=foo");
+		expect(
+			(
+				await request(port, "localhost", "/admin", {
+					...cookie,
+					Cookie: cookie.Cookie + "; emdash_last_site=foo",
+				})
+			).headers.location,
+		).toBe("/site/foo");
+		const { chromium } = await import("../../../node_modules/@playwright/test/index.mjs");
+		const browser = await chromium.launch();
+		try {
+			const context = await browser.newContext({ locale: "ar" });
+			await context.addCookies([
+				{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+			]);
+			const browserPage = await context.newPage();
+			await browserPage.goto(`http://localhost:${port}/admin`);
+			await browserPage.getByRole("heading", { name: "Sites" }).waitFor();
+			expect(await browserPage.locator("html").getAttribute("dir")).toBe("rtl");
+			await browserPage.screenshot({ path: "/tmp/emdash-10-sites-ar.png", fullPage: true });
+			await browserPage.getByRole("main").getByRole("link", { name: "foo" }).click();
+			await browserPage.getByRole("heading", { name: "foo" }).waitFor();
+			await browserPage.goBack();
+			await browserPage.getByRole("heading", { name: "Sites" }).waitFor();
+			await browserPage.goForward();
+			await browserPage.getByRole("heading", { name: "foo" }).waitFor();
+			await context.close();
+		} finally {
+			await browser.close();
+		}
+		clerk.state.superAdmin = false;
+		expect((await request(port, "localhost", "/site/foo", cookie)).status).toBe(302);
+		clerk.state.superAdmin = true;
+		clerk.state.available = false;
+		expect((await request(port, "localhost", "/site/foo", cookie)).status).toBe(503);
+		clerk.state.available = true;
+		const updateSite = (sql: string) =>
+			execFileSync("docker", [
+				"exec",
+				container,
+				"psql",
+				"-U",
+				"postgres",
+				"-d",
+				"test",
+				"-c",
+				sql,
+			]);
+		updateSite("UPDATE _emdash_sites SET active = 0 WHERE slug = 'foo'");
+		expect((await request(port, "localhost", "/site/foo", cookie)).status).toBe(404);
+		expect(
+			(
+				await request(port, "localhost", "/admin", {
+					Cookie: cookie.Cookie + "; emdash_last_site=foo",
+				})
+			).headers.location,
+		).toBe("/site/default");
+		updateSite("UPDATE _emdash_sites SET active = 0 WHERE slug = 'default'");
+		expect((await request(port, "localhost", "/admin", cookie)).headers.location).toBe("/sites");
+		expect((await request(port, "localhost", "/sites", cookie)).body).toContain("No site access");
+		updateSite("UPDATE _emdash_sites SET active = 1");
 		const user = execFileSync(
 			"docker",
 			[
