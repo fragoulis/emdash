@@ -153,6 +153,10 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			/^EMDASH_ENCRYPTION_KEY=(.+)$/m,
 		)?.[1];
 		if (!encryptionKey) throw new Error("Scaffold did not create an encryption key");
+		writeFileSync(
+			resolve(project, ".env"),
+			`${readFileSync(resolve(project, ".env"), "utf8")}\nDATABASE_URL=${databaseUrl}\n`,
+		);
 		const env = {
 			...process.env,
 			DATABASE_URL: databaseUrl,
@@ -164,16 +168,12 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			EMDASH_CLERK_API_URL: clerk.url,
 			PORT: String(port),
 		};
-		execFileSync(
-			process.execPath,
-			[resolve(template, "node_modules/astro/bin/astro.mjs"), "build"],
-			{
-				cwd: project,
-				env,
-				timeout: 120_000,
-				stdio: "pipe",
-			},
-		);
+		execFileSync(process.execPath, [resolve(project, "build.mjs")], {
+			cwd: project,
+			env,
+			timeout: 120_000,
+			stdio: "pipe",
+		});
 		host = spawn(process.execPath, [resolve(project, "host.mjs")], {
 			cwd: project,
 			env,
@@ -189,6 +189,16 @@ it("sets up a generated site through Clerk and renders the default site", async 
 		});
 		expect(arabicLogin.body).toContain('dir="rtl"');
 		expect((await request(port, "default.localhost", "/clerk-login")).status).toBe(421);
+		const cli = resolve(import.meta.dirname, "../dist/index.mjs");
+		const siteCommand = (slug: string) =>
+			execFileSync(process.execPath, [cli, "site", slug], {
+				cwd: project,
+				env,
+				encoding: "utf8",
+				timeout: 30_000,
+			});
+		expect(() => siteCommand("second")).toThrow("Complete initial setup");
+		expect(existsSync(resolve(project, "src/second"))).toBe(false);
 		const cookie = { Cookie: `__session=${clerk.jwt()}` };
 		const status = await request(port, "localhost", "/_emdash/api/setup/status", cookie);
 		expect(status.status).toBe(200);
@@ -237,6 +247,178 @@ it("sets up a generated site through Clerk and renders the default site", async 
 		expect(page.status).toBe(200);
 		expect(page.body).toContain("Sample Blog");
 		expect(page.body).toContain("A Weekend with a Side Project");
+		{
+			const query = (sql: string) =>
+				execFileSync(
+					"docker",
+					["exec", container, "psql", "-U", "postgres", "-d", "test", "-t", "-A", "-c", sql],
+					{ encoding: "utf8" },
+				).trim();
+			const collectionsBefore = query("SELECT count(*) FROM _emdash_collections");
+			const fieldsBefore = query("SELECT count(*) FROM _emdash_fields");
+			const defaultPosts = query("SELECT count(*) FROM ec_posts WHERE site_id = 'site-default'");
+			expect(siteCommand("second")).toContain("Site second registered");
+			const seeded = query(
+				"SELECT (SELECT count(*) FROM ec_posts WHERE site_id = s.id), (SELECT count(*) FROM taxonomies WHERE site_id = s.id), (SELECT count(*) FROM _emdash_bylines WHERE site_id = s.id), (SELECT count(*) FROM _emdash_menus WHERE site_id = s.id), (SELECT count(*) FROM options WHERE site_id = s.id) FROM _emdash_sites s WHERE slug = 'second'",
+			);
+			expect(
+				seeded
+					.split("|")
+					.map(Number)
+					.every((count) => count > 0),
+			).toBe(true);
+			expect(query("SELECT count(*) FROM _emdash_collections")).toBe(collectionsBefore);
+			expect(query("SELECT count(*) FROM _emdash_fields")).toBe(fieldsBefore);
+			expect(query("SELECT count(*) FROM ec_posts WHERE site_id = 'site-default'")).toBe(
+				defaultPosts,
+			);
+			const home = resolve(project, "src/second/pages/index.astro");
+			const edited = `${readFileSync(home, "utf8")}\n<p>Edited presentation marker</p>\n`;
+			writeFileSync(home, edited);
+			siteCommand("second");
+			expect(readFileSync(home, "utf8")).toBe(edited);
+			const siteRows = execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT count(*), count(DISTINCT id) FROM _emdash_sites WHERE slug = 'second'",
+				],
+				{ encoding: "utf8" },
+			);
+			expect(siteRows.trim()).toBe("1|1");
+			const entries = execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second')",
+				],
+				{ encoding: "utf8" },
+			);
+			expect(Number(entries.trim())).toBeGreaterThan(0);
+			expect(
+				query(
+					"SELECT (SELECT count(*) FROM ec_posts WHERE site_id = s.id), (SELECT count(*) FROM taxonomies WHERE site_id = s.id), (SELECT count(*) FROM _emdash_bylines WHERE site_id = s.id), (SELECT count(*) FROM _emdash_menus WHERE site_id = s.id), (SELECT count(*) FROM options WHERE site_id = s.id) FROM _emdash_sites s WHERE slug = 'second'",
+				),
+			).toBe(seeded);
+			query(
+				"UPDATE ec_posts SET title = 'Second site only story' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second') AND slug = 'a-weekend-with-a-side-project'",
+			);
+			query(
+				"UPDATE _emdash_menu_items SET label = 'Second site navigation' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second') AND label = 'About'",
+			);
+			mkdirSync(resolve(project, "src/occupied"));
+			expect(() => siteCommand("occupied")).toThrow(
+				"conflicts with an existing hostname or presentation",
+			);
+			expect(query("SELECT count(*) FROM _emdash_sites WHERE slug = 'occupied'")).toBe("0");
+			rmSync(resolve(project, "src/occupied"), { recursive: true });
+			expect(() => siteCommand("default")).toThrow("unique lowercase slug");
+		}
+		host.kill();
+		await new Promise<void>((done) => host?.once("exit", () => done()));
+		execFileSync(process.execPath, [resolve(project, "build.mjs")], {
+			cwd: project,
+			env,
+			timeout: 180_000,
+			stdio: "pipe",
+		});
+		host = spawn(process.execPath, [resolve(project, "host.mjs")], {
+			cwd: project,
+			env,
+			stdio: ["ignore", "ignore", "pipe"],
+		});
+		host.stderr?.on("data", (chunk) => console.error("[fixture host]", String(chunk)));
+		await waitFor(async () => (await request(port, "second.localhost", "/")).status === 200);
+		const second = await request(port, "second.localhost", "/");
+		expect(second.body).toContain("Second site only story");
+		expect(second.body).toContain("Edited presentation marker");
+		expect(second.body).toContain("Second site navigation");
+		expect(second.body).not.toContain("A Weekend with a Side Project");
+		expect(second.body).toContain("second");
+		const defaultPage = await request(port, "default.localhost", "/");
+		expect(defaultPage.status).toBe(200);
+		expect(defaultPage.body).toContain("Sample Blog");
+		expect(defaultPage.body).toContain("A Weekend with a Side Project");
+		expect(defaultPage.body).not.toContain("Second site only story");
+		expect(defaultPage.body).not.toContain("Edited presentation marker");
+		expect(defaultPage.body).not.toContain("Second site navigation");
+		const secondCategory = await request(port, "second.localhost", "/category/development");
+		expect(secondCategory.status).toBe(200);
+		expect(secondCategory.body).toContain("Second site only story");
+		const defaultCategory = await request(port, "default.localhost", "/category/development");
+		expect(defaultCategory.status).toBe(200);
+		expect(defaultCategory.body).toContain("A Weekend with a Side Project");
+		expect(defaultCategory.body).not.toContain("Second site only story");
+		const countPosts = () =>
+			execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second')",
+				],
+				{ encoding: "utf8" },
+			).trim();
+		const countBeforeRecovery = countPosts();
+		rmSync(resolve(project, "src/second"), { recursive: true });
+		siteCommand("second");
+		expect(existsSync(resolve(project, "src/second/pages/index.astro"))).toBe(true);
+		expect(readFileSync(resolve(project, "src/second/pages/index.astro"), "utf8")).not.toContain(
+			"Edited presentation marker",
+		);
+		expect(countPosts()).toBe(countBeforeRecovery);
+		expect(Number(countBeforeRecovery)).toBeGreaterThan(0);
+		expect(
+			execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT title FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'second') AND slug = 'a-weekend-with-a-side-project'",
+				],
+				{ encoding: "utf8" },
+			).trim(),
+		).toBe("Second site only story");
+		expect((await request(port, "unknown.localhost", "/")).status).toBe(421);
+		expect(
+			(await request(port, "second.localhost", "/", { "X-Forwarded-Host": "default.localhost" }))
+				.status,
+		).toBe(421);
+		expect((await request(port, "localhost", "/admin")).status).toBe(302);
 		const user = execFileSync(
 			"docker",
 			[
@@ -264,4 +446,4 @@ it("sets up a generated site through Clerk and renders the default site", async 
 		execFileSync("docker", ["rm", "-f", container], { stdio: "ignore" });
 		rmSync(workspace, { recursive: true, force: true });
 	}
-}, 180_000);
+}, 360_000);

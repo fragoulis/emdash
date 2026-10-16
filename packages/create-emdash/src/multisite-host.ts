@@ -1,4 +1,5 @@
 export const defaultHostSource = `import { createServer } from "node:http";
+import { readdirSync } from "node:fs";
 import { Pool } from "pg";
 import { ulid } from "ulidx";
 import { runWithContext } from "emdash/request-context";
@@ -17,7 +18,13 @@ if (!process.env.EMDASH_ADMIN_ORIGIN && adminHost !== "localhost") {
 const adminOrigin = process.env.EMDASH_ADMIN_ORIGIN ?? "http://localhost:" + port;
 process.env.EMDASH_ADMIN_ORIGIN = adminOrigin;
 process.env.ASTRO_NODE_AUTOSTART = "disabled";
-const { handler } = await import("./dist/server/entry.mjs");
+const presentations = new Map();
+for (const entry of readdirSync(new URL("./dist/sites/", import.meta.url), { withFileTypes: true })) {
+  if (!entry.isDirectory() || !/^[a-z][a-z0-9-]*$/.test(entry.name)) continue;
+  const { handler } = await import("./dist/sites/" + entry.name + "/server/entry.mjs");
+  presentations.set(entry.name, handler);
+}
+if (!presentations.has("default")) throw new Error("Build the default presentation before starting the host");
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const setupPage = /^\\/_emdash\\/admin\\/setup(?:\\/|$)/;
 const publicApiPath = /^\\/_emdash\\/api\\/(?:media\\/file\\/|search(?:\\/suggest)?$)/;
@@ -66,10 +73,10 @@ function hostname(request) {
 
 async function resolveSite(host) {
   const result = await db.query(
-    "SELECT s.id FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE h.hostname = $1 AND s.id = 'site-default' AND s.active = 1",
+    "SELECT s.id, s.slug FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE h.hostname = $1 AND s.active = 1",
     [host],
   );
-  return result.rows[0]?.id ?? null;
+  return result.rows[0] ?? null;
 }
 
 async function registerDefaultHost() {
@@ -79,7 +86,13 @@ async function registerDefaultHost() {
   );
 }
 
-function serve(request, response, siteId) {
+function serve(request, response, slug, siteId) {
+  const handler = presentations.get(slug);
+  if (!handler) {
+    response.writeHead(503, { "Cache-Control": "no-store" });
+    response.end();
+    return;
+  }
   const context = siteId ? { editMode: false, siteId } : { editMode: false };
   const fail = (error) => {
     console.error("[host] Astro request failed:", error);
@@ -105,6 +118,12 @@ const server = createServer(async (request, response) => {
     response.end();
     return;
   }
+  const rawPath = (request.url ?? "/").split("?")[0];
+  if (!rawPath.startsWith("/") || /%2f|%5c|%2e|\\\\/i.test(rawPath) || rawPath.startsWith("//")) {
+    response.writeHead(421);
+    response.end();
+    return;
+  }
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   if (host === adminHost) {
     if (path === "/_emdash/admin/login" && request.method === "GET") {
@@ -113,7 +132,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (path === "/clerk-login" && request.method === "GET") {
-      serve(request, response);
+      serve(request, response, "default");
       return;
     }
     if (path === "/admin" || path === "/admin/") {
@@ -169,10 +188,10 @@ const server = createServer(async (request, response) => {
         void registerDefaultHost().catch((error) => console.error("[host] Default host registration failed:", error));
       });
     }
-    serve(request, response, "site-default");
+    serve(request, response, "default", "site-default");
     return;
   }
-  if (host !== defaultHost || request.method !== "GET" && request.method !== "HEAD" ||
+  if (request.method !== "GET" && request.method !== "HEAD" ||
     /^\\/(?:admin|preview)(?:\\/|$)/.test(path) || path === "/clerk-login" ||
     path.startsWith("/_emdash/") && !publicApiPath.test(path)) {
     response.writeHead(421);
@@ -180,13 +199,14 @@ const server = createServer(async (request, response) => {
     return;
   }
   try {
-    const siteId = await resolveSite(host);
-    if (!siteId) {
+    const site = await resolveSite(host);
+    if (!site || (host === defaultHost && site.id !== "site-default") ||
+      (site.slug === "default") !== (site.id === "site-default")) {
       response.writeHead(421);
       response.end();
       return;
     }
-    serve(request, response, siteId);
+    serve(request, response, site.slug, site.id);
   } catch (error) {
     console.error("[host] Site lookup failed:", error);
     response.writeHead(503);
