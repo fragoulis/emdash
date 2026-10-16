@@ -60,6 +60,8 @@ If a check fails, refresh the root build and rerun it. Fix build, lint, and type
 
 Before opening a PR: tests pass, lint clean, formatted, changeset added if a published package changed. See [.changeset/README.md](.changeset/README.md).
 
+Open the PR from the current working branch with all its existing commits, even if one seems unrelated. Ask the operator before changing the branch or excluding commits from the PR.
+
 A changeset is user-facing documentation that lands verbatim in a package CHANGELOG. Review its usefulness to someone upgrading, not only its presence and frontmatter. Follow [.changeset/README.md](.changeset/README.md) for the canonical writing and review standard, including proportional detail and migration guidance for default or breaking changes.
 
 When opening an implementation PR with `gh`/the API, copy `.github/PULL_REQUEST_TEMPLATE.md` into the body and fill every section. When helping prepare a design PR for a human to open, use `.github/PULL_REQUEST_TEMPLATE/design.md` instead. The GitHub UI injects a template automatically but the CLI does not, and PRs missing one are auto-closed. Check the AI assistance disclosure box and name the model. Tick checklist items only for what you actually verified; for test-only/docs/CI PRs, note why changeset, i18n, screenshots, or design links are not applicable.
