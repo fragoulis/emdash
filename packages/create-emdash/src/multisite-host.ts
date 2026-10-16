@@ -79,6 +79,27 @@ async function resolveSite(host) {
   return result.rows[0] ?? null;
 }
 
+async function activeSites() {
+  const result = await db.query("SELECT id, slug FROM _emdash_sites WHERE active = 1 ORDER BY slug");
+  return result.rows;
+}
+
+async function setupIsComplete() {
+  try {
+    const result = await db.query("SELECT value FROM options WHERE name = 'emdash:setup_complete'");
+    return result.rows[0]?.value === 'true';
+  } catch (error) {
+    if (error.code === '42P01') return false;
+    throw error;
+  }
+}
+
+function lastSite(request) {
+  const value = request.headers.cookie?.split(';').map((part) => part.trim())
+    .find((part) => part.startsWith('emdash_last_site='));
+  return value?.slice('emdash_last_site='.length) ?? null;
+}
+
 async function registerDefaultHost() {
   await db.query(
     "INSERT INTO _emdash_site_hosts (hostname, site_id) SELECT $1, id FROM _emdash_sites WHERE id = 'site-default' ON CONFLICT (hostname) DO NOTHING",
@@ -135,14 +156,13 @@ const server = createServer(async (request, response) => {
       serve(request, response, "default");
       return;
     }
-    if (path === "/admin" || path === "/admin/") {
-      response.writeHead(302, { Location: "/_emdash/admin/setup", "Cache-Control": "no-store" });
-      response.end();
-      return;
-    }
+    const landing = path === "/admin" || path === "/admin/" || path === "/_emdash/admin" ||
+      path === "/_emdash/admin/";
+    const siteSlug = /^\\/site\\/([a-z][a-z0-9-]*)$/.exec(path)?.[1];
+    const sitePage = path === "/sites" || siteSlug !== undefined;
     const setupWrite = path === "/_emdash/api/setup" && request.method === "POST";
     if (!setupWrite && (request.method !== "GET" && request.method !== "HEAD" ||
-      !setupPage.test(path) && path !== "/_emdash/api/setup/status" &&
+      !setupPage.test(path) && !landing && !sitePage && path !== "/_emdash/api/setup/status" &&
       path !== "/_emdash/api/manifest" && !path.startsWith("/_astro/"))) {
       response.writeHead(403, { "Cache-Control": "no-store" });
       response.end();
@@ -172,6 +192,41 @@ const server = createServer(async (request, response) => {
         response.end();
         return;
       }
+      if (landing || sitePage) {
+        try {
+          if (!(await setupIsComplete())) {
+            response.writeHead(302, { Location: "/_emdash/admin/setup", "Cache-Control": "no-store" });
+            response.end();
+            return;
+          }
+          const sites = await activeSites();
+          if (landing) {
+            const preferred = sites.find((site) => site.slug === lastSite(request));
+            const target = preferred ?? (sites.length === 1 ? sites[0] : null);
+            response.writeHead(302, { Location: target ? "/site/" + target.slug : "/sites", "Cache-Control": "no-store" });
+            response.end();
+            return;
+          }
+          if (siteSlug) {
+            const site = sites.find((candidate) => candidate.slug === siteSlug);
+            if (!site) {
+              response.writeHead(404, { "Cache-Control": "no-store" });
+              response.end();
+              return;
+            }
+            response.setHeader("Set-Cookie", "emdash_last_site=" + site.slug + "; Path=/; HttpOnly; SameSite=Lax");
+            serve(request, response, "default", site.id);
+            return;
+          }
+          serve(request, response, "default");
+          return;
+        } catch (error) {
+          console.error("[host] Site selection failed:", error);
+          response.writeHead(503, { "Cache-Control": "no-store" });
+          response.end();
+          return;
+        }
+      }
       if (setupWrite) {
         try {
           await provisionBootstrapUser(identity);
@@ -192,7 +247,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD" ||
-    /^\\/(?:admin|preview)(?:\\/|$)/.test(path) || path === "/clerk-login" ||
+    /^\\/(?:admin|preview|sites?|clerk-login)(?:\\/|$)/.test(path) || path === "/clerk-login" ||
     path.startsWith("/_emdash/") && !publicApiPath.test(path)) {
     response.writeHead(421);
     response.end();

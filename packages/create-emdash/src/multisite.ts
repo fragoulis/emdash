@@ -6,6 +6,7 @@ import { clerkSource } from "./multisite-clerk.js";
 import { defaultHostSource } from "./multisite-host.js";
 import { clerkLoginPageSource, clerkLoginSource } from "./multisite-login.js";
 import { multiSiteReadme } from "./multisite-readme.js";
+import { sitesPageSource } from "./multisite-sites.js";
 
 export function prepareDefaultPresentation(projectDir: string): void {
 	const source = resolve(projectDir, "src");
@@ -47,6 +48,9 @@ export function prepareDefaultPresentation(projectDir: string): void {
 	writeFileSync(resolve(projectDir, "build.mjs"), buildSource);
 	writeFileSync(resolve(projectDir, "clerk.mjs"), clerkSource);
 	writeFileSync(resolve(destination, "pages/clerk-login.astro"), clerkLoginPageSource);
+	mkdirSync(resolve(destination, "pages/site"), { recursive: true });
+	writeFileSync(resolve(destination, "pages/sites.astro"), sitesPageSource);
+	writeFileSync(resolve(destination, "pages/site/[slug].astro"), sitesPageSource);
 	writeFileSync(resolve(destination, "components/ClerkLogin.tsx"), clerkLoginSource);
 	writeFileSync(resolve(projectDir, "README.md"), multiSiteReadme);
 	const agentsPath = resolve(projectDir, "AGENTS.md");
