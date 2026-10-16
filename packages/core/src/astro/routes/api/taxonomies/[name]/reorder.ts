@@ -10,7 +10,7 @@
 
 import type { APIRoute } from "astro";
 
-import { requirePerm } from "#api/authorize.js";
+import { requirePerm, requireSelectedSite } from "#api/authorize.js";
 import { apiError, handleError, requireDb, unwrapResult } from "#api/error.js";
 import { handleTermReorder } from "#api/handlers/taxonomies.js";
 import { isParseError, parseBody } from "#api/parse.js";
@@ -30,6 +30,8 @@ export const POST: APIRoute = async ({ params, request, locals, cache }) => {
 
 	const denied = requirePerm(user, "taxonomies:manage");
 	if (denied) return denied;
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	try {
 		const body = await parseBody(request, reorderTermsBody);

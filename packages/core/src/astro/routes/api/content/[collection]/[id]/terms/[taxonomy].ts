@@ -8,7 +8,12 @@
 import { hasPermission } from "@emdash-cms/auth";
 import type { APIRoute } from "astro";
 
-import { requireAnyPerm, requireEntryEditPerm, requirePerm } from "#api/authorize.js";
+import {
+	requireAnyPerm,
+	requireEntryEditPerm,
+	requirePerm,
+	requireSelectedSite,
+} from "#api/authorize.js";
 import { apiError, apiSuccess, handleError, requireDb } from "#api/error.js";
 import { parseBody, isParseError } from "#api/parse.js";
 import { contentTermsBody } from "#api/schemas.js";
@@ -71,6 +76,8 @@ export const GET: APIRoute = async ({ params, locals }) => {
 	if (dbErr) return dbErr;
 	const denied = requirePerm(user, "content:read");
 	if (denied) return denied;
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	if (!collection || !id || !taxonomy) {
 		return apiError("VALIDATION_ERROR", "Collection, id, and taxonomy required", 400);
@@ -117,6 +124,8 @@ export const POST: APIRoute = async ({ params, request, locals, cache }) => {
 	if (dbErr) return dbErr;
 	const denied = requireAnyPerm(user, ["content:edit_own", "content:edit_own_drafts"]);
 	if (denied) return denied;
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	if (!emdash.handleContentGet) {
 		return apiError("NOT_CONFIGURED", "EmDash is not initialized", 500);

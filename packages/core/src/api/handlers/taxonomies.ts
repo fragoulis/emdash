@@ -790,11 +790,15 @@ export async function handleTermReorder(
 
 		let parentId = input.parentId ?? null;
 		if (parentId !== null) {
-			// Children store the parent's translation_group, so a caller passing a
-			// row id still addresses the right group. A parent whose anchor row is
-			// gone keeps the value as given (see TaxonomyRepository.resolveParentRef).
-			const parent = await repo.findById(parentId);
-			if (parent) parentId = parent.translationGroup ?? parent.id;
+			// Children store the parent's translation_group; row IDs resolve to that group.
+			const parent = await repo.findByIdOrTranslationGroup(parentId);
+			if (!parent || parent.name !== taxonomyName) {
+				return {
+					success: false,
+					error: { code: "NOT_FOUND", message: "Parent term not found" },
+				};
+			}
+			parentId = parent.translationGroup ?? parent.id;
 		}
 
 		// Every locale's rows: membership is locale-agnostic, and a term the
@@ -1197,24 +1201,16 @@ export async function handleTermTranslations(
 	idOrGroup: string,
 ): Promise<ApiResult<TermTranslationsResponse>> {
 	try {
-		const anchor = await db
-			.selectFrom("taxonomies")
-			.selectAll()
-			.where((eb) => eb.or([eb("id", "=", idOrGroup), eb("translation_group", "=", idOrGroup)]))
-			.executeTakeFirst();
+		const repo = new TaxonomyRepository(db);
+		const anchor = await repo.findByIdOrTranslationGroup(idOrGroup);
 		if (!anchor) {
 			return {
 				success: false,
 				error: { code: "NOT_FOUND", message: "Term not found" },
 			};
 		}
-		const group = anchor.translation_group ?? anchor.id;
-		const rows = await db
-			.selectFrom("taxonomies")
-			.selectAll()
-			.where("translation_group", "=", group)
-			.orderBy("locale", "asc")
-			.execute();
+		const group = anchor.translationGroup ?? anchor.id;
+		const rows = await repo.findTranslations(group);
 		return {
 			success: true,
 			data: {
