@@ -217,8 +217,8 @@ jobs:
           tests/integration/smoke/sqlite-prerender.test.ts
           --config vitest.smoke.config.ts
 
-  test-shared-host:
-    name: Shared Host Clerk Proof
+  test-local-install:
+    name: Generated Multi-site Installation
     needs: change-plan
     if: needs.change-plan.outputs.full == 'true'
     runs-on: ubuntu-latest
@@ -234,8 +234,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec playwright install chromium
-      - run: node infra/shared-host/smoke.mjs
+      - run: bash infra/local-install/run.sh check
 
   test:
     name: Tests
@@ -247,7 +246,7 @@ jobs:
         test-packages-and-fixtures,
         test-smoke-isolated,
         test-smoke-sites,
-        test-shared-host,
+        test-local-install,
         test-backend,
         test-browser,
         test-e2e,
@@ -263,8 +262,8 @@ jobs:
           CORE_UNIT_RESULT: ${{ needs.test-shards.result }}
           PACKAGE_OR_FIXTURES_SELECTED: ${{ needs.change-plan.outputs.unit == 'true' || needs.change-plan.outputs.smoke == 'true' }}
           PACKAGE_OR_FIXTURES_RESULT: ${{ needs.test-packages-and-fixtures.result }}
-          SHARED_HOST_SELECTED: ${{ needs.change-plan.outputs.full }}
-          SHARED_HOST_RESULT: ${{ needs.test-shared-host.result }}
+          LOCAL_INSTALL_SELECTED: ${{ needs.change-plan.outputs.full }}
+          LOCAL_INSTALL_RESULT: ${{ needs.test-local-install.result }}
           SMOKE_SELECTED: ${{ needs.change-plan.outputs.smoke }}
           SMOKE_ISOLATED_RESULT: ${{ needs.test-smoke-isolated.result }}
           SMOKE_SITES_RESULT: ${{ needs.test-smoke-sites.result }}
@@ -296,7 +295,7 @@ jobs:
           fi
           check_lane "Core unit tests" "$CORE_UNIT_SELECTED" "$CORE_UNIT_RESULT"
           check_lane "Package and fixture tests" "$PACKAGE_OR_FIXTURES_SELECTED" "$PACKAGE_OR_FIXTURES_RESULT"
-          check_lane "Shared host Clerk proof" "$SHARED_HOST_SELECTED" "$SHARED_HOST_RESULT"
+          check_lane "Generated multi-site installation" "$LOCAL_INSTALL_SELECTED" "$LOCAL_INSTALL_RESULT"
           check_lane "Isolated-install smoke tests" "$SMOKE_SELECTED" "$SMOKE_ISOLATED_RESULT"
           check_lane "Live-site smoke tests" "$SMOKE_SELECTED" "$SMOKE_SITES_RESULT"
           check_lane "Backend tests" "$BACKEND_SELECTED" "$BACKEND_RESULT"

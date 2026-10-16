@@ -21,7 +21,7 @@ export function linkScaffoldDependencies(project: string): void {
 	mkdirSync(clerkDependencies);
 	for (const name of ["backend", "shared", "clerk-js"]) {
 		symlinkSync(
-			resolve(root, "node_modules/.pnpm/node_modules/@clerk", name),
+			resolve(root, "packages/create-emdash/node_modules/@clerk", name),
 			resolve(clerkDependencies, name),
 			"dir",
 		);
