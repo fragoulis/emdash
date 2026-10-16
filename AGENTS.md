@@ -42,6 +42,8 @@ When writing, revising, or reviewing documentation, load the `writing-emdash-doc
 
 ## Workflow
 
+For local multi-site installation work, read [infra/local-install/README.md](infra/local-install/README.md). Use its persistent installation to inspect site-facing behavior and its isolated check to verify generation and site isolation. The old shared-host proof is gone.
+
 For multi-site scaffold, host, or Clerk work in a fresh worktree, complete this prerequisite before editing or testing:
 
 1. Copy the operator's existing local `.env` with `install -m 600 /path/to/existing/.env .env`.
