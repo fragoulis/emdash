@@ -41,6 +41,7 @@ describeEachDialect("taxonomy locale diagnostic", (dialect) => {
 			.insertInto("taxonomies")
 			.values({
 				id: termId,
+				site_id: "site-default",
 				name: "category",
 				slug: "actualites",
 				label: "Actualités",

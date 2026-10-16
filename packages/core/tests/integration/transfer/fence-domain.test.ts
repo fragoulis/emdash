@@ -238,7 +238,7 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 				.execute();
 			await ctx.db
 				.insertInto("taxonomies")
-				.values({ id: "t1", name: "tag", slug: "x", label: "X" })
+				.values({ id: "t1", site_id: "site-default", name: "tag", slug: "x", label: "X" })
 				.execute();
 			const result = await inspectPortableDomain(ctx.db);
 			expect(result.blockers).toEqual([]);
@@ -313,7 +313,12 @@ describeEachDialect("transfer fence, domain, and site id", (dialect) => {
 					() =>
 						ctx.db
 							.insertInto("content_taxonomies")
-							.values({ collection: "posts", entry_id: "e", taxonomy_id: "t" })
+							.values({
+								site_id: "site-default",
+								collection: "posts",
+								entry_id: "e",
+								taxonomy_id: "t",
+							})
 							.execute(),
 				],
 				[

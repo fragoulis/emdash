@@ -43,7 +43,7 @@ interface TermFixture {
  */
 async function seedLocalizedTags(db: Kysely<Database>): Promise<TermFixture> {
 	const contentRepo = new ContentRepository(db);
-	const taxRepo = new TaxonomyRepository(db);
+	const taxRepo = new TaxonomyRepository(db, "site-default");
 
 	// Two post rows sharing a translation group.
 	const enContent = await contentRepo.create({
@@ -110,7 +110,7 @@ describe("query helpers hydrate terms in the resolved locale (#1441)", () => {
 			cacheHint: {},
 		} as any);
 
-		const { entry } = await runWithContext({ editMode: false, db }, () =>
+		const { entry } = await runWithContext({ editMode: false, siteId: "site-default", db }, () =>
 			getEmDashEntry("post", fx.frContentSlug, { locale: "fr" }),
 		);
 
@@ -134,7 +134,7 @@ describe("query helpers hydrate terms in the resolved locale (#1441)", () => {
 			cacheHint: {},
 		} as any);
 
-		const { entries } = await runWithContext({ editMode: false, db }, () =>
+		const { entries } = await runWithContext({ editMode: false, siteId: "site-default", db }, () =>
 			getEmDashCollection("post", { locale: "fr" }),
 		);
 

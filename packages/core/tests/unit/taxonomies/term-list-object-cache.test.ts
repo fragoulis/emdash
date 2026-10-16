@@ -17,7 +17,7 @@ vi.mock("../../../src/loader.js", () => ({
 	resetTaxonomyNamesCache: vi.fn(),
 }));
 
-import { handleTermReorder } from "../../../src/api/handlers/taxonomies.js";
+import { handleTermReorder as reorderTermsForSite } from "../../../src/api/handlers/taxonomies.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
 import { getDb } from "../../../src/loader.js";
@@ -26,6 +26,9 @@ import {
 	type ObjectCacheBackend,
 } from "../../../src/object-cache/index.js";
 import { runWithContext } from "../../../src/request-context.js";
+
+const handleTermReorder = (...args: Parameters<typeof reorderTermsForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => reorderTermsForSite(...args));
 import { getTaxonomyTerms, resetTaxonomyDefsCacheForTests } from "../../../src/taxonomies/index.js";
 import { setupTestDatabaseWithCollections, teardownTestDatabase } from "../../utils/test-db.js";
 
@@ -57,7 +60,7 @@ describe("reordering terms invalidates the cached term list", () => {
 		vi.mocked(getDb).mockResolvedValue(db);
 		resetTaxonomyDefsCacheForTests();
 		__setObjectCacheBackendForTests(memoryBackend(), { revalidate: 60_000, defaultTtl: 3600 });
-		repo = new TaxonomyRepository(db);
+		repo = new TaxonomyRepository(db, "site-default");
 	});
 
 	afterEach(async () => {
@@ -68,7 +71,7 @@ describe("reordering terms invalidates the cached term list", () => {
 
 	/** Labels of `category`, read through the cached runtime helper. */
 	function readLabels(): Promise<string[]> {
-		return runWithContext({ editMode: false, db }, async () =>
+		return runWithContext({ editMode: false, db, siteId: "site-default" }, async () =>
 			(await getTaxonomyTerms("category", { includeCounts: false })).map((term) => term.label),
 		);
 	}

@@ -11,17 +11,24 @@ import { sql } from "kysely";
 import { ulid } from "ulidx";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { handleTermGet, handleTermList } from "../../../src/api/handlers/taxonomies.js";
+import {
+	handleTermGet as getAdminTermForSite,
+	handleTermList as listAdminTermsForSite,
+} from "../../../src/api/handlers/taxonomies.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database as DatabaseSchema } from "../../../src/database/types.js";
-import { runWithContext } from "../../../src/request-context.js";
+import {
+	getRequestContext,
+	runWithContext as runWithRequestContext,
+	type EmDashRequestContext,
+} from "../../../src/request-context.js";
 import {
 	primeRegisteredCollections,
 	setRegisteredCollectionsRevalidateWindowForTests,
 } from "../../../src/schema/collection-slugs-cache.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
-import { fetchVisibleTermCounts } from "../../../src/taxonomies/term-counts.js";
+import { fetchVisibleTermCounts as countTermsForSite } from "../../../src/taxonomies/term-counts.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import {
 	D1_COMPOUND_SELECT_LIMIT,
 	describeEachDialect,
@@ -38,7 +45,25 @@ vi.mock("../../../src/loader.js", () => ({
 }));
 
 import { getDb } from "../../../src/loader.js";
-import { getTaxonomyTerms, getTerm } from "../../../src/taxonomies/index.js";
+import {
+	getTaxonomyTerms as listPublicTermsForSite,
+	getTerm as getPublicTermForSite,
+} from "../../../src/taxonomies/index.js";
+
+const runWithContext = <T>(context: EmDashRequestContext, fn: () => T): T =>
+	runWithRequestContext({ ...context, siteId: "site-default" }, fn);
+const forSite = <T>(fn: () => T): T =>
+	getRequestContext()?.siteId ? fn() : runWithContext({ editMode: false }, fn);
+const handleTermGet = (...args: Parameters<typeof getAdminTermForSite>) =>
+	forSite(() => getAdminTermForSite(...args));
+const handleTermList = (...args: Parameters<typeof listAdminTermsForSite>) =>
+	forSite(() => listAdminTermsForSite(...args));
+const fetchVisibleTermCounts = (...args: Parameters<typeof countTermsForSite>) =>
+	forSite(() => countTermsForSite(...args));
+const getTaxonomyTerms = (...args: Parameters<typeof listPublicTermsForSite>) =>
+	forSite(() => listPublicTermsForSite(...args));
+const getTerm = (...args: Parameters<typeof getPublicTermForSite>) =>
+	forSite(() => getPublicTermForSite(...args));
 
 describeEachDialect("visible term counts (#581)", (dialect) => {
 	let ctx: DialectTestContext;

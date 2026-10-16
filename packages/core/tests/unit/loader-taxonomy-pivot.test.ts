@@ -21,7 +21,6 @@ import {
 	emdashLoader,
 	resetTaxonomyNamesCache,
 } from "../../src/loader.js";
-import { runWithContext } from "../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
@@ -29,6 +28,7 @@ import {
 	type DialectName,
 	type DialectTestContext,
 } from "../utils/test-db.js";
+import { runWithDefaultSite as runWithContext } from "../utils/test-site-context.js";
 
 describeEachDialect("Loader taxonomy pivot-drive", (dialectName: DialectName) => {
 	let ctx: DialectTestContext;
@@ -49,7 +49,7 @@ describeEachDialect("Loader taxonomy pivot-drive", (dialectName: DialectName) =>
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- schema vs Database type
 		content = new ContentRepository(db as any);
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- schema vs Database type
-		tax = new TaxonomyRepository(db as any);
+		tax = new TaxonomyRepository(db as any, "site-default");
 		termSeq = 0;
 	});
 
@@ -62,7 +62,14 @@ describeEachDialect("Loader taxonomy pivot-drive", (dialectName: DialectName) =>
 		const id = `tax_${name}_${slug}_${termSeq++}`;
 		await db
 			.insertInto("taxonomies" as never)
-			.values({ id, name, slug, label: slug, translation_group: id } as never)
+			.values({
+				id,
+				site_id: "site-default",
+				name,
+				slug,
+				label: slug,
+				translation_group: id,
+			} as never)
 			.execute();
 		return id;
 	}
@@ -209,6 +216,7 @@ describeEachDialect("Loader taxonomy pivot-drive", (dialectName: DialectName) =>
 			.insertInto("taxonomies" as never)
 			.values({
 				id: group,
+				site_id: "site-default",
 				name: "category",
 				slug: "news",
 				label: "News",
@@ -220,6 +228,7 @@ describeEachDialect("Loader taxonomy pivot-drive", (dialectName: DialectName) =>
 			.insertInto("taxonomies" as never)
 			.values({
 				id: "tax_category_news_fr",
+				site_id: "site-default",
 				name: "category",
 				slug: "news",
 				label: "Actualités",

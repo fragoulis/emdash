@@ -134,7 +134,7 @@ describe("chunked WP plugin import — cross-chunk state", () => {
 			hierarchical: false,
 			collections: ["post"],
 		});
-		const repo = new TaxonomyRepository(db);
+		const repo = new TaxonomyRepository(db, "site-default");
 		const term = await repo.create({ name: "company", slug: "acme", label: "ACME" });
 
 		const plan = await loadTaxonomyPlanFromDb(db);

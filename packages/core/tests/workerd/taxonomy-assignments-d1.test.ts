@@ -33,7 +33,7 @@ beforeAll(async () => {
 	await registry.createCollection({ slug: COLLECTION, label: "Posts", labelSingular: "Post" });
 	await registry.createField(COLLECTION, { slug: "title", label: "Title", type: "string" });
 
-	taxonomies = new TaxonomyRepository(db);
+	taxonomies = new TaxonomyRepository(db, "site-default");
 	termIds = [];
 	for (let i = 0; i < TERM_COUNT; i++) {
 		// oxlint-disable-next-line no-await-in-loop -- sequential setup

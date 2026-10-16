@@ -49,7 +49,7 @@ beforeEach(async () => {
 
 	// No ANALYZE: matches D1, which never maintains sqlite_stat1.
 	await runMigrations(db);
-	repo = new TaxonomyRepository(db);
+	repo = new TaxonomyRepository(db, "site-default");
 
 	// One taxonomy dominates the locale, so a plan that filters `name` in memory
 	// instead of seeking it reads far more rows than it returns.
@@ -109,7 +109,7 @@ it("seeks findByName through the composite index rather than scanning the locale
 	await repo.findByName("category", { locale: "en" });
 
 	const plan = planOf((sql) => sql.includes('"name" = ?') && sql.includes("sort_order"));
-	expect(plan).toContain("idx_taxonomies_name_locale");
+	expect(plan).toContain("idx_taxonomies_site_name_locale (site_id=? AND name=? AND locale=?)");
 	// The locale-only index reads every term in the locale to filter `name`.
 	expect(plan).not.toContain("idx_taxonomies_locale");
 	expect(plan).not.toContain("SCAN taxonomies");
@@ -135,7 +135,7 @@ it("bounds manual keyset pages while seeking the taxonomy index", async () => {
 	const query = queryOf(match);
 	expect(query.parameters.at(-1)).toBe(3);
 	const plan = planOf(match);
-	expect(plan).toContain("idx_taxonomies_name_locale");
+	expect(plan).toContain("idx_taxonomies_site_name_locale (site_id=? AND name=? AND locale=?)");
 	expect(plan).not.toContain("idx_taxonomies_locale");
 	expect(plan).not.toContain("SCAN taxonomies");
 	expect(plan).toContain("TEMP B-TREE");
@@ -146,7 +146,7 @@ it("seeks findChildren through the parent index", async () => {
 	await repo.findChildren(parentGroup, "en");
 
 	const plan = planOf((sql) => sql.includes('"parent_id" = ?') && sql.includes("sort_order"));
-	expect(plan).toContain("idx_taxonomies_parent");
+	expect(plan).toContain("idx_taxonomies_site_parent (site_id=? AND parent_id=?)");
 	expect(plan).not.toContain("SCAN taxonomies");
 	expect(plan).toContain("TEMP B-TREE");
 });

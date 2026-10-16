@@ -14,7 +14,13 @@ import { runMigrations } from "../../../src/database/migrations/runner.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database as DatabaseSchema } from "../../../src/database/types.js";
-import { runWithContext } from "../../../src/request-context.js";
+import {
+	runWithContext as runWithRequestContext,
+	type EmDashRequestContext,
+} from "../../../src/request-context.js";
+
+const runWithContext = <T>(context: EmDashRequestContext, fn: () => T): T =>
+	runWithRequestContext({ ...context, siteId: "site-default" }, fn);
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 
 // Mock loader.getDb so the runtime taxonomy functions read from our test db.
@@ -73,7 +79,7 @@ describe("visible term counts are only computed on demand", () => {
 			.where("name", "in", ["category", "tag"])
 			.execute();
 
-		const taxRepo = new TaxonomyRepository(db);
+		const taxRepo = new TaxonomyRepository(db, "site-default");
 		const contentRepo = new ContentRepository(db);
 		const parent = await taxRepo.create({
 			name: "category",

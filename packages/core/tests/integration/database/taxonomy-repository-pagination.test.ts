@@ -24,7 +24,7 @@ describeEachDialect("TaxonomyRepository pagination", (dialect) => {
 
 	beforeEach(async () => {
 		ctx = await setupForDialect(dialect);
-		repo = new TaxonomyRepository(ctx.db);
+		repo = new TaxonomyRepository(ctx.db, "site-default");
 	});
 
 	afterEach(async () => {
@@ -37,6 +37,7 @@ describeEachDialect("TaxonomyRepository pagination", (dialect) => {
 			.values(
 				terms.map((term) => ({
 					id: term.id,
+					site_id: "site-default",
 					name: TAXONOMY,
 					slug: term.slug,
 					label: term.label,

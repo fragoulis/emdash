@@ -13,11 +13,17 @@ import type { WxrCategory, WxrPost, WxrTag, WxrTerm } from "../../../src/cli/wxr
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
 import {
-	attachPostTaxonomies,
-	preImportWxrTaxonomies,
+	attachPostTaxonomies as attachForSite,
+	preImportWxrTaxonomies as preImportForSite,
 } from "../../../src/import/wxr-taxonomies.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
+
+const preImportWxrTaxonomies: typeof preImportForSite = (...args) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => preImportForSite(...args));
+const attachPostTaxonomies: typeof attachForSite = (...args) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => attachForSite(...args));
 
 /**
  * Build a fully-formed WxrPost with minimal boilerplate.
@@ -140,7 +146,7 @@ describe("preImportWxrTaxonomies", () => {
 
 	it("re-uses existing terms instead of duplicating them", async () => {
 		// Pre-create a term to simulate an existing taxonomy state.
-		const repo = new TaxonomyRepository(db);
+		const repo = new TaxonomyRepository(db, "site-default");
 		await repo.create({ name: "category", slug: "patents", label: "Patents" });
 
 		const plan = await preImportWxrTaxonomies(

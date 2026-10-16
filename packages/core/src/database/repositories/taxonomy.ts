@@ -7,6 +7,7 @@ import { slugify } from "../../utils/slugify.js";
 import { withTransaction } from "../transaction.js";
 import type { Database, TaxonomyTable } from "../types.js";
 import { validateIdentifier } from "../validate.js";
+import { selectedSiteId } from "./site-settings.js";
 
 /** A member of one sibling group and the position it currently holds. */
 export interface SiblingPosition {
@@ -21,7 +22,7 @@ export interface SiblingPosition {
  */
 const GROUPS_PER_UPDATE = 32;
 /** Rows per `content_taxonomies` insert. Each row binds three parameters. */
-const ASSIGNMENTS_PER_INSERT = 32;
+const ASSIGNMENTS_PER_INSERT = 24;
 const NUMERIC_SUFFIX_PATTERN = /^\d+$/;
 
 /** Deal the listed groups back out over the slots they hold, in the order given. */
@@ -151,7 +152,10 @@ export interface TaxonomyAssignmentResolution {
  * translation_group). Writes must preserve both invariants.
  */
 export class TaxonomyRepository {
-	constructor(private db: Kysely<Database>) {}
+	constructor(
+		private db: Kysely<Database>,
+		private readonly siteId: string = selectedSiteId(),
+	) {}
 
 	/**
 	 * Create a new taxonomy term. When `translationOf` is set the new row joins
@@ -194,6 +198,7 @@ export class TaxonomyRepository {
 				.insertInto("taxonomies")
 				.values({
 					id,
+					site_id: this.siteId,
 					name: input.name,
 					slug: input.slug,
 					label: input.label,
@@ -212,6 +217,7 @@ export class TaxonomyRepository {
 					.updateTable("taxonomies")
 					.set({ parent_id: parentId, sort_order: sortOrder })
 					.where("translation_group", "=", translationGroup)
+					.where("site_id", "=", this.siteId)
 					.execute();
 			}
 		});
@@ -228,6 +234,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where("id", "=", id)
+			.where("site_id", "=", this.siteId)
 			.executeTakeFirst();
 		return row ? this.rowToTaxonomy(row) : null;
 	}
@@ -238,6 +245,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where((eb) => eb.or([eb("id", "=", id), eb("translation_group", "=", id)]))
+			.where("site_id", "=", this.siteId)
 			.orderBy("locale", "asc")
 			.orderBy("id", "asc")
 			.executeTakeFirst();
@@ -254,6 +262,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where("name", "=", name)
+			.where("site_id", "=", this.siteId)
 			.where("slug", "=", slug);
 		if (locale !== undefined) query = query.where("locale", "=", locale);
 		const row = await query.orderBy("locale", "asc").executeTakeFirst();
@@ -267,6 +276,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.select("slug")
 			.where("name", "=", name)
+			.where("site_id", "=", this.siteId)
 			.where((eb) => eb.or([eb("slug", "=", baseSlug), eb("slug", "like", `${baseSlug}-%`)]));
 		if (locale !== undefined) query = query.where("locale", "=", locale);
 		const candidates = await query.execute();
@@ -296,6 +306,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where("name", "=", name)
+			.where("site_id", "=", this.siteId)
 			.orderBy("sort_order", "asc")
 			.orderBy("label", "asc")
 			.orderBy("id", "asc");
@@ -324,6 +335,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where("name", "=", name)
+			.where("site_id", "=", this.siteId)
 			.where("locale", "in", locales)
 			.orderBy("sort_order", "asc")
 			.orderBy("label", "asc")
@@ -345,7 +357,11 @@ export class TaxonomyRepository {
 
 	async findPageByName(name: string, options: TaxonomyPageOptions = {}): Promise<TaxonomyPage> {
 		const limit = Math.max(1, Math.min(options.limit ?? 50, 100));
-		let query = this.db.selectFrom("taxonomies").selectAll().where("name", "=", name);
+		let query = this.db
+			.selectFrom("taxonomies")
+			.selectAll()
+			.where("name", "=", name)
+			.where("site_id", "=", this.siteId);
 
 		if (options.locale !== undefined) query = query.where("locale", "=", options.locale);
 
@@ -394,6 +410,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where("parent_id", "=", group)
+			.where("site_id", "=", this.siteId)
 			.orderBy("sort_order", "asc")
 			.orderBy("label", "asc")
 			.orderBy("id", "asc");
@@ -412,6 +429,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where("translation_group", "=", translationGroup)
+			.where("site_id", "=", this.siteId)
 			.orderBy("locale", "asc")
 			.execute();
 		return rows.map((row) => this.rowToTaxonomy(row));
@@ -458,13 +476,19 @@ export class TaxonomyRepository {
 		if (hasRowUpdates || hasGroupUpdates) {
 			await withTransaction(this.db, async (trx) => {
 				if (hasRowUpdates) {
-					await trx.updateTable("taxonomies").set(updates).where("id", "=", id).execute();
+					await trx
+						.updateTable("taxonomies")
+						.set(updates)
+						.where("id", "=", id)
+						.where("site_id", "=", this.siteId)
+						.execute();
 				}
 				if (hasGroupUpdates) {
 					await trx
 						.updateTable("taxonomies")
 						.set(group)
 						.where("translation_group", "=", existing.translationGroup ?? existing.id)
+						.where("site_id", "=", this.siteId)
 						.execute();
 				}
 			});
@@ -539,7 +563,7 @@ export class TaxonomyRepository {
 			await sql`
 				UPDATE taxonomies
 				SET sort_order = CASE translation_group ${arms} END
-				WHERE translation_group IN (${keys})
+				WHERE translation_group IN (${keys}) AND site_id = ${this.siteId}
 			`.execute(this.db);
 		}
 	}
@@ -556,7 +580,8 @@ export class TaxonomyRepository {
 		let query = this.db
 			.selectFrom("taxonomies")
 			.select((eb) => eb.fn.max("sort_order").as("max"))
-			.where("name", "=", name);
+			.where("name", "=", name)
+			.where("site_id", "=", this.siteId);
 		query =
 			parentId === null
 				? query.where("parent_id", "is", null)
@@ -577,6 +602,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.select("id")
 			.where("translation_group", "=", translationGroup)
+			.where("site_id", "=", this.siteId)
 			.where((eb) =>
 				parentId === null
 					? eb("parent_id", "is not", null)
@@ -597,17 +623,23 @@ export class TaxonomyRepository {
 				.selectFrom("taxonomies")
 				.select("id")
 				.where("translation_group", "=", term.translationGroup)
+				.where("site_id", "=", this.siteId)
 				.where("id", "!=", id)
 				.execute();
 			if (siblings.length === 0) {
 				await this.db
 					.deleteFrom("content_taxonomies")
 					.where("taxonomy_id", "=", term.translationGroup)
+					.where("site_id", "=", this.siteId)
 					.execute();
 			}
 		}
 
-		const result = await this.db.deleteFrom("taxonomies").where("id", "=", id).executeTakeFirst();
+		const result = await this.db
+			.deleteFrom("taxonomies")
+			.where("id", "=", id)
+			.where("site_id", "=", this.siteId)
+			.executeTakeFirst();
 		invalidateTaxonomyObjectCache();
 		return (result.numDeletedRows ?? 0n) > 0n;
 	}
@@ -634,6 +666,20 @@ export class TaxonomyRepository {
 		const entryGroup = await this.resolveEntryTranslationGroup(collection, entryId);
 		if (!entryGroup) return 0;
 
+		const validGroups = new Set<string>();
+		for (const batch of chunks(uniqueGroups, SQL_BATCH_SIZE - 1)) {
+			// oxlint-disable-next-line no-await-in-loop -- each batch stays below D1's parameter limit
+			const rows = await this.db
+				.selectFrom("taxonomies")
+				.select("translation_group")
+				.where("site_id", "=", this.siteId)
+				.where("translation_group", "in", batch)
+				.execute();
+			for (const row of rows) if (row.translation_group) validGroups.add(row.translation_group);
+		}
+		if (validGroups.size !== uniqueGroups.length) {
+			throw new Error("A taxonomy term does not belong to the selected site");
+		}
 		const inserted = await this.insertAssignments(collection, entryGroup, uniqueGroups);
 		if (inserted > 0) invalidateTaxonomyObjectCache();
 		return inserted;
@@ -650,7 +696,14 @@ export class TaxonomyRepository {
 				// oxlint-disable-next-line no-await-in-loop -- one statement per D1-safe batch
 				const result = await this.db
 					.insertInto("content_taxonomies")
-					.values(batch.map((taxonomy_id) => ({ collection, entry_id: entryGroup, taxonomy_id })))
+					.values(
+						batch.map((taxonomy_id) => ({
+							site_id: this.siteId,
+							collection,
+							entry_id: entryGroup,
+							taxonomy_id,
+						})),
+					)
 					.onConflict((oc) => oc.doNothing())
 					.executeTakeFirst();
 				inserted += Number(result.numInsertedOrUpdatedRows ?? 0n);
@@ -677,6 +730,7 @@ export class TaxonomyRepository {
 					.where("collection", "=", collection)
 					.where("entry_id", "=", entryGroup)
 					.where("taxonomy_id", "in", batch)
+					.where("site_id", "=", this.siteId)
 					.executeTakeFirst();
 				removed += Number(result.numDeletedRows ?? 0n);
 			}
@@ -700,6 +754,7 @@ export class TaxonomyRepository {
 			.where("collection", "=", collection)
 			.where("entry_id", "=", entryGroup)
 			.where("taxonomy_id", "=", taxonomyGroup)
+			.where("site_id", "=", this.siteId)
 			.execute();
 		invalidateTaxonomyObjectCache();
 	}
@@ -739,7 +794,9 @@ export class TaxonomyRepository {
 			.innerJoin("taxonomies", "taxonomies.translation_group", "content_taxonomies.taxonomy_id")
 			.selectAll("taxonomies")
 			.where("content_taxonomies.collection", "=", collection)
-			.where("content_taxonomies.entry_id", "=", entryGroup);
+			.where("content_taxonomies.entry_id", "=", entryGroup)
+			.where("content_taxonomies.site_id", "=", this.siteId)
+			.where("taxonomies.site_id", "=", this.siteId);
 
 		if (taxonomyName) query = query.where("taxonomies.name", "=", taxonomyName);
 		if (locale !== undefined) query = query.where("taxonomies.locale", "=", locale);
@@ -765,6 +822,8 @@ export class TaxonomyRepository {
 			.select("content_taxonomies.taxonomy_id as assignment_group")
 			.where("content_taxonomies.collection", "=", collection)
 			.where("content_taxonomies.entry_id", "=", entryGroup)
+			.where("content_taxonomies.site_id", "=", this.siteId)
+			.where("taxonomies.site_id", "=", this.siteId)
 			.where("taxonomies.name", "=", taxonomyName)
 			.orderBy("content_taxonomies.taxonomy_id", "asc")
 			.orderBy("taxonomies.locale", "asc")
@@ -822,6 +881,8 @@ export class TaxonomyRepository {
 			.distinct()
 			.where("content_taxonomies.collection", "=", collection)
 			.where("content_taxonomies.entry_id", "=", entryGroup)
+			.where("content_taxonomies.site_id", "=", this.siteId)
+			.where("taxonomies.site_id", "=", this.siteId)
 			.where("taxonomies.name", "=", taxonomyName)
 			.execute();
 		const currentGroups = new Set(current.map((r) => r.group));
@@ -852,6 +913,7 @@ export class TaxonomyRepository {
 			.deleteFrom("content_taxonomies")
 			.where("collection", "=", collection)
 			.where("entry_id", "=", entryGroup)
+			.where("site_id", "=", this.siteId)
 			.executeTakeFirst();
 		const removed = Number(result.numDeletedRows ?? 0);
 		if (removed > 0) invalidateTaxonomyObjectCache();
@@ -867,7 +929,8 @@ export class TaxonomyRepository {
 		const result = await sql<{ translation_group: string }>`
 			SELECT translation_group
 			FROM ${sql.ref(tableName)}
-			WHERE id = ${entryIdOrGroup} OR translation_group = ${entryIdOrGroup}
+			WHERE (id = ${entryIdOrGroup} OR translation_group = ${entryIdOrGroup})
+			AND site_id = ${this.siteId}
 			LIMIT 1
 		`.execute(this.db);
 		return result.rows[0]?.translation_group ?? null;
@@ -891,6 +954,7 @@ export class TaxonomyRepository {
 			.selectFrom("content_taxonomies")
 			.select((eb) => eb.fn.count("entry_id").as("count"))
 			.where("taxonomy_id", "=", group)
+			.where("site_id", "=", this.siteId)
 			.executeTakeFirst();
 		return Number(result?.count ?? 0);
 	}
@@ -911,6 +975,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.select("id")
 			.where("id", "=", group)
+			.where("site_id", "=", this.siteId)
 			.executeTakeFirst();
 		return anchor ? group : idOrGroup;
 	}
@@ -920,6 +985,7 @@ export class TaxonomyRepository {
 			.selectFrom("taxonomies")
 			.select(["translation_group"])
 			.where((eb) => eb.or([eb("id", "=", idOrGroup), eb("translation_group", "=", idOrGroup)]))
+			.where("site_id", "=", this.siteId)
 			.executeTakeFirst();
 		return row?.translation_group ?? null;
 	}
@@ -944,6 +1010,7 @@ export class TaxonomyRepository {
 				.selectFrom("content_taxonomies")
 				.select(["taxonomy_id", (eb) => eb.fn.count("entry_id").as("count")])
 				.where("taxonomy_id", "in", chunk)
+				.where("site_id", "=", this.siteId)
 				.groupBy("taxonomy_id")
 				.execute();
 

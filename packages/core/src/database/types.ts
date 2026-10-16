@@ -21,7 +21,7 @@ export interface RevisionPruneQueueTable {
 }
 
 export interface TaxonomyTable {
-	site_id: Generated<string>;
+	site_id: string;
 	id: string;
 	name: string;
 	slug: string;
@@ -36,6 +36,7 @@ export interface TaxonomyTable {
 }
 
 export interface ContentTaxonomyTable {
+	site_id: string;
 	collection: string; // e.g., 'posts'
 	entry_id: string; // stores the ec_* row's translation_group (locale-agnostic)
 	taxonomy_id: string; // stores taxonomies.translation_group (locale-agnostic)

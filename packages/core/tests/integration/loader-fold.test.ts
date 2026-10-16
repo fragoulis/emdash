@@ -14,12 +14,12 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { resetBylineFieldDefsCacheForTests } from "../../src/bylines/field-defs-cache.js";
 import { BylineRepository } from "../../src/database/repositories/byline.js";
 import { ContentRepository } from "../../src/database/repositories/content.js";
-import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js";
 import type { ContentBylineCredit } from "../../src/database/repositories/types.js";
 import { setI18nConfig } from "../../src/i18n/config.js";
 import { emdashLoader, FOLDED_BYLINES, FOLDED_TERMS } from "../../src/loader.js";
 import { runWithContext } from "../../src/request-context.js";
 import { BylineSchemaRegistry } from "../../src/schema/byline-registry.js";
+import { TaxonomyRepository } from "../utils/default-site-taxonomy-repository.js";
 import {
 	type DialectTestContext,
 	describeEachDialect,

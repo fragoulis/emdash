@@ -17,6 +17,7 @@ import type { Kysely } from "kysely";
 import { sql } from "kysely";
 
 import { buildStatusCondition, compoundSelectLimit } from "../database/dialect-helpers.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
 import {
@@ -53,13 +54,15 @@ function collectionBranch(
 	collection: string,
 	locale?: string,
 ): ReturnType<typeof sql> {
+	const siteId = selectedSiteId();
 	return sql`
 		SELECT ct.taxonomy_id AS taxonomy_id, COUNT(DISTINCT e.translation_group) AS count
 		FROM content_taxonomies AS ct
 		CROSS JOIN ${sql.ref(`ec_${collection}`)} AS e
 		WHERE e.translation_group = ct.entry_id
 			AND ct.collection = ${collection}
-			AND ct.taxonomy_id IN (SELECT translation_group FROM taxonomies WHERE name = ${taxonomyName})
+			AND ct.site_id = ${siteId} AND e.site_id = ${siteId}
+			AND ct.taxonomy_id IN (SELECT translation_group FROM taxonomies WHERE name = ${taxonomyName} AND site_id = ${siteId})
 			${locale ? sql`AND e.locale = ${locale}` : sql``}
 			AND ${buildStatusCondition(db, "published", "e")}
 			AND e.deleted_at IS NULL

@@ -27,6 +27,7 @@ import { ContentRepository } from "../database/repositories/content.js";
 import { MediaRepository } from "../database/repositories/media.js";
 import { RedirectRepository } from "../database/repositories/redirect.js";
 import { RevisionRepository } from "../database/repositories/revision.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import { SiteSettingsRepository } from "../database/repositories/site-settings.js";
 import {
 	findTaxonomyStructure,
@@ -639,8 +640,13 @@ async function applySeedWrites(
 
 			// Create terms (if provided)
 			if (includeContent && taxonomy.terms && taxonomy.terms.length > 0) {
-				const termRepo = new TaxonomyRepository(db);
-				const existingTerms = await findExistingSeedTerms(db, taxonomy.name, taxonomy.terms);
+				const termRepo = new TaxonomyRepository(db, selectedSiteId());
+				const existingTerms = await findExistingSeedTerms(
+					db,
+					selectedSiteId(),
+					taxonomy.name,
+					taxonomy.terms,
+				);
 
 				if (structure.hierarchical) {
 					const applied = await applyHierarchicalTerms(
@@ -715,6 +721,7 @@ async function applySeedWrites(
 		const bylineRepo = new BylineRepository(db);
 		const existingBylines = await findExistingSeedBylines(
 			db,
+			selectedSiteId(),
 			seed.bylines.map((byline) => byline.slug),
 		);
 		for (const byline of seed.bylines) {
@@ -1344,6 +1351,7 @@ function seedTermKey(locale: string, slug: string): string {
  */
 async function findExistingSeedTerms(
 	db: Kysely<Database>,
+	siteId: string,
 	taxonomyName: string,
 	terms: SeedTaxonomyTerm[],
 ): Promise<Map<string, string>> {
@@ -1353,6 +1361,7 @@ async function findExistingSeedTerms(
 			.selectFrom("taxonomies")
 			.select(["id", "slug", "locale"])
 			.where("name", "=", taxonomyName)
+			.where("site_id", "=", siteId)
 			.where("slug", "in", batch)
 			.execute();
 		for (const row of rows) existing.set(seedTermKey(row.locale, row.slug), row.id);
@@ -1367,6 +1376,7 @@ async function findExistingSeedTerms(
  */
 async function findExistingSeedBylines(
 	db: Kysely<Database>,
+	siteId: string,
 	slugs: string[],
 ): Promise<Map<string, string>> {
 	const existing = new Map<string, string>();
@@ -1375,6 +1385,7 @@ async function findExistingSeedBylines(
 			.selectFrom("_emdash_bylines")
 			.select(["id", "slug"])
 			.where("slug", "in", batch)
+			.where("site_id", "=", siteId)
 			.orderBy("locale", "asc")
 			.execute();
 		for (const row of rows) {
@@ -1990,7 +2001,7 @@ async function applyContentTaxonomies(
 	entry: { taxonomies?: Record<string, string[]> },
 	isUpdate: boolean,
 ): Promise<void> {
-	const termRepo = new TaxonomyRepository(db);
+	const termRepo = new TaxonomyRepository(db, selectedSiteId());
 	// In update mode, clear existing taxonomy assignments first
 	if (isUpdate) {
 		await termRepo.clearEntryTerms(collectionSlug, contentId);
