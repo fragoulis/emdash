@@ -96,7 +96,7 @@ describeEachDialect("committed scheduled publication visibility", (dialect) => {
 			},
 		});
 		await contentRepo.setDraftRevision("post", id, revision.id);
-		const taxonomyRepo = new TaxonomyRepository(ctx.db);
+		const taxonomyRepo = new TaxonomyRepository(ctx.db, "site-default");
 		const term = await taxonomyRepo.create({
 			name: "category",
 			slug: "technology",

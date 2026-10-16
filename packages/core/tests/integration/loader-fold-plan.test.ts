@@ -72,7 +72,7 @@ beforeEach(async () => {
 	// eslint-disable-next-line typescript/no-explicit-any -- schema type vs Database type
 	const anyDb = db as any;
 	const content = new ContentRepository(anyDb);
-	const tax = new TaxonomyRepository(anyDb);
+	const tax = new TaxonomyRepository(anyDb, "site-default");
 	const byline = new BylineRepository(anyDb);
 	const post = await content.create({
 		type: "post",
@@ -143,7 +143,7 @@ function assertPivotDrivenFold(plan: string): void {
 		"idx_taxonomies_locale",
 	);
 	expect(plan, "taxonomy subquery must probe taxonomies by translation_group").toContain(
-		"idx_taxonomies_translation_group",
+		"idx_taxonomies_site_group_locale_unique (site_id=? AND translation_group=? AND locale=?)",
 	);
 	// Byline subquery. Its `(translation_group, locale)` composite unique index
 	// already yields the pivot-driven plan today, so `CROSS JOIN` is a no-op here
@@ -152,7 +152,7 @@ function assertPivotDrivenFold(plan: string): void {
 		"idx__emdash_bylines_locale",
 	);
 	expect(plan, "byline subquery must probe bylines by translation_group").toContain(
-		"idx_bylines_group_locale_unique",
+		"idx__emdash_bylines_translation_group (translation_group=?)",
 	);
 }
 

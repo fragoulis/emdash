@@ -21,11 +21,11 @@ import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
 import { runMigrations } from "../../src/database/migrations/runner.js";
 import { ContentRepository } from "../../src/database/repositories/content.js";
-import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js";
 import type { Database as DatabaseSchema } from "../../src/database/types.js";
 import { emdashLoader, LARGE_TERM_ASSIGNMENTS, resetTaxonomyNamesCache } from "../../src/loader.js";
 import { runWithContext } from "../../src/request-context.js";
 import { SchemaRegistry } from "../../src/schema/registry.js";
+import { TaxonomyRepository } from "../utils/default-site-taxonomy-repository.js";
 
 interface CapturedQuery {
 	sql: string;
@@ -184,8 +184,8 @@ it("seeks a term that is large only in another collection", async () => {
 		WITH RECURSIVE seq(i) AS (
 			SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < ${LARGE_TERM_ASSIGNMENTS}
 		)
-		INSERT INTO content_taxonomies (collection, entry_id, taxonomy_id)
-		SELECT 'page', printf('page%04d', i), ${news.translation_group} FROM seq
+		INSERT INTO content_taxonomies (site_id, collection, entry_id, taxonomy_id)
+		SELECT 'site-default', 'page', printf('page%04d', i), ${news.translation_group} FROM seq
 	`.execute(db);
 	await runLoad({ category: "news" }, { orderBy: { published_at: "desc" } });
 	expectPivotSeek(pivotQueryPlan());
@@ -210,8 +210,8 @@ describe("a large term", () => {
 			FROM seq
 		`.execute(db);
 		await sql`
-			INSERT INTO content_taxonomies (collection, entry_id, taxonomy_id)
-			SELECT 'post', translation_group, ${bigGroup} FROM ec_post WHERE id LIKE 'big%'
+			INSERT INTO content_taxonomies (site_id, collection, entry_id, taxonomy_id)
+			SELECT 'site-default', 'post', translation_group, ${bigGroup} FROM ec_post WHERE id LIKE 'big%'
 		`.execute(db);
 		const featured = await tax.create({
 			name: "tag",

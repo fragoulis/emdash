@@ -145,15 +145,9 @@ describe("Database Migrations (Integration)", () => {
 		await db.destroy();
 		db = await setupTestDatabaseWithCollections();
 
-		// Kysely requires the retained migration records to form a contiguous prefix.
-		//
-		// The window starts after 043: migration 083 restructures the table 043
-		// creates, so replaying 043 against a database that has already reached 083
-		// would try to index `locale` and `translation_group`, which 083 removes.
-		// Migrations are forward-only — 043 is shipped history and is not edited to
-		// accommodate a later one — and the window has to stay contiguous, so
-		// excluding 043 also excludes everything before it.
-		const start = MIGRATION_NAMES.indexOf("044_comment_reactions");
+		// Kysely requires retained migration records to form a contiguous prefix.
+		// Earlier migrations expect a site-agnostic assignment key, which 098 replaces.
+		const start = MIGRATION_NAMES.indexOf("098_site_taxonomies");
 		expect(start).toBeGreaterThanOrEqual(0);
 		const trailing = MIGRATION_NAMES.slice(start);
 
@@ -425,6 +419,7 @@ describe("Database Migrations (Integration)", () => {
 			.insertInto("taxonomies")
 			.values({
 				id: parentId,
+				site_id: "site-default",
 				name: "category",
 				slug: "parent",
 				label: "Parent Category",
@@ -436,6 +431,7 @@ describe("Database Migrations (Integration)", () => {
 			.insertInto("taxonomies")
 			.values({
 				id: "cat-child",
+				site_id: "site-default",
 				name: "category",
 				slug: "child",
 				label: "Child Category",
@@ -500,6 +496,7 @@ describe("Database Migrations (Integration)", () => {
 				.insertInto("taxonomies")
 				.values({
 					id: `tag-${i}`,
+					site_id: "site-default",
 					name: "tag",
 					slug: `tag-${i}`,
 					label: `Tag ${i}`,
@@ -512,6 +509,7 @@ describe("Database Migrations (Integration)", () => {
 				.insertInto("taxonomies")
 				.values({
 					id: `cat-${i}`,
+					site_id: "site-default",
 					name: "category",
 					slug: `cat-${i}`,
 					label: `Category ${i}`,
@@ -524,12 +522,12 @@ describe("Database Migrations (Integration)", () => {
 		const plan = await sql<{ detail: string }>`
 			EXPLAIN QUERY PLAN
 			SELECT * FROM "taxonomies"
-			WHERE "name" = ${"category"} AND "locale" = ${"en"}
+			WHERE "site_id" = ${"site-default"} AND "name" = ${"category"} AND "locale" = ${"en"}
 			ORDER BY "sort_order" ASC, "label" ASC, "id" ASC
 		`.execute(db);
 		const details = plan.rows.map((r) => r.detail).join("\n");
 
-		expect(details).toContain("idx_taxonomies_name_locale");
+		expect(details).toContain("idx_taxonomies_site_name_locale");
 		expect(details).not.toContain("idx_taxonomies_locale");
 	});
 
@@ -543,6 +541,7 @@ describe("Database Migrations (Integration)", () => {
 			.insertInto("taxonomies")
 			.values({
 				id: taxonomyId,
+				site_id: "site-default",
 				name: "category",
 				slug: "tech",
 				label: "Technology",
@@ -553,6 +552,7 @@ describe("Database Migrations (Integration)", () => {
 		await db
 			.insertInto("content_taxonomies")
 			.values({
+				site_id: "site-default",
 				collection: "posts",
 				entry_id: "entry-1",
 				taxonomy_id: taxonomyId,

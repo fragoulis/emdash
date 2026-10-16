@@ -13,8 +13,12 @@ import { runMigrations } from "../../src/database/migrations/runner.js";
 import { ContentRepository } from "../../src/database/repositories/content.js";
 import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js";
 import type { Database as DatabaseSchema } from "../../src/database/types.js";
+import { runWithContext } from "../../src/request-context.js";
 import { SchemaRegistry } from "../../src/schema/registry.js";
-import { fetchVisibleTermCounts } from "../../src/taxonomies/term-counts.js";
+import { fetchVisibleTermCounts as countTermsForSite } from "../../src/taxonomies/term-counts.js";
+
+const fetchVisibleTermCounts = (...args: Parameters<typeof countTermsForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => countTermsForSite(...args));
 
 interface CapturedQuery {
 	sql: string;
@@ -46,7 +50,7 @@ beforeEach(async () => {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- schema vs Database type
 	const anyDb = db as any;
 	const content = new ContentRepository(anyDb);
-	const tax = new TaxonomyRepository(anyDb);
+	const tax = new TaxonomyRepository(anyDb, "site-default");
 
 	// Enough rows to make the two access paths visually distinct.
 	const terms = [];

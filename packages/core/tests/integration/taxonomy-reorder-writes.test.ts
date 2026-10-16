@@ -15,10 +15,11 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
-import { handleTermReorder } from "../../src/api/handlers/taxonomies.js";
+import { handleTermReorder as reorderTermsForSite } from "../../src/api/handlers/taxonomies.js";
 import { runMigrations } from "../../src/database/migrations/runner.js";
 import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js";
 import type { Database as DatabaseSchema } from "../../src/database/types.js";
+import { runWithContext } from "../../src/request-context.js";
 
 /** Mirrors GROUPS_PER_UPDATE in the repository. */
 const GROUPS_PER_UPDATE = 32;
@@ -38,12 +39,15 @@ beforeEach(async () => {
 		},
 	});
 	await runMigrations(db);
-	repo = new TaxonomyRepository(db);
+	repo = new TaxonomyRepository(db, "site-default");
 });
 
 afterEach(async () => {
 	await db.destroy();
 });
+
+const handleTermReorder = (...args: Parameters<typeof reorderTermsForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => reorderTermsForSite(...args));
 
 async function createCategories(count: number): Promise<string[]> {
 	const ids: string[] = [];

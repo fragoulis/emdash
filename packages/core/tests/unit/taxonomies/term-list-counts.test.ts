@@ -15,12 +15,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
-import { handleTermList } from "../../../src/api/handlers/taxonomies.js";
-import { GET as getTerms } from "../../../src/astro/routes/api/taxonomies/[name]/terms/index.js";
+import { handleTermList as listTermsForSite } from "../../../src/api/handlers/taxonomies.js";
+import { GET as getTermsForSite } from "../../../src/astro/routes/api/taxonomies/[name]/terms/index.js";
 import { runMigrations } from "../../../src/database/migrations/runner.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database as DatabaseSchema } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 
 /** SQL of every query executed against the test database. */
@@ -53,6 +54,13 @@ interface TermsResponse {
 	data?: { terms?: Array<{ slug: string; count?: number }> };
 }
 
+const forSite = <T>(fn: () => T): T =>
+	runWithContext({ editMode: false, siteId: "site-default" }, fn);
+const handleTermList = (...args: Parameters<typeof listTermsForSite>) =>
+	forSite(() => listTermsForSite(...args));
+const getTerms = (...args: Parameters<typeof getTermsForSite>) =>
+	forSite(() => getTermsForSite(...args));
+
 describe("term list counts are only aggregated on demand", () => {
 	let db: Kysely<DatabaseSchema>;
 
@@ -79,7 +87,7 @@ describe("term list counts are only aggregated on demand", () => {
 			.where("name", "=", "category")
 			.execute();
 
-		const taxRepo = new TaxonomyRepository(db);
+		const taxRepo = new TaxonomyRepository(db, "site-default");
 		const contentRepo = new ContentRepository(db);
 		const term = await taxRepo.create({ name: "category", slug: "tech", label: "Technology" });
 		for (const slug of ["published-one", "published-two"]) {

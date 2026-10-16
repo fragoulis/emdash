@@ -5,7 +5,6 @@ import { handleContentCreate } from "../../src/api/index.js";
 import { TaxonomyRepository } from "../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../src/database/types.js";
 import { emdashLoader, resetTaxonomyNamesCache } from "../../src/loader.js";
-import { runWithContext } from "../../src/request-context.js";
 import { SchemaRegistry } from "../../src/schema/registry.js";
 import {
 	describeEachDialect,
@@ -14,6 +13,7 @@ import {
 	type DialectName,
 	type DialectTestContext,
 } from "../utils/test-db.js";
+import { runWithDefaultSite as runWithContext } from "../utils/test-site-context.js";
 
 describeEachDialect("Loader taxonomy term filter", (dialectName: DialectName) => {
 	let ctx: DialectTestContext;
@@ -57,7 +57,14 @@ describeEachDialect("Loader taxonomy term filter", (dialectName: DialectName) =>
 		const id = `tax_${name}_${slug}_${termSeq++}`;
 		await db
 			.insertInto("taxonomies" as never)
-			.values({ id, name, slug, label: slug, translation_group: id } as never)
+			.values({
+				id,
+				site_id: "site-default",
+				name,
+				slug,
+				label: slug,
+				translation_group: id,
+			} as never)
 			.execute();
 		return id;
 	}
@@ -67,7 +74,7 @@ describeEachDialect("Loader taxonomy term filter", (dialectName: DialectName) =>
 		// entry's denormalized filter/sort columns (migration 051) — the state the
 		// backfill and write-path re-stamp guarantee in production. The
 		// pivot-drive listing seeks on those columns.
-		await new TaxonomyRepository(db).attachToEntry("post", contentId, taxonomyId);
+		await new TaxonomyRepository(db, "site-default").attachToEntry("post", contentId, taxonomyId);
 	}
 
 	function load(where: Record<string, unknown>, locale?: string) {
@@ -94,7 +101,15 @@ describeEachDialect("Loader taxonomy term filter", (dialectName: DialectName) =>
 		const id = `tax_${name}_${slug}_${locale}_${termSeq++}`;
 		await db
 			.insertInto("taxonomies" as never)
-			.values({ id, name, slug, label: slug, locale, translation_group: translationGroup } as never)
+			.values({
+				id,
+				site_id: "site-default",
+				name,
+				slug,
+				label: slug,
+				locale,
+				translation_group: translationGroup,
+			} as never)
 			.execute();
 		return id;
 	}
@@ -244,6 +259,7 @@ describeEachDialect("Loader taxonomy term filter", (dialectName: DialectName) =>
 			.insertInto("taxonomies" as never)
 			.values({
 				id: groupId,
+				site_id: "site-default",
 				name: "category",
 				slug: "news",
 				label: "News",

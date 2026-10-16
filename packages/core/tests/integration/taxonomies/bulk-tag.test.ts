@@ -1,7 +1,11 @@
 import { sql } from "kysely";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { handleBulkTag } from "../../../src/api/handlers/bulk-tag.js";
+import { handleBulkTag as bulkTagForSite } from "../../../src/api/handlers/bulk-tag.js";
+import { runWithContext } from "../../../src/request-context.js";
+
+const handleBulkTag = (...args: Parameters<typeof bulkTagForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => bulkTagForSite(...args));
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
@@ -24,7 +28,7 @@ describeEachDialect("bulk tag posts", (dialect) => {
 	beforeEach(async () => {
 		ctx = await setupForDialectWithCollections(dialect);
 		content = new ContentRepository(ctx.db);
-		taxonomy = new TaxonomyRepository(ctx.db);
+		taxonomy = new TaxonomyRepository(ctx.db, "site-default");
 		await ctx.db
 			.updateTable("_emdash_taxonomy_defs")
 			.set({ collections: '["post"]' })

@@ -17,12 +17,12 @@ import { RedirectRepository } from "../../../src/database/repositories/redirect.
 import { RelationRepository } from "../../../src/database/repositories/relation.js";
 import { SiteSettingsRepository } from "../../../src/database/repositories/site-settings.js";
 import { selectTaxonomyDefs } from "../../../src/database/repositories/taxonomy-def.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
 import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { applySeed } from "../../../src/seed/apply.js";
 import type { SeedFile } from "../../../src/seed/types.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 class QueryCountingPlugin implements KyselyPlugin {

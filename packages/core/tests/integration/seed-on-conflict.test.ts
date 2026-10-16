@@ -11,7 +11,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { findTaxonomyStructure } from "../../src/database/repositories/taxonomy-def.js";
 import type { Database } from "../../src/database/types.js";
 import { setI18nConfig } from "../../src/i18n/config.js";
-import { applySeed } from "../../src/seed/apply.js";
+import { runWithContext } from "../../src/request-context.js";
+import { applySeed as applySeedForSite } from "../../src/seed/apply.js";
+import type { SeedApplyOptions } from "../../src/seed/types.js";
 import type { SeedFile } from "../../src/seed/types.js";
 import { setupTestDatabase, teardownTestDatabase } from "../utils/test-db.js";
 
@@ -120,6 +122,12 @@ function createUpdatedSeed(): SeedFile {
 			],
 		},
 	};
+}
+
+function applySeed(db: Kysely<Database>, seed: SeedFile, options?: SeedApplyOptions) {
+	return runWithContext({ editMode: false, siteId: "site-default" }, () =>
+		applySeedForSite(db, seed, options),
+	);
 }
 
 describe("applySeed onConflict modes", () => {

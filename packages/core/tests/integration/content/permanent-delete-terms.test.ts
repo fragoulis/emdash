@@ -5,7 +5,11 @@
 
 import { afterEach, beforeEach, expect, it } from "vitest";
 
-import { handleContentPermanentDelete } from "../../../src/api/handlers/content.js";
+import { handleContentPermanentDelete as purgeContentForSite } from "../../../src/api/handlers/content.js";
+import { runWithContext } from "../../../src/request-context.js";
+
+const handleContentPermanentDelete = (...args: Parameters<typeof purgeContentForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => purgeContentForSite(...args));
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import {
@@ -24,7 +28,7 @@ describeEachDialect("handleContentPermanentDelete: term assignments", (dialect) 
 	beforeEach(async () => {
 		ctx = await setupForDialectWithCollections(dialect);
 		content = new ContentRepository(ctx.db);
-		taxonomies = new TaxonomyRepository(ctx.db);
+		taxonomies = new TaxonomyRepository(ctx.db, "site-default");
 		const term = await taxonomies.create({ name: "tag", slug: "news", label: "News" });
 		termId = term.id;
 	});

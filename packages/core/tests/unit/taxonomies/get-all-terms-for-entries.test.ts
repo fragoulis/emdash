@@ -12,13 +12,28 @@ vi.mock("../../../src/loader.js", () => ({
 }));
 
 import { getDb } from "../../../src/loader.js";
-import { runWithContext } from "../../../src/request-context.js";
 import {
-	getAllTermsForEntries,
-	getEntryTerms,
-	getTermsForEntries,
+	getRequestContext,
+	runWithContext as runWithRequestContext,
+	type EmDashRequestContext,
+} from "../../../src/request-context.js";
+import {
+	getAllTermsForEntries as listAllTermsForSite,
+	getEntryTerms as listEntryTermsForSite,
+	getTermsForEntries as listTermsForEntriesForSite,
 	invalidateTermCache,
 } from "../../../src/taxonomies/index.js";
+
+const runWithContext = <T>(context: EmDashRequestContext, fn: () => T): T =>
+	runWithRequestContext({ ...context, siteId: "site-default" }, fn);
+const forSite = <T>(fn: () => T): T =>
+	getRequestContext()?.siteId ? fn() : runWithContext({ editMode: false }, fn);
+const getAllTermsForEntries = (...args: Parameters<typeof listAllTermsForSite>) =>
+	forSite(() => listAllTermsForSite(...args));
+const getEntryTerms = (...args: Parameters<typeof listEntryTermsForSite>) =>
+	forSite(() => listEntryTermsForSite(...args));
+const getTermsForEntries = (...args: Parameters<typeof listTermsForEntriesForSite>) =>
+	forSite(() => listTermsForEntriesForSite(...args));
 
 describe("getAllTermsForEntries", () => {
 	let db: Kysely<Database>;
@@ -27,7 +42,7 @@ describe("getAllTermsForEntries", () => {
 
 	beforeEach(async () => {
 		db = await setupTestDatabaseWithCollections();
-		taxRepo = new TaxonomyRepository(db);
+		taxRepo = new TaxonomyRepository(db, "site-default");
 		contentRepo = new ContentRepository(db);
 		vi.mocked(getDb).mockResolvedValue(db);
 		invalidateTermCache();

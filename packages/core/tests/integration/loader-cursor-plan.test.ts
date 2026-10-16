@@ -66,7 +66,7 @@ beforeEach(async () => {
 	await registry.createField("post", { slug: "title", label: "Title", type: "string" });
 
 	const content = new ContentRepository(db);
-	const taxonomies = new TaxonomyRepository(db);
+	const taxonomies = new TaxonomyRepository(db, "site-default");
 	const news = await taxonomies.create({
 		name: "category",
 		slug: "news",

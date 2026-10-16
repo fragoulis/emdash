@@ -13,16 +13,25 @@
 import type { Kysely } from "kysely";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
-import { handleContentCreate, handleContentUpdate } from "../../../src/api/handlers/content.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
+import {
+	handleContentCreate as createContentForSite,
+	handleContentUpdate as updateContentForSite,
+} from "../../../src/api/handlers/content.js";
 import type { Database } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
+import { runWithContext } from "../../../src/request-context.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
 	teardownForDialect,
 	type DialectTestContext,
 } from "../../utils/test-db.js";
+
+const handleContentCreate = (...args: Parameters<typeof createContentForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => createContentForSite(...args));
+const handleContentUpdate = (...args: Parameters<typeof updateContentForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => updateContentForSite(...args));
 
 async function seedTerms(db: Kysely<Database>) {
 	const taxRepo = new TaxonomyRepository(db);
