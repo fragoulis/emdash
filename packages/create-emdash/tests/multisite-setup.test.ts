@@ -340,6 +340,12 @@ it("sets up a generated site through Clerk and renders the default site", async 
 			query(
 				"UPDATE _emdash_menu_items SET label = 'Foo site navigation' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo') AND label = 'About'",
 			);
+			query(
+				"UPDATE taxonomies SET label = 'Foo development' WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo') AND name = 'category' AND slug = 'development'",
+			);
+			query(
+				"UPDATE taxonomies SET label = 'Default development' WHERE site_id = 'site-default' AND name = 'category' AND slug = 'development'",
+			);
 			mkdirSync(resolve(project, "src/occupied"));
 			expect(() => siteCommand("occupied")).toThrow(
 				"conflicts with an existing hostname or presentation",
@@ -376,13 +382,31 @@ it("sets up a generated site through Clerk and renders the default site", async 
 		expect(defaultPage.body).not.toContain("Foo site only story");
 		expect(defaultPage.body).not.toContain("Edited presentation marker");
 		expect(defaultPage.body).not.toContain("Foo site navigation");
-		const fooCategory = await request(port, "foo.localhost", "/category/development");
-		expect(fooCategory.status).toBe(200);
-		expect(fooCategory.body).toContain("Foo site only story");
-		const defaultCategory = await request(port, "default.localhost", "/category/development");
-		expect(defaultCategory.status).toBe(200);
-		expect(defaultCategory.body).toContain("A Weekend with a Side Project");
-		expect(defaultCategory.body).not.toContain("Foo site only story");
+		for (const [hostName, ownLabel, ownPost, foreignLabel, foreignPost] of [
+			[
+				"foo.localhost",
+				"Foo development",
+				"Foo site only story",
+				"Default development",
+				"A Weekend with a Side Project",
+			],
+			[
+				"default.localhost",
+				"Default development",
+				"A Weekend with a Side Project",
+				"Foo development",
+				"Foo site only story",
+			],
+		] as const) {
+			for (let visit = 0; visit < 2; visit++) {
+				const categoryPage = await request(port, hostName, "/category/development");
+				expect(categoryPage.status).toBe(200);
+				expect(categoryPage.body).toContain(ownLabel);
+				expect(categoryPage.body).toContain(ownPost);
+				expect(categoryPage.body).not.toContain(foreignLabel);
+				expect(categoryPage.body).not.toContain(foreignPost);
+			}
+		}
 		const countPosts = () =>
 			execFileSync(
 				"docker",

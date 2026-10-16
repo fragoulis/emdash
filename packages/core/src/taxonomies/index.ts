@@ -302,6 +302,7 @@ export async function getTaxonomyTerms(
 	taxonomyName: string,
 	options: TaxonomyTermsOptions = {},
 ): Promise<TaxonomyTerm[]> {
+	selectedSiteId();
 	const locale = resolveLocale(options.locale);
 	const def = await getTaxonomyDef(taxonomyName, options);
 	if (!def) return [];
@@ -445,6 +446,7 @@ export async function getTerm(
 	slug: string,
 	options: TaxonomyTermsOptions = {},
 ): Promise<TaxonomyTerm | null> {
+	selectedSiteId();
 	const chain = resolveLocaleChain(options.locale);
 	const term = await getTermRow(taxonomyName, slug, chain);
 	if (!term) return null;
@@ -582,6 +584,7 @@ export async function getTermsForEntries(
 	taxonomyName: string,
 	options: TaxonomyQueryOptions = {},
 ): Promise<Map<string, TaxonomyTerm[]>> {
+	selectedSiteId();
 	const uniqueIds = [...new Set(entryIds)];
 	if (uniqueIds.length === 0) return new Map();
 	const locale = resolveLocale(options.locale);
@@ -692,6 +695,7 @@ export async function getAllTermsForEntries(
 	entryIds: string[],
 	options: TaxonomyQueryOptions = {},
 ): Promise<Map<string, Record<string, TaxonomyTerm[]>>> {
+	selectedSiteId();
 	const result = new Map<string, Record<string, TaxonomyTerm[]>>();
 	const uniqueIds = [...new Set(entryIds)];
 	for (const id of uniqueIds) result.set(id, {});
@@ -835,6 +839,7 @@ export async function getEntriesByTerm(
 	termSlug: string,
 	options: TaxonomyQueryOptions = {},
 ): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+	selectedSiteId();
 	const { getEmDashCollection } = await import("../query.js");
 
 	const queryOptions: Record<string, unknown> = {
