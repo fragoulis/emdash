@@ -19,6 +19,9 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
+    "@clerk/backend": "^3.23.1",
+    "@clerk/clerk-js": "^6.38.1",
+    "@clerk/shared": "^4.39.1",
     "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
