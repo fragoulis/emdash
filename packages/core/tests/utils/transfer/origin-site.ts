@@ -329,6 +329,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 			uniform([
 				{
 					id: ids.newsEn,
+					site_id: "site-default",
 					name: "category",
 					slug: "news",
 					label: "News",
@@ -338,6 +339,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 				},
 				{
 					id: ids.worldEn,
+					site_id: "site-default",
 					name: "category",
 					slug: "world",
 					label: "World",
@@ -347,6 +349,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 				},
 				{
 					id: ids.newsFr,
+					site_id: "site-default",
 					name: "category",
 					slug: "actualites",
 					label: "Actualités",
@@ -355,6 +358,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 				},
 				{
 					id: ids.featuredTag,
+					site_id: "site-default",
 					name: "tag",
 					slug: "featured",
 					label: "Featured",
@@ -718,10 +722,30 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 		.insertInto("content_taxonomies")
 		.values(
 			uniform([
-				{ collection: "posts", entry_id: ids.hello, taxonomy_id: ids.newsEn },
-				{ collection: "posts", entry_id: ids.hello, taxonomy_id: ids.featuredTag },
-				{ collection: "posts", entry_id: ids.draftPost, taxonomy_id: ids.worldEn },
-				{ collection: "posts", entry_id: ids.hello, taxonomy_id: fixtureId(1999) },
+				{
+					site_id: "site-default",
+					collection: "posts",
+					entry_id: ids.hello,
+					taxonomy_id: ids.newsEn,
+				},
+				{
+					site_id: "site-default",
+					collection: "posts",
+					entry_id: ids.hello,
+					taxonomy_id: ids.featuredTag,
+				},
+				{
+					site_id: "site-default",
+					collection: "posts",
+					entry_id: ids.draftPost,
+					taxonomy_id: ids.worldEn,
+				},
+				{
+					site_id: "site-default",
+					collection: "posts",
+					entry_id: ids.hello,
+					taxonomy_id: fixtureId(1999),
+				},
 			]),
 		)
 		.execute();

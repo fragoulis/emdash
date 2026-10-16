@@ -7,29 +7,39 @@ import { NodeSqliteCompatDatabase as BetterSqlite3 } from "#node-sqlite";
 
 import {
 	handleTaxonomyCreate,
-	handleTaxonomyDelete,
+	handleTaxonomyDelete as deleteTaxonomyForSite,
 	handleTaxonomyGet,
 	handleTaxonomyUpdate,
-	handleTermCreate,
+	handleTermCreate as createTermForSite,
 } from "../../../src/api/handlers/taxonomies.js";
 import {
-	DELETE as deleteTaxonomy,
+	DELETE as deleteTaxonomyRouteForSite,
 	GET as getTaxonomy,
 	PUT as putTaxonomy,
 } from "../../../src/astro/routes/api/taxonomies/[name].js";
 import { GET as getTranslations } from "../../../src/astro/routes/api/taxonomies/[name]/translations.js";
 import { runMigrations } from "../../../src/database/migrations/runner.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database as DatabaseSchema } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
 	teardownForDialect,
 	type DialectTestContext,
 } from "../../utils/test-db.js";
+
+const handleTermCreate = (...args: Parameters<typeof createTermForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => createTermForSite(...args));
+const handleTaxonomyDelete = (...args: Parameters<typeof deleteTaxonomyForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => deleteTaxonomyForSite(...args));
+const deleteTaxonomy = (...args: Parameters<typeof deleteTaxonomyRouteForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () =>
+		deleteTaxonomyRouteForSite(...args),
+	);
 
 const adminUser = { id: "u-admin", email: "a@example.com", name: "Admin", role: Role.ADMIN };
 const subscriber = { id: "u-sub", email: "s@example.com", name: "Sub", role: Role.SUBSCRIBER };

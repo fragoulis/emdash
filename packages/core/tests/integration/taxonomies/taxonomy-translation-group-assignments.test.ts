@@ -22,7 +22,7 @@ describeEachDialect("taxonomy assignments shared by content translations", (dial
 
 	it("reflects assignment changes across sibling locales with locale-correct terms", async () => {
 		const content = new ContentRepository(ctx.db);
-		const taxonomies = new TaxonomyRepository(ctx.db);
+		const taxonomies = new TaxonomyRepository(ctx.db, "site-default");
 		const enPost = await content.create({
 			type: "post",
 			slug: "hello",

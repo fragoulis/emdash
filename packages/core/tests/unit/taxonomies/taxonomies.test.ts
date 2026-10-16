@@ -2,8 +2,8 @@ import type { Kysely } from "kysely";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import { ContentRepository } from "../../../src/database/repositories/content.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import {
 	setupTestDatabase,
 	setupTestDatabaseWithCollections,

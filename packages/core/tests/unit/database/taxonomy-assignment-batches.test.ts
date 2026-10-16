@@ -37,9 +37,22 @@ describe("term assignment batches", () => {
 			BEGIN SELECT RAISE(ABORT, 'boom'); END
 		`.execute(db);
 		const groups = Array.from({ length: 50 }, (_, i) => `group-${i}`);
+		await db
+			.insertInto("taxonomies")
+			.values(
+				groups.map((group) => ({
+					id: group,
+					site_id: "site-default",
+					name: "tag",
+					slug: group,
+					label: group,
+					translation_group: group,
+				})),
+			)
+			.execute();
 
 		await expect(
-			new TaxonomyRepository(db).attachGroupsToEntry("post", post.id, groups),
+			new TaxonomyRepository(db, "site-default").attachGroupsToEntry("post", post.id, groups),
 		).rejects.toThrow(/boom/);
 
 		const { count } = await db

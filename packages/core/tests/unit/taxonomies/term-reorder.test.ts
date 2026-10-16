@@ -9,15 +9,16 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
-	handleTermCreate,
-	handleTermList,
-	handleTermReorder,
+	handleTermCreate as createTermForSite,
+	handleTermList as listTermsForSite,
+	handleTermReorder as reorderTermsForSite,
 } from "../../../src/api/handlers/taxonomies.js";
 import {
 	down as dropSortOrder,
 	up as mintSortOrder,
 } from "../../../src/database/migrations/056_taxonomy_term_sort_order.js";
 import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
@@ -33,10 +34,21 @@ vi.mock("../../../src/loader.js", () => ({
 
 import { getDb } from "../../../src/loader.js";
 import {
-	getTaxonomyTerms,
+	getTaxonomyTerms as listPublicTermsForSite,
 	invalidateTermCache,
 	resetTaxonomyDefsCacheForTests,
 } from "../../../src/taxonomies/index.js";
+
+const forSite = <T>(fn: () => T): T =>
+	runWithContext({ editMode: false, siteId: "site-default" }, fn);
+const handleTermCreate = (...args: Parameters<typeof createTermForSite>) =>
+	forSite(() => createTermForSite(...args));
+const handleTermList = (...args: Parameters<typeof listTermsForSite>) =>
+	forSite(() => listTermsForSite(...args));
+const handleTermReorder = (...args: Parameters<typeof reorderTermsForSite>) =>
+	forSite(() => reorderTermsForSite(...args));
+const getTaxonomyTerms = (...args: Parameters<typeof listPublicTermsForSite>) =>
+	forSite(() => listPublicTermsForSite(...args));
 
 describeEachDialect("taxonomy term reorder", (dialect) => {
 	let ctx: DialectTestContext;
@@ -44,7 +56,7 @@ describeEachDialect("taxonomy term reorder", (dialect) => {
 
 	beforeEach(async () => {
 		ctx = await setupForDialectWithCollections(dialect);
-		repo = new TaxonomyRepository(ctx.db);
+		repo = new TaxonomyRepository(ctx.db, "site-default");
 		vi.mocked(getDb).mockResolvedValue(ctx.db);
 		resetTaxonomyDefsCacheForTests();
 		invalidateTermCache();

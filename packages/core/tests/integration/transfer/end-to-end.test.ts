@@ -289,7 +289,7 @@ async function expectPublicSite(
 		[ids.trashedPost]: ["published", true],
 	});
 
-	const taxonomies = new TaxonomyRepository(db);
+	const taxonomies = new TaxonomyRepository(db, "site-default");
 	const helloTerms = await taxonomies.getTermsForEntry("posts", ids.hello, undefined, "en");
 	expect(helloTerms.map((term) => term.slug).toSorted()).toEqual(["featured", "news"]);
 	const frTerms = await taxonomies.getTermsForEntry("posts", ids.bonjour, "category", "fr");

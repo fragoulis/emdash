@@ -24,7 +24,11 @@ vi.mock("../../../src/loader.js", () => ({
 }));
 
 import { getDb } from "../../../src/loader.js";
-import { getTerm } from "../../../src/taxonomies/index.js";
+import { runWithContext } from "../../../src/request-context.js";
+import { getTerm as getTermForSite } from "../../../src/taxonomies/index.js";
+
+const getTerm = (...args: Parameters<typeof getTermForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => getTermForSite(...args));
 
 /**
  * Counts every query executed through the wrapped Kysely instance.
@@ -52,7 +56,7 @@ describeEachDialect("getTerm", (dialect) => {
 
 	beforeEach(async () => {
 		ctx = await setupForDialectWithCollections(dialect);
-		taxRepo = new TaxonomyRepository(ctx.db);
+		taxRepo = new TaxonomyRepository(ctx.db, "site-default");
 		contentRepo = new ContentRepository(ctx.db);
 		counter = new QueryCountingPlugin();
 		vi.mocked(getDb).mockResolvedValue(ctx.db.withPlugin(counter));
@@ -145,6 +149,7 @@ describeEachDialect("getTerm", (dialect) => {
 			.insertInto("taxonomies")
 			.values({
 				id: "term_fr_child",
+				site_id: "site-default",
 				name: "category",
 				slug: "ouaib",
 				label: "Ouaib",

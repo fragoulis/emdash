@@ -15,7 +15,13 @@ import {
 	__setObjectCacheBackendForTests,
 	type ObjectCacheBackend,
 } from "../../../src/object-cache/index.js";
-import { runWithContext } from "../../../src/request-context.js";
+import {
+	runWithContext as runWithRequestContext,
+	type EmDashRequestContext,
+} from "../../../src/request-context.js";
+
+const runWithContext = <T>(context: EmDashRequestContext, fn: () => T): T =>
+	runWithRequestContext({ ...context, siteId: "site-default" }, fn);
 import { getEntryTerms, getTermsForEntries } from "../../../src/taxonomies/index.js";
 import { setupTestDatabaseWithCollections, teardownTestDatabase } from "../../utils/test-db.js";
 
@@ -52,7 +58,7 @@ describe("entry-term reads are served from the object cache", () => {
 		// backend to this stub rather than triggering the virtual-module import.
 		__setObjectCacheBackendForTests(memoryBackend(), { revalidate: 60_000, defaultTtl: 3600 });
 
-		const taxRepo = new TaxonomyRepository(db);
+		const taxRepo = new TaxonomyRepository(db, "site-default");
 		const contentRepo = new ContentRepository(db);
 		const tag = await taxRepo.create({ name: "tag", slug: "web", label: "Web" });
 		const post = await contentRepo.create({ type: "post", slug: "p1", data: { title: "P1" } });

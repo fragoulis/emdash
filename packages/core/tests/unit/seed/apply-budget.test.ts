@@ -11,16 +11,24 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { BylineRepository } from "../../../src/database/repositories/byline.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
-	applySeed,
-	applySeedWithinBudget,
+	applySeed as applySeedForSite,
+	applySeedWithinBudget as applySeedWithinBudgetForSite,
 	type SeedApplyBudget,
 	type SeedApplyProgress,
 } from "../../../src/seed/apply.js";
 import type { SeedFile } from "../../../src/seed/types.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
+
+const applySeed = (...args: Parameters<typeof applySeedForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () => applySeedForSite(...args));
+const applySeedWithinBudget = (...args: Parameters<typeof applySeedWithinBudgetForSite>) =>
+	runWithContext({ editMode: false, siteId: "site-default" }, () =>
+		applySeedWithinBudgetForSite(...args),
+	);
 
 class QueryCountingPlugin implements KyselyPlugin {
 	count = 0;

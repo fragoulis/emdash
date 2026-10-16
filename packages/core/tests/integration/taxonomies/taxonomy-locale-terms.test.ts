@@ -18,30 +18,52 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { handleContentGet } from "../../../src/api/handlers/content.js";
 import {
-	handleTaxonomyCreate,
-	handleTaxonomyList,
-	handleTermCreate,
-	handleTermDelete,
-	handleTermGet,
-	handleTermList,
-	handleTermUpdate,
+	handleTaxonomyCreate as createTaxonomyForSite,
+	handleTaxonomyList as listTaxonomiesForSite,
+	handleTermCreate as createTermForSite,
+	handleTermDelete as deleteTermForSite,
+	handleTermGet as getTermForSite,
+	handleTermList as listTermsForSite,
+	handleTermUpdate as updateTermForSite,
 	type TermWithCount,
 } from "../../../src/api/handlers/taxonomies.js";
 import {
-	GET as getTerms,
-	POST as postTerms,
+	GET as getTermsForSite,
+	POST as postTermsForSite,
 } from "../../../src/astro/routes/api/content/[collection]/[id]/terms/[taxonomy].js";
 import { up as up045 } from "../../../src/database/migrations/045_taxonomy_parent_group.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
-import { TaxonomyRepository } from "../../../src/database/repositories/taxonomy.js";
 import type { Database } from "../../../src/database/types.js";
 import { setI18nConfig } from "../../../src/i18n/config.js";
+import { runWithContext } from "../../../src/request-context.js";
+import { TaxonomyRepository } from "../../utils/default-site-taxonomy-repository.js";
 import {
 	describeEachDialect,
 	setupForDialectWithCollections,
 	teardownForDialect,
 	type DialectTestContext,
 } from "../../utils/test-db.js";
+
+const forSite = <T>(fn: () => T): T =>
+	runWithContext({ editMode: false, siteId: "site-default" }, fn);
+const handleTaxonomyCreate = (...args: Parameters<typeof createTaxonomyForSite>) =>
+	forSite(() => createTaxonomyForSite(...args));
+const handleTaxonomyList = (...args: Parameters<typeof listTaxonomiesForSite>) =>
+	forSite(() => listTaxonomiesForSite(...args));
+const handleTermCreate = (...args: Parameters<typeof createTermForSite>) =>
+	forSite(() => createTermForSite(...args));
+const handleTermDelete = (...args: Parameters<typeof deleteTermForSite>) =>
+	forSite(() => deleteTermForSite(...args));
+const handleTermGet = (...args: Parameters<typeof getTermForSite>) =>
+	forSite(() => getTermForSite(...args));
+const handleTermList = (...args: Parameters<typeof listTermsForSite>) =>
+	forSite(() => listTermsForSite(...args));
+const handleTermUpdate = (...args: Parameters<typeof updateTermForSite>) =>
+	forSite(() => updateTermForSite(...args));
+const getTerms = (...args: Parameters<typeof getTermsForSite>) =>
+	forSite(() => getTermsForSite(...args));
+const postTerms = (...args: Parameters<typeof postTermsForSite>) =>
+	forSite(() => postTermsForSite(...args));
 
 interface TermFixture {
 	enContentId: string;
@@ -214,6 +236,7 @@ describeEachDialect("content terms route locale-awareness (#1218)", (dialect) =>
 			.insertInto("taxonomies")
 			.values({
 				id: controlId,
+				site_id: "site-default",
 				name: "categories",
 				slug: "database-default",
 				label: "Database default",
@@ -954,6 +977,7 @@ describeEachDialect("taxonomy parent stays nested across locales (#1347)", (dial
 			.values([
 				{
 					id: enParentId,
+					site_id: "site-default",
 					name: "categories",
 					slug: "news",
 					label: "News",
@@ -964,6 +988,7 @@ describeEachDialect("taxonomy parent stays nested across locales (#1347)", (dial
 				},
 				{
 					id: frParentId,
+					site_id: "site-default",
 					name: "categories",
 					slug: "actus",
 					label: "Actus",
@@ -974,6 +999,7 @@ describeEachDialect("taxonomy parent stays nested across locales (#1347)", (dial
 				},
 				{
 					id: enChildId,
+					site_id: "site-default",
 					name: "categories",
 					slug: "breaking",
 					label: "Breaking",
@@ -984,6 +1010,7 @@ describeEachDialect("taxonomy parent stays nested across locales (#1347)", (dial
 				},
 				{
 					id: frChildId,
+					site_id: "site-default",
 					name: "categories",
 					slug: "actualites",
 					label: "Actualités",
@@ -1025,6 +1052,7 @@ describeEachDialect("taxonomy parent stays nested across locales (#1347)", (dial
 			.values([
 				{
 					id: parentId,
+					site_id: "site-default",
 					name: "categories",
 					slug: "news",
 					label: "News",
@@ -1035,6 +1063,7 @@ describeEachDialect("taxonomy parent stays nested across locales (#1347)", (dial
 				},
 				{
 					id: enChildId,
+					site_id: "site-default",
 					name: "categories",
 					slug: "breaking",
 					label: "Breaking",
@@ -1045,6 +1074,7 @@ describeEachDialect("taxonomy parent stays nested across locales (#1347)", (dial
 				},
 				{
 					id: frChildId,
+					site_id: "site-default",
 					name: "categories",
 					slug: "actualites",
 					label: "Actualités",

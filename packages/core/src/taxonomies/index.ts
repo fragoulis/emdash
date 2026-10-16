@@ -14,6 +14,7 @@ import { sql, type Kysely } from "kysely";
 
 import { after } from "../after.js";
 import { taxonomyTag } from "../cache/chrome-tags.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import {
 	parseTaxonomyCollections,
 	selectTaxonomyDefs,
@@ -84,6 +85,7 @@ async function selectEntryTermRows(
 	validateIdentifier(collection, "collection slug");
 	const tableName = `ec_${collection}`;
 	const defaultLocale = getI18nConfig()?.defaultLocale ?? "en";
+	const siteId = selectedSiteId();
 	const preferredMatch = locale
 		? localeMatches("exact_term.locale", locale)
 		: sql`${canonicalLocaleColumn("exact_term.locale")} = ${canonicalLocaleColumn("content.locale")}`;
@@ -102,14 +104,17 @@ async function selectEntryTermRows(
 		INNER JOIN content_taxonomies AS pivot
 			ON pivot.entry_id = content.translation_group
 			AND pivot.collection = ${collection}
+			AND pivot.site_id = ${siteId}
 		LEFT JOIN taxonomies AS exact_term
 			ON exact_term.translation_group = pivot.taxonomy_id
+			AND exact_term.site_id = ${siteId}
 			AND ${preferredMatch}
 			${
 				hasAliases
 					? sql`AND exact_term.id = (
 				SELECT candidate.id FROM taxonomies AS candidate
 				WHERE candidate.translation_group = pivot.taxonomy_id
+					AND candidate.site_id = ${siteId}
 					AND ${locale ? localeMatches("candidate.locale", locale) : sql`${canonicalLocaleColumn("candidate.locale")} = ${canonicalLocaleColumn("content.locale")}`}
 				ORDER BY ${locale ? localeOrder("candidate.locale", locale) : storedLocaleOrder("candidate.locale")}, candidate.id LIMIT 1
 			)`
@@ -117,18 +122,20 @@ async function selectEntryTermRows(
 			}
 		LEFT JOIN taxonomies AS default_term
 			ON default_term.translation_group = pivot.taxonomy_id
+			AND default_term.site_id = ${siteId}
 			AND ${defaultMatch}
 			${
 				hasAliases
 					? sql`AND default_term.id = (
 				SELECT candidate.id FROM taxonomies AS candidate
 				WHERE candidate.translation_group = pivot.taxonomy_id
+					AND candidate.site_id = ${siteId}
 					AND ${localeMatches("candidate.locale", defaultLocale)}
 				ORDER BY ${localeOrder("candidate.locale", defaultLocale)}, candidate.id LIMIT 1
 			)`
 					: sql``
 			}
-		WHERE content.id IN (${sql.join(entryIds.map((id) => sql`${id}`))})
+		WHERE content.site_id = ${siteId} AND content.id IN (${sql.join(entryIds.map((id) => sql`${id}`))})
 			AND coalesce(exact_term.id, default_term.id) IS NOT NULL
 			${taxonomyName ? sql`AND coalesce(exact_term.name, default_term.name) = ${taxonomyName}` : sql``}
 		ORDER BY coalesce(exact_term.label, default_term.label) ASC,
@@ -347,10 +354,10 @@ export async function getTaxonomyTermsWithCacheHint(
 /** Terms without counts, under the cache keys the layout prefetch warms. */
 function getTermList(def: TaxonomyDef, locale: string | undefined): Promise<TaxonomyTerm[]> {
 	const localeKey = locale ?? "*";
-	return requestCached(`taxonomy-terms:${def.name}:${localeKey}`, () =>
+	return requestCached(`taxonomy-terms:${selectedSiteId()}:${def.name}:${localeKey}`, () =>
 		cachedQuery({
 			namespace: CacheNamespace.TAXONOMIES,
-			key: `termList:${def.name}:${localeKey}`,
+			key: `termList:${selectedSiteId()}:${def.name}:${localeKey}`,
 			load: () => loadTaxonomyTerms(def, locale),
 		}),
 	);
@@ -379,6 +386,7 @@ async function loadTaxonomyTerms(
 		.selectFrom("taxonomies")
 		.selectAll()
 		.where("name", "=", def.name)
+		.where("site_id", "=", selectedSiteId())
 		.orderBy("sort_order", "asc")
 		.orderBy("label", "asc");
 	if (locale !== undefined) {
@@ -431,18 +439,21 @@ function getVisibleTermCounts(
 	// entry.
 	const scope = [...new Set(collections)].toSorted().join(",");
 	const localeScope = locale ?? "*";
-	return requestCached(`taxonomy-term-counts:${taxonomyName}:${scope}:${localeScope}`, async () => {
-		// A Map is not JSON-representable — cache the entries, rebuild on read.
-		const entries = await cachedQuery({
-			namespace: termCountNamespaces(collections),
-			key: `termCounts:${taxonomyName}:${scope}:${localeScope}`,
-			load: async (): Promise<Array<[string, number]>> => {
-				const db = await getDb();
-				return [...(await fetchVisibleTermCounts(db, taxonomyName, collections, locale))];
-			},
-		});
-		return new Map(entries);
-	});
+	return requestCached(
+		`taxonomy-term-counts:${selectedSiteId()}:${taxonomyName}:${scope}:${localeScope}`,
+		async () => {
+			// A Map is not JSON-representable — cache the entries, rebuild on read.
+			const entries = await cachedQuery({
+				namespace: termCountNamespaces(collections),
+				key: `termCounts:${selectedSiteId()}:${taxonomyName}:${scope}:${localeScope}`,
+				load: async (): Promise<Array<[string, number]>> => {
+					const db = await getDb();
+					return [...(await fetchVisibleTermCounts(db, taxonomyName, collections, locale))];
+				},
+			});
+			return new Map(entries);
+		},
+	);
 }
 
 /**
@@ -478,7 +489,7 @@ function getTermRow(
 ): Promise<TaxonomyTerm | null> {
 	return cachedQuery({
 		namespace: CacheNamespace.TAXONOMIES,
-		key: `term:${taxonomyName}:${slug}:${chain.join(",")}`,
+		key: `term:${selectedSiteId()}:${taxonomyName}:${slug}:${chain.join(",")}`,
 		load: () => loadTerm(taxonomyName, slug, chain),
 	});
 }
@@ -496,6 +507,7 @@ async function loadTerm(
 			.selectFrom("taxonomies")
 			.selectAll()
 			.where("name", "=", taxonomyName)
+			.where("site_id", "=", selectedSiteId())
 			.where("slug", "=", slug);
 
 	if (chain.length === 0) {
@@ -531,6 +543,7 @@ async function loadTerm(
 		// Children store the parent's translation_group in parent_id (not a row
 		// id), so a translated parent still owns its children in its own locale.
 		.where("parent_id", "=", row.translation_group ?? row.id)
+		.where("site_id", "=", selectedSiteId())
 		.orderBy("sort_order", "asc")
 		.orderBy("label", "asc");
 	const termLocale = row.locale;
@@ -582,11 +595,11 @@ export function getEntryTerms(
 	// hydration doesn't run, so the inner cachedQuery serves this from KV
 	// instead of falling through to D1 on every request.
 	return requestCached(
-		`terms:${collection}:${entryId}:${taxonomyName ?? "*"}:${locale ?? "*"}`,
+		`terms:${selectedSiteId()}:${collection}:${entryId}:${taxonomyName ?? "*"}:${locale ?? "*"}`,
 		() =>
 			cachedQuery({
 				namespace: [...contentCacheNamespaces(collection), CacheNamespace.TAXONOMIES],
-				key: `entryTerms:${collection}:${entryId}:${taxonomyName ?? "*"}:${locale ?? "*"}`,
+				key: `entryTerms:${selectedSiteId()}:${collection}:${entryId}:${taxonomyName ?? "*"}:${locale ?? "*"}`,
 				load: async () => {
 					const db = await getDb();
 					const rows = await selectEntryTermRows(db, collection, [entryId], taxonomyName, locale);
@@ -635,7 +648,7 @@ export async function getTermsForEntries(
 		const cacheReads: Array<Promise<CacheRead>> = [];
 		for (const id of uniqueIds) {
 			const cached = peekRequestCache<TaxonomyTerm[]>(
-				`terms:${collection}:${id}:${taxonomyName}:${localeKey}`,
+				`terms:${selectedSiteId()}:${collection}:${id}:${taxonomyName}:${localeKey}`,
 			);
 			if (cached) {
 				// A peeked promise can reject (e.g. a sibling getEntryTerms hit a
@@ -707,7 +720,7 @@ export async function getTermsForEntries(
 		idKey.length <= 256
 			? await cachedQuery({
 					namespace: [...contentCacheNamespaces(collection), CacheNamespace.TAXONOMIES],
-					key: `termsForEntries:${collection}:${taxonomyName}:${locale ?? "*"}:${idKey}`,
+					key: `termsForEntries:${selectedSiteId()}:${collection}:${taxonomyName}:${locale ?? "*"}:${idKey}`,
 					load,
 				})
 			: await load();
@@ -814,15 +827,21 @@ function primeEntryTermsCache(
 	const localeKey = locale ?? "*";
 	for (const name of applicableTaxonomyNames) {
 		setRequestCacheEntry(
-			`terms:${collection}:${entryId}:${name}:${localeKey}`,
+			`terms:${selectedSiteId()}:${collection}:${entryId}:${name}:${localeKey}`,
 			byTaxonomy[name] ?? [],
 		);
 	}
 	for (const [name, terms] of Object.entries(byTaxonomy)) {
-		setRequestCacheEntry(`terms:${collection}:${entryId}:${name}:${localeKey}`, terms);
+		setRequestCacheEntry(
+			`terms:${selectedSiteId()}:${collection}:${entryId}:${name}:${localeKey}`,
+			terms,
+		);
 	}
 	const allTerms = Object.values(byTaxonomy).flat();
-	setRequestCacheEntry(`terms:${collection}:${entryId}:*:${localeKey}`, allTerms);
+	setRequestCacheEntry(
+		`terms:${selectedSiteId()}:${collection}:${entryId}:*:${localeKey}`,
+		allTerms,
+	);
 }
 
 /**

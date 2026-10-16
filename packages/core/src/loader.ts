@@ -171,23 +171,26 @@ function foldedHydrationSelects(db: Kysely<any>, type: string, outer: string) {
 	const termAgg = pg
 		? sql`coalesce(json_agg(${termObj}) FILTER (WHERE ${selectedTermId} IS NOT NULL), '[]'::json)`
 		: sql`json_group_array(${termObj}) FILTER (WHERE ${selectedTermId} IS NOT NULL)`;
+	const siteId = contentSiteId();
 	const hasLocaleAliases = Object.keys(getI18nConfig()?.localeAliases ?? {}).length > 0;
 	const terms = hasLocaleAliases
 		? sql`(SELECT ${termAgg} FROM ${sql.ref("content_taxonomies")} AS ct
 		LEFT JOIN ${sql.ref("taxonomies")} AS exact_term ON exact_term.id = (
 			SELECT candidate.id FROM taxonomies AS candidate
 			WHERE candidate.translation_group = ct.taxonomy_id
+				AND candidate.site_id = ${siteId}
 				AND ${canonicalLocaleColumn("candidate.locale")} = ${canonicalLocaleColumn(`${outer}.locale`)}
 			ORDER BY ${storedLocaleOrder("candidate.locale")}, candidate.id LIMIT 1
 		)
 		LEFT JOIN ${sql.ref("taxonomies")} AS default_term ON default_term.id = (
 			SELECT candidate.id FROM taxonomies AS candidate
 			WHERE candidate.translation_group = ct.taxonomy_id
+				AND candidate.site_id = ${siteId}
 				AND ${localeMatches("candidate.locale", defaultLocale)}
 			ORDER BY ${localeOrder("candidate.locale", defaultLocale)}, candidate.id LIMIT 1
 		)
-		WHERE ct.collection = ${type} AND ct.entry_id = ${o}.translation_group) AS ${sql.ref("_emdash_terms")}`
-		: sql`(SELECT ${termAgg} FROM ${sql.ref("content_taxonomies")} AS ct LEFT JOIN ${sql.ref("taxonomies")} AS exact_term ON exact_term.translation_group = ct.taxonomy_id AND exact_term.locale = ${o}.locale LEFT JOIN ${sql.ref("taxonomies")} AS default_term ON default_term.translation_group = ct.taxonomy_id AND default_term.locale = ${defaultLocale} WHERE ct.collection = ${type} AND ct.entry_id = ${o}.translation_group) AS ${sql.ref("_emdash_terms")}`;
+		WHERE ct.collection = ${type} AND ct.entry_id = ${o}.translation_group AND ct.site_id = ${siteId}) AS ${sql.ref("_emdash_terms")}`
+		: sql`(SELECT ${termAgg} FROM ${sql.ref("content_taxonomies")} AS ct LEFT JOIN ${sql.ref("taxonomies")} AS exact_term ON exact_term.translation_group = ct.taxonomy_id AND exact_term.locale = ${o}.locale AND exact_term.site_id = ${siteId} LEFT JOIN ${sql.ref("taxonomies")} AS default_term ON default_term.translation_group = ct.taxonomy_id AND default_term.locale = ${defaultLocale} AND default_term.site_id = ${siteId} WHERE ct.collection = ${type} AND ct.entry_id = ${o}.translation_group AND ct.site_id = ${siteId}) AS ${sql.ref("_emdash_terms")}`;
 
 	const bylineInner = obj(
 		"'id', b.id, 'slug', b.slug, 'displayName', b.display_name, 'bio', b.bio, 'avatarMediaId', b.avatar_media_id, 'avatarStorageKey', m.storage_key, 'avatarAlt', m.alt, 'avatarBlurhash', m.blurhash, 'avatarDominantColor', m.dominant_color, 'websiteUrl', b.website_url, 'userId', b.user_id, 'isGuest', b.is_guest, 'createdAt', b.created_at, 'updatedAt', b.updated_at, 'locale', b.locale, 'translationGroup', b.translation_group",
@@ -1313,6 +1316,7 @@ async function resolveTermGroups(
 		.select("translation_group")
 		.distinct()
 		.where("name", "=", name)
+		.where("site_id", "=", contentSiteId())
 		.where("slug", "in", slugs)
 		.$if(probeCollection !== undefined, (qb) =>
 			qb.select((eb) =>
@@ -1320,6 +1324,7 @@ async function resolveTermGroups(
 					.selectFrom("content_taxonomies")
 					.select(sql<number>`1`.as("hit"))
 					.where("content_taxonomies.collection", "=", probeCollection!)
+					.where("content_taxonomies.site_id", "=", contentSiteId())
 					.whereRef("content_taxonomies.taxonomy_id", "=", "taxonomies.translation_group")
 					.limit(1)
 					.offset(LARGE_TERM_ASSIGNMENTS - 1)
@@ -1457,6 +1462,7 @@ export function buildTaxonomyPivotQuery(
 						(g) => sql`AND EXISTS (
 						SELECT 1 FROM content_taxonomies ct2
 						WHERE ct2.collection = ${collection}
+							AND ct2.site_id = ${contentSiteId()}
 							AND ct2.entry_id = ct.entry_id
 							AND ${pivotGroupCondition("ct2.taxonomy_id", g)}
 					)`,
@@ -1531,6 +1537,7 @@ export function buildTaxonomyPivotQuery(
 				FROM content_taxonomies ct
 				${pivotContentJoin} ${sql.ref(tableName)} AS r ON r.translation_group = ct.entry_id
 				WHERE ct.collection = ${collection}
+					AND ct.site_id = ${contentSiteId()}
 					AND ${firstGroupCond}
 					AND ${deletedR}
 					${statusR}
@@ -1561,6 +1568,7 @@ export function buildTaxonomyPivotQuery(
 			FROM content_taxonomies ct
 			${pivotContentJoin} ${sql.ref(tableName)} AS r ON r.translation_group = ct.entry_id
 			WHERE ct.collection = ${collection}
+				AND ct.site_id = ${contentSiteId()}
 				AND ${firstGroupCond}
 				AND ${deletedR}
 				${statusR}
@@ -1990,6 +1998,8 @@ export function emdashLoader(): LiveLoader<EntryData, EntryFilter, LoaderCollect
 							SELECT 1 FROM content_taxonomies ct
 							INNER JOIN taxonomies t ON t.translation_group = ct.taxonomy_id
 							WHERE ct.collection = ${type}
+								AND ct.site_id = ${contentSiteId()}
+								AND t.site_id = ${contentSiteId()}
 								AND ct.entry_id = ${sql.ref(tableName)}.translation_group
 								AND t.name = ${f.name}
 								AND t.slug IN (${sql.join(f.slugs.map((s) => sql`${s}`))})
