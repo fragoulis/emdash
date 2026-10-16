@@ -28,6 +28,7 @@ import {
 	wantsHelp,
 } from "./flags.js";
 import { prepareDefaultPresentation } from "./multisite.js";
+import { createSite } from "./site-command.js";
 import {
 	isDirNonEmpty,
 	replacePackageManagerCommands,
@@ -325,6 +326,22 @@ async function resolveSandboxedPlugins(flags: ParsedFlags, platform: Platform): 
 }
 
 async function main() {
+	if (
+		process.argv[2] === "site" &&
+		((process.argv[3] && !process.argv[3].startsWith("-")) ||
+			(existsSync(resolve(process.cwd(), "host.mjs")) &&
+				existsSync(resolve(process.cwd(), "src/default"))))
+	) {
+		try {
+			await createSite(process.argv.slice(3));
+		} catch (error) {
+			console.error(
+				`Site creation failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			process.exitCode = 1;
+		}
+		return;
+	}
 	// Short-circuit --help before strict parsing so a user typing
 	// `npm create emdash@latest --help --template nope` gets the help they
 	// asked for, not the parse error for the bad template.
@@ -392,8 +409,7 @@ async function main() {
 				pkg.dependencies["@clerk/clerk-js"] = "^6.38.1";
 				pkg.dependencies["@cloudflare/kumo"] = "^2.6.0";
 				pkg.dependencies["@emdash-cms/admin"] = "^1.2.0";
-				pkg.scripts.build =
-					"node --env-file-if-exists=.env ./node_modules/astro/bin/astro.mjs build";
+				pkg.scripts.build = "node --env-file-if-exists=.env ./build.mjs";
 				pkg.scripts.start = "node --env-file-if-exists=.env ./host.mjs";
 				pkg.scripts.dev = "npm run build && npm run start";
 			}

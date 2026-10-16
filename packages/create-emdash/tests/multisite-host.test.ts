@@ -109,11 +109,15 @@ describe("generated host", () => {
 				}
 			}
 			const sql =
-				"CREATE TABLE _emdash_sites (id text PRIMARY KEY, active integer NOT NULL); " +
+				"CREATE TABLE _emdash_sites (id text PRIMARY KEY, slug text NOT NULL, active integer NOT NULL); " +
 				"CREATE TABLE _emdash_site_hosts (hostname text PRIMARY KEY, site_id text NOT NULL REFERENCES _emdash_sites(id)); " +
 				"CREATE TABLE users (id text PRIMARY KEY, email text UNIQUE NOT NULL, name text, avatar_url text, role integer, email_verified integer, data text, disabled integer NOT NULL DEFAULT 0, created_at text, updated_at text); " +
 				"CREATE TABLE oauth_accounts (provider text, provider_account_id text, user_id text REFERENCES users(id), PRIMARY KEY(provider, provider_account_id)); " +
-				"INSERT INTO _emdash_sites VALUES ('site-default', 1)";
+				"INSERT INTO _emdash_sites VALUES ('site-default', 'default', 1); " +
+				"INSERT INTO _emdash_sites VALUES ('site-foo', 'foo', 1); " +
+				"INSERT INTO _emdash_site_hosts VALUES ('foo.localhost', 'site-foo'); " +
+				"INSERT INTO _emdash_sites VALUES ('site-unbuilt', 'unbuilt', 1); " +
+				"INSERT INTO _emdash_site_hosts VALUES ('unbuilt.localhost', 'site-unbuilt')";
 			execFileSync("docker", [
 				"exec",
 				container,
@@ -129,11 +133,17 @@ describe("generated host", () => {
 			cpSync(join(template, "astro.config.mjs"), join(project, "astro.config.mjs"));
 			prepareDefaultPresentation(project);
 			linkScaffoldDependencies(project);
-			mkdirSync(join(project, "dist/server"), { recursive: true });
+			mkdirSync(join(project, "dist/sites/default/server"), { recursive: true });
+			mkdirSync(join(project, "dist/sites/foo/server"), { recursive: true });
 			writeFileSync(
-				join(project, "dist/server/entry.mjs"),
+				join(project, "dist/sites/default/server/entry.mjs"),
 				'import { getRequestContext } from "emdash/request-context";\n' +
 					'export function handler(request, response) { if (request.url === "/explode") throw new Error("Fixture failure"); response.end(getRequestContext()?.siteId ?? "none"); }\n',
+			);
+			writeFileSync(
+				join(project, "dist/sites/foo/server/entry.mjs"),
+				'import { getRequestContext } from "emdash/request-context";\n' +
+					'export function handler(request, response) { response.end("foo:" + getRequestContext()?.siteId); }\n',
 			);
 			const hostPort = await freePort();
 			clerk = await startClerkFixture(`http://localhost:${hostPort}`);
@@ -170,6 +180,25 @@ describe("generated host", () => {
 				body: "site-default",
 			});
 			expect(await get(hostPort, "default.localhost", "/explode")).toMatchObject({ status: 500 });
+			expect(await get(hostPort, "foo.localhost", "/_astro/example.js")).toMatchObject({
+				status: 200,
+				body: "foo:site-foo",
+			});
+			expect(await get(hostPort, "default.localhost", "/_astro/example.js")).toMatchObject({
+				status: 200,
+				body: "site-default",
+			});
+			expect(await get(hostPort, "foo.localhost", "/_emdash/api/search")).toMatchObject({
+				status: 200,
+				body: "foo:site-foo",
+			});
+			expect(await get(hostPort, "foo.localhost", "/_emdash/admin")).toMatchObject({ status: 421 });
+			expect(await get(hostPort, "foo.localhost", "/_emdash/api/setup/status")).toMatchObject({
+				status: 421,
+			});
+			expect(await get(hostPort, "foo.localhost", "/%2e%2e/_emdash/admin")).toMatchObject({
+				status: 421,
+			});
 			expect(await get(hostPort, "default.localhost")).toMatchObject({ status: 200 });
 			expect(await get(hostPort, "default.localhost", "/_emdash/admin")).toMatchObject({
 				status: 421,
@@ -242,6 +271,10 @@ describe("generated host", () => {
 				status: 403,
 			});
 			expect(await get(hostPort, "unknown.localhost")).toMatchObject({ status: 421 });
+			expect(await get(hostPort, "unbuilt.localhost")).toMatchObject({ status: 503 });
+			expect(
+				await get(hostPort, "foo.localhost", "/", { "X-EmDash-Site-Id": "site-default" }),
+			).toMatchObject({ status: 200, body: "foo:site-foo" });
 			expect(
 				await get(hostPort, "default.localhost", "/", { "X-EmDash-Site-Id": "site-other" }),
 			).toMatchObject({ status: 200, body: "site-default" });

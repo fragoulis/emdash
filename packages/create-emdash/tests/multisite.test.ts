@@ -30,18 +30,18 @@ describe("default site scaffold", () => {
 		expect(existsSync(resolve(project, "src/default/pages/index.astro"))).toBe(true);
 		expect(existsSync(resolve(project, "src/pages/index.astro"))).toBe(false);
 		const config = readFileSync(resolve(project, "astro.config.mjs"), "utf8");
-		expect(config).toContain('srcDir: "./src/default"');
+		expect(config).toContain('srcDir: `./src/${process.env.EMDASH_BUILD_SITE || "default"}`');
 		expect(config).toContain("postgres({ connectionString: process.env.DATABASE_URL })");
-		execFileSync(
-			process.execPath,
-			[resolve(template, "node_modules/astro/bin/astro.mjs"), "build"],
-			{
-				cwd: project,
-				env: { ...process.env, DATABASE_URL: "postgres://localhost:5432/emdash_test" },
-				stdio: "pipe",
-				timeout: 120_000,
-			},
-		);
-		expect(existsSync(resolve(project, "dist/server/entry.mjs"))).toBe(true);
+		cpSync(resolve(project, "src/default"), resolve(project, "src/foo"), { recursive: true });
+		execFileSync(process.execPath, [resolve(project, "build.mjs")], {
+			cwd: project,
+			env: { ...process.env, DATABASE_URL: "postgres://localhost:5432/emdash_test" },
+			stdio: "pipe",
+			timeout: 120_000,
+		});
+		expect(existsSync(resolve(project, "dist/sites/default/server/entry.mjs"))).toBe(true);
+		expect(existsSync(resolve(project, "dist/sites/foo/server/entry.mjs"))).toBe(true);
+		expect(existsSync(resolve(project, "dist/sites/default/client/_astro"))).toBe(true);
+		expect(existsSync(resolve(project, "dist/sites/foo/client/_astro"))).toBe(true);
 	}, 120_000);
 });
