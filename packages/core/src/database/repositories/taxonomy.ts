@@ -155,7 +155,9 @@ export class TaxonomyRepository {
 	constructor(
 		private db: Kysely<Database>,
 		private readonly siteId: string = selectedSiteId(),
-	) {}
+	) {
+		if (!siteId) throw new Error("A server-selected site is required for taxonomy terms");
+	}
 
 	/**
 	 * Create a new taxonomy term. When `translationOf` is set the new row joins
@@ -179,7 +181,12 @@ export class TaxonomyRepository {
 		let movesGroup = false;
 		if (input.translationOf) {
 			const source = await this.findById(input.translationOf);
-			if (source?.translationGroup) translationGroup = source.translationGroup;
+			if (!source || source.name !== input.name) {
+				throw new Error(
+					"Taxonomy translation source does not belong to the selected site and taxonomy",
+				);
+			}
+			if (source.translationGroup) translationGroup = source.translationGroup;
 			// A translation is the same term in another locale, so it takes the
 			// group's parent and position. Naming a different parent moves the whole
 			// group there, as an update through any locale does, and appends it to
@@ -648,7 +655,7 @@ export class TaxonomyRepository {
 
 	async attachToEntry(collection: string, entryId: string, taxonomyId: string): Promise<void> {
 		const taxonomyGroup = await this.resolveTranslationGroup(taxonomyId);
-		if (!taxonomyGroup) return;
+		if (!taxonomyGroup) throw new Error("A taxonomy term does not belong to the selected site");
 		await this.attachGroupsToEntry(collection, entryId, [taxonomyGroup]);
 	}
 
@@ -869,8 +876,11 @@ export class TaxonomyRepository {
 
 		const groups: string[] = [];
 		for (const id of termIds) {
-			const group = await this.resolveTranslationGroup(id);
-			if (group) groups.push(group);
+			const term = await this.findByIdOrTranslationGroup(id);
+			if (!term || term.name !== taxonomyName) {
+				throw new Error("A taxonomy term does not belong to the selected site and taxonomy");
+			}
+			groups.push(term.translationGroup ?? term.id);
 		}
 		const newGroups = new Set(groups);
 
@@ -970,7 +980,7 @@ export class TaxonomyRepository {
 	 */
 	private async resolveParentRef(idOrGroup: string): Promise<string> {
 		const group = await this.resolveTranslationGroup(idOrGroup);
-		if (!group) return idOrGroup;
+		if (!group) throw new Error("Taxonomy parent does not belong to the selected site");
 		const anchor = await this.db
 			.selectFrom("taxonomies")
 			.select("id")
