@@ -67,16 +67,7 @@ Add the R2 binding to your Wrangler configuration:
 
 ### Public access
 
-To serve media from a public bucket, connect a [custom domain](https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains) with the Cloudflare API, then set its origin as `publicUrl`. Cloudflare's `r2.dev` development URL is rate-limited and is not intended for production traffic.
-
-```js
-storage: r2({
-	binding: "MEDIA",
-	publicUrl: "https://media.example.com",
-});
-```
-
-If the same bucket stores automatic JSON backups, a public bucket origin can expose objects under `backups/`. Use a private bucket and EmDash's media route, or restrict the public origin to media objects. See [Backups](/guides/backups/#automatic-backups-to-storage).
+Keep the media bucket private. EmDash serves media through its site-scoped file route after checking that the selected site owns a ready media record. A public bucket domain bypasses that check. It can also expose automatic JSON backups under `backups/` and transfer staging objects. The `publicUrl` storage option does not change the URLs generated for media. See [Backups](/guides/backups/#automatic-backups-to-storage).
 
 <Aside type="note">
 	R2 bindings do not support signed upload URLs. If you need direct client uploads, use the S3

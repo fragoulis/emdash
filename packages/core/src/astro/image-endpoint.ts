@@ -16,6 +16,7 @@ import { getConfiguredImageService, imageConfig } from "astro:assets";
 
 import {
 	getTransformFingerprint,
+	isReadyMediaKey,
 	matchInternalMediaKey,
 	MUTABLE_MEDIA_CACHE_CONTROL,
 	originalMediaHeaders,
@@ -78,6 +79,10 @@ export const GET: APIRoute = async (ctx) => {
 	// Not EmDash media, or storage unavailable: let the stock endpoint handle it
 	// (bundled assets, allowed remote, `publicUrl` media).
 	if (!key || !storage) return genericGET(ctx);
+
+	if (!(await isReadyMediaKey(ctx.locals.emdash.db, key))) {
+		return new Response("Not found", { status: 404 });
+	}
 
 	const service = await getConfiguredImageService();
 	if (!("transform" in service)) return genericGET(ctx);

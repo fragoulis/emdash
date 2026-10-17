@@ -9,12 +9,12 @@
 import * as path from "node:path";
 
 import type { Kysely } from "kysely";
-import { ulid } from "ulidx";
 
 import { MediaRepository, type MediaItem } from "../../database/repositories/media.js";
 import type { Database } from "../../database/types.js";
 import { enrichImageMetadata } from "../../media/enrich.js";
 import { matchesMimeAllowlist, normalizeMime, resolveUploadMimeType } from "../../media/mime.js";
+import { newMediaStorageKey } from "../../media/storage-key.js";
 import type { Storage } from "../../storage/types.js";
 import { decodeBase64Bytes } from "../../utils/base64.js";
 import { computeContentHash } from "../../utils/hash.js";
@@ -154,7 +154,7 @@ export async function handleMediaUpload(
 			return { success: true, data: { item: withUrl(existing), deduplicated: true } };
 		}
 
-		const storageKey = `${ulid()}${path.extname(filename)}`;
+		const storageKey = newMediaStorageKey(path.extname(filename));
 		await storage.upload({ key: storageKey, body: bytes, contentType: mimeType });
 
 		try {

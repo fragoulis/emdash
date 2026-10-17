@@ -32,17 +32,17 @@ describe("resolvePublicMediaUrl", () => {
 		expect(resolvePublicMediaUrl(null, "01ABC.jpg")).toBe("/_emdash/api/media/file/01ABC.jpg");
 	});
 
-	it("uses storage.getPublicUrl when a storage adapter is provided", () => {
+	it("keeps media on the site-scoped proxy with a storage adapter", () => {
 		const storage = storageWith("https://media.example.com");
-		expect(resolvePublicMediaUrl(storage, "01ABC.jpg")).toBe("https://media.example.com/01ABC.jpg");
+		expect(resolvePublicMediaUrl(storage, "01ABC.jpg")).toBe("/_emdash/api/media/file/01ABC.jpg");
 	});
 });
 
 describe("createPublicMediaUrlResolver", () => {
-	it("returns a closure that reuses the storage adapter", () => {
+	it("returns a closure that uses the site-scoped proxy", () => {
 		const resolver = createPublicMediaUrlResolver(storageWith("https://media.example.com"));
-		expect(resolver("01ABC.jpg")).toBe("https://media.example.com/01ABC.jpg");
-		expect(resolver("01XYZ.png")).toBe("https://media.example.com/01XYZ.png");
+		expect(resolver("01ABC.jpg")).toBe("/_emdash/api/media/file/01ABC.jpg");
+		expect(resolver("01XYZ.png")).toBe("/_emdash/api/media/file/01XYZ.png");
 	});
 
 	it("falls back to the internal proxy when no storage is given", () => {

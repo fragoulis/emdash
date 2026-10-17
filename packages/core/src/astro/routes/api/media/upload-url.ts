@@ -19,6 +19,7 @@ import { isParseError, parseBody } from "#api/parse.js";
 import { DEFAULT_MAX_UPLOAD_SIZE, mediaUploadUrlBody } from "#api/schemas.js";
 import { MediaRepository } from "#db/repositories/media.js";
 import { matchesMimeAllowlist, normalizeMime, resolveUploadMimeType } from "#media/mime.js";
+import { newMediaStorageKey } from "#media/storage-key.js";
 
 export const prerender = false;
 
@@ -137,7 +138,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		// Generate unique storage key
 		const id = ulid();
 		const ext = path.extname(filename) || "";
-		const storageKey = `${id}${ext}`;
+		const storageKey = newMediaStorageKey(ext, id);
 
 		let signedUrl: Awaited<ReturnType<typeof emdash.storage.getSignedUploadUrl>> | null;
 		try {

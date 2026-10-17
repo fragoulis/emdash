@@ -84,11 +84,12 @@ The command reports each check as pass, warning, or failure and exits non-zero w
 Validate or apply a JSON seed to a local SQLite database. The command uses the positional path when provided, then `.emdash/seed.json`, then the `emdash.seed` path from `package.json`.
 
 ```bash
-npx emdash seed [path] [options]
+npx emdash seed --site-id=site-default [path] [options]
 ```
 
 | Option             | Alias | Description                                            | Default                          |
 | ------------------ | ----- | ------------------------------------------------------ | -------------------------------- |
+| `--site-id`        |       | Site ID that receives site-owned seed data (required) | None |
 | `--database`       | `-d`  | SQLite database path                                   | `./data.db`                      |
 | `--cwd`            |       | Project working directory                              | Current directory                |
 | `--validate`       |       | Validate the seed without changing the database        | `false`                          |
@@ -665,13 +666,14 @@ migrated by a newer EmDash version, upgrade the installed version before exporti
 opens the database read-only and never applies migrations itself.
 
 ```bash
-npx emdash export-seed [options] > seed.json
+npx emdash export-seed --site-id=site-default [options] > seed.json
 ```
 
 #### Options
 
 | Option           | Alias | Description                                          | Default           |
 | ---------------- | ----- | ---------------------------------------------------- | ----------------- |
+| `--site-id`      |       | Site ID to export (required) | None |
 | `--database`     | `-d`  | Database file path                                   | `./data.db`       |
 | `--cwd`          |       | Working directory                                    | Current directory |
 | `--with-content` |       | Include content (all or comma-separated collections) |                   |
