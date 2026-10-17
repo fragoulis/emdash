@@ -51,6 +51,7 @@ export async function initializePlayground(db: Kysely<Database>, seed: SeedFile)
 		await db
 			.insertInto("media")
 			.values({
+				site_id: "site-default",
 				id: asset.id,
 				filename: asset.filename,
 				mime_type: asset.mimeType,

@@ -1,6 +1,6 @@
 import type { APIContext } from "astro";
 import { sql, type Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleMediaDelete, handleMediaGet } from "../../../src/api/handlers/media.js";
 import { DELETE as deleteMedia } from "../../../src/astro/routes/api/media/[id].js";
@@ -10,6 +10,7 @@ import { POST as postUploadUrl } from "../../../src/astro/routes/api/media/uploa
 import { runSystemCleanup } from "../../../src/cleanup.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { EmDashStorageError } from "../../../src/storage/types.js";
 import { computeContentHash } from "../../../src/utils/hash.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
@@ -101,6 +102,7 @@ function streamingStorage() {
 }
 
 describe("streamed media upload fallback", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {

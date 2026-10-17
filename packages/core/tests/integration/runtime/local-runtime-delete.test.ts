@@ -1,14 +1,16 @@
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runSystemCleanup } from "../../../src/cleanup.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
 import { createMediaProvider } from "../../../src/media/local-runtime.js";
+import { runWithContext } from "../../../src/request-context.js";
 import type { Storage } from "../../../src/storage/types.js";
 import { setupTestDatabase } from "../../utils/test-db.js";
 
 describe("local media provider deletion", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {

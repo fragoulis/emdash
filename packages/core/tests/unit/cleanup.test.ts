@@ -2,7 +2,7 @@
 
 import { Kysely, SqliteDialect } from "kysely";
 import { ulid } from "ulidx";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, aroundEach, vi } from "vitest";
 
 import { NodeSqliteCompatDatabase as BetterSqlite3 } from "#node-sqlite";
 
@@ -12,6 +12,7 @@ import { MediaRepository } from "../../src/database/repositories/media.js";
 import { MAX_404_LOG_ROWS } from "../../src/database/repositories/redirect.js";
 import { RevisionRepository } from "../../src/database/repositories/revision.js";
 import type { Database } from "../../src/database/types.js";
+import { runWithContext } from "../../src/request-context.js";
 import { setupTestDatabase, setupTestDatabaseWithCollections } from "../utils/test-db.js";
 
 describe("Revision Pruning", () => {
@@ -255,6 +256,7 @@ describe("Scheduled system cleanup", () => {
 });
 
 describe("Media upload-attempt cleanup", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	it("moves failed keys behind the rest of the cleanup batch", async () => {
 		vi.useFakeTimers({ now: new Date("2026-01-01T00:00:00.000Z") });
 		const db = await setupTestDatabase();
@@ -280,6 +282,7 @@ describe("Media upload-attempt cleanup", () => {
 });
 
 describe("MediaRepository.cleanupPendingUploads", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 	let mediaRepo: MediaRepository;
 

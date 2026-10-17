@@ -1,6 +1,6 @@
 import { Role, type RoleLevel } from "@emdash-cms/auth";
 import { Kysely, SqliteDialect } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
@@ -24,6 +24,7 @@ import {
 	buildContentMediaUsageSourceKey,
 	type MediaUsageContentSourceVariant,
 } from "../../../src/media/usage/source-key.js";
+import { runWithContext } from "../../../src/request-context.js";
 
 type RouteContext = Parameters<typeof usageRoute.GET>[0];
 
@@ -55,6 +56,7 @@ describe("media usage detail schemas", () => {
 });
 
 describe("media usage details handler and route", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let sqlite: Database;
 	let db: Kysely<DatabaseSchema>;
 	let queries: string[];

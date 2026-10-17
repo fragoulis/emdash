@@ -19,6 +19,7 @@ import { RevisionRepository } from "./database/repositories/revision.js";
 import type { Database } from "./database/types.js";
 import { removeUploadAttempt } from "./media/upload-attempts.js";
 import { cleanupMediaUsage } from "./media/usage/cleanup.js";
+import { runWithContext } from "./request-context.js";
 import type { Storage } from "./storage/types.js";
 
 /**
@@ -114,52 +115,57 @@ export async function runSystemCleanup(
 		console.error("[cleanup] Failed to clean expired tokens:", error);
 	}
 
-	// 3. Pending media uploads (abandoned after 1 hour)
-	//    Delete DB rows first, then remove corresponding files from storage.
+	// A scheduler has no request site. Enumerate trusted registry IDs rather than
+	// letting the ambient request context select which site's files to remove.
 	try {
-		const mediaRepo = new MediaRepository(db);
-		const orphanedKeys = await mediaRepo.cleanupPendingUploads();
-		result.pendingUploads = orphanedKeys.length;
-
-		// Delete orphaned files from object storage
-		if (storage && orphanedKeys.length > 0) {
-			let filesDeleted = 0;
-			for (const key of orphanedKeys) {
+		const sites = await db.selectFrom("_emdash_sites").select("id").orderBy("id").execute();
+		result.pendingUploads = 0;
+		result.pendingUploadFiles = 0;
+		result.uploadAttempts = 0;
+		for (const { id: siteId } of sites) {
+			await runWithContext({ editMode: false, siteId }, async () => {
+				const mediaRepo = new MediaRepository(db);
 				try {
-					await storage.delete(key);
-					filesDeleted++;
+					const orphanedKeys = await mediaRepo.cleanupPendingUploads();
+					if (result.pendingUploads !== -1) result.pendingUploads += orphanedKeys.length;
+					if (storage) {
+						for (const key of orphanedKeys) {
+							try {
+								await storage.delete(key);
+								result.pendingUploadFiles++;
+							} catch (error) {
+								console.error(`[cleanup] Failed to delete storage file ${key}:`, error);
+							}
+						}
+					}
 				} catch (error) {
-					// Log per-file failures but continue -- storage.delete is
-					// documented as idempotent, so this is an unexpected error.
-					console.error(`[cleanup] Failed to delete storage file ${key}:`, error);
+					result.pendingUploads = -1;
+					console.error("[cleanup] Failed to clean pending uploads:", error);
 				}
-			}
-			result.pendingUploadFiles = filesDeleted;
-		} else {
-			result.pendingUploadFiles = 0;
+				try {
+					const completed = await mediaRepo.deleteCompletedUploadAttempts();
+					if (result.uploadAttempts !== -1) result.uploadAttempts += completed;
+					if (storage) {
+						const storageKeys = await mediaRepo.findUploadAttemptsForCleanup();
+						for (const storageKey of storageKeys) {
+							if (
+								(await removeUploadAttempt(storage, mediaRepo, storageKey)) &&
+								result.uploadAttempts !== -1
+							)
+								result.uploadAttempts++;
+						}
+					}
+				} catch (error) {
+					result.uploadAttempts = -1;
+					console.error("[cleanup] Failed to clean media upload attempts:", error);
+				}
+			});
 		}
 	} catch (error) {
-		console.error("[cleanup] Failed to clean pending uploads:", error);
-	}
-
-	// 4. Uploaded objects that lost publication races or outlived their media row
-	try {
-		const mediaRepo = new MediaRepository(db);
-		const completedAttemptsDeleted = await mediaRepo.deleteCompletedUploadAttempts();
-		if (!storage) {
-			result.uploadAttempts = completedAttemptsDeleted;
-		} else {
-			const storageKeys = await mediaRepo.findUploadAttemptsForCleanup();
-			let attemptsDeleted = completedAttemptsDeleted;
-			for (const storageKey of storageKeys) {
-				if (await removeUploadAttempt(storage, mediaRepo, storageKey)) {
-					attemptsDeleted++;
-				}
-			}
-			result.uploadAttempts = attemptsDeleted;
-		}
-	} catch (error) {
-		console.error("[cleanup] Failed to clean media upload attempts:", error);
+		result.pendingUploads = -1;
+		result.pendingUploadFiles = -1;
+		result.uploadAttempts = -1;
+		console.error("[cleanup] Failed to enumerate media sites:", error);
 	}
 
 	try {

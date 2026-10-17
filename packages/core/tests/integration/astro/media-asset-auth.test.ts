@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { Role } from "@emdash-cms/auth";
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it as vitestIt, vi } from "vitest";
 
 vi.mock("astro:middleware", () => ({
 	defineMiddleware: (handler: unknown) => handler,
@@ -18,12 +18,15 @@ import { onRequest as authMiddleware } from "../../../src/astro/middleware/auth.
 import { GET } from "../../../src/astro/routes/api/media/asset/[id]/[filename].js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { LocalStorage } from "../../../src/storage/local.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 type AuthContext = Parameters<typeof authMiddleware>[0];
 
 describe("opaque media asset authentication", () => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let db: Kysely<Database>;
 	let directory: string;
 	let storage: LocalStorage;
@@ -50,12 +53,14 @@ describe("opaque media asset authentication", () => {
 			})
 			.execute();
 		mediaId = (
-			await new MediaRepository(db).create({
-				filename: "authenticated.bin",
-				mimeType: "application/octet-stream",
-				size: 4,
-				storageKey,
-			})
+			await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+				new MediaRepository(db).create({
+					filename: "authenticated.bin",
+					mimeType: "application/octet-stream",
+					size: 4,
+					storageKey,
+				}),
+			)
 		).id;
 	});
 

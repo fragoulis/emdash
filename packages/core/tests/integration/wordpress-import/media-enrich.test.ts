@@ -1,5 +1,5 @@
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { JPEG } = vi.hoisted(() => ({
 	JPEG: new Uint8Array(
@@ -20,6 +20,7 @@ vi.mock("#import/ssrf.js", () => ({
 import { importMediaWithProgress } from "../../../src/astro/routes/api/import/wordpress/media.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import type { Storage } from "../../../src/storage/types.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
@@ -33,6 +34,7 @@ function fakeStorage(): Pick<Storage, "upload"> {
 }
 
 describe("WordPress import — media enrichment", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {

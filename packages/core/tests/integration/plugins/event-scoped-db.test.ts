@@ -18,7 +18,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Kysely, SqliteDialect } from "kysely";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, aroundEach, vi } from "vitest";
 
 import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
@@ -106,6 +106,7 @@ async function seedDueOneshot(db: Kysely<DbSchema>, pluginId: string, taskName: 
 }
 
 describe("event-scoped DB resolution (#1622)", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let dbA: Kysely<DbSchema>;
 	let dbB: Kysely<DbSchema>;
 
@@ -311,8 +312,9 @@ describe("event-scoped DB resolution (#1622)", () => {
 					expect(await runtime.schemaRegistry.getCollectionWithFields("widgets")).toBeNull();
 
 					// Under the scoped db: the registry resolves it (and sees revisions).
-					const found = await runWithContext({ editMode: false, db: scopedDb }, () =>
-						runtime.schemaRegistry.getCollectionWithFields("widgets"),
+					const found = await runWithContext(
+						{ editMode: false, siteId: "site-default", db: scopedDb },
+						() => runtime.schemaRegistry.getCollectionWithFields("widgets"),
 					);
 					expect(found?.slug).toBe("widgets");
 					expect(found?.supports).toContain("revisions");

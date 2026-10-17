@@ -25,6 +25,7 @@ vi.mock("cloudflare:workers", () => ({
 	exports: { PluginBridge: mocks.bridge },
 }));
 
+import { runWithContext } from "../../../core/src/request-context.js";
 import { CloudflareSandboxRunner } from "../../src/sandbox/runner.js";
 
 describe("Cloudflare sandbox route errors", () => {
@@ -135,6 +136,34 @@ describe("Cloudflare sandbox route errors", () => {
 			props: expect.objectContaining({
 				capabilities: expect.arrayContaining(["redirects:write", "redirects:read"]),
 			}),
+		});
+	});
+
+	it("captures only the server-selected site when creating a bridge binding", async () => {
+		mocks.invokeHook.mockResolvedValue(undefined);
+		const runner = new CloudflareSandboxRunner({ db: null as never });
+		const plugin = await runner.load(
+			{
+				id: "media-reader",
+				version: "1.0.0",
+				capabilities: ["media:read"],
+				allowedHosts: [],
+				storage: {},
+				hooks: ["media:afterUpload"],
+				routes: [],
+				admin: {},
+			},
+			"export default {}",
+		);
+		await runWithContext({ editMode: false, siteId: "site-selected" }, () =>
+			plugin.invokeHook("media:afterUpload", {}),
+		);
+		expect(mocks.bridge).toHaveBeenLastCalledWith({
+			props: expect.objectContaining({ siteId: "site-selected" }),
+		});
+		await plugin.invokeHook("media:afterUpload", {});
+		expect(mocks.bridge).toHaveBeenLastCalledWith({
+			props: expect.objectContaining({ siteId: undefined }),
 		});
 	});
 
