@@ -14,7 +14,7 @@
 import { randomUUID } from "node:crypto";
 
 import { SqliteDialect } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
@@ -33,6 +33,7 @@ import { EmDashRuntime } from "../../../src/emdash-runtime.js";
 import type { RuntimeDependencies } from "../../../src/emdash-runtime.js";
 import { definePlugin } from "../../../src/plugins/define-plugin.js";
 import type { MediaAfterUploadHandler } from "../../../src/plugins/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import type { Storage } from "../../../src/storage/types.js";
 
 const afterUploadHandler = vi.fn<MediaAfterUploadHandler>(async () => {});
@@ -123,6 +124,7 @@ async function flushDeferred(): Promise<void> {
 }
 
 describe("runtime defers media:afterUpload hooks through after()", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let runtime: EmDashRuntime;
 	let mediaRepo: MediaRepository;
 

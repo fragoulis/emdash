@@ -10,6 +10,7 @@ import { ulid } from "ulidx";
 import { normalizeFocalPoint, type FocalPointUpdate } from "../../media/focal-point.js";
 import { chunks, SQL_BATCH_SIZE } from "../../utils/chunks.js";
 import type { Database, MediaRow } from "../types.js";
+import { selectedSiteId } from "./site-settings.js";
 import type { FindManyResult } from "./types.js";
 import { encodeCursor, decodeCursor } from "./types.js";
 
@@ -137,14 +138,20 @@ const UPLOAD_ATTEMPT_CLEANUP_BATCH_SIZE = 100;
 export class MediaRepository {
 	constructor(private db: Kysely<Database>) {}
 
+	private get siteId(): string {
+		return selectedSiteId();
+	}
+
 	/**
 	 * Create a new media item
 	 */
 	async create(input: CreateMediaInput): Promise<MediaItem> {
+		await this.assertFolder(input.folderId);
 		const id = ulid();
 		const now = new Date().toISOString();
 
 		const row: Omit<MediaRow, "rowid"> = {
+			site_id: this.siteId,
 			id,
 			filename: input.filename,
 			mime_type: input.mimeType,
@@ -189,10 +196,14 @@ export class MediaRepository {
 	}
 
 	async createUploadAttempt(mediaId: string, storageKey: string): Promise<void> {
+		if (!(await this.findById(mediaId))) {
+			throw new Error("Media does not belong to the selected site");
+		}
 		const now = new Date().toISOString();
 		await this.db
 			.insertInto("_emdash_media_upload_attempts")
 			.values({
+				site_id: this.siteId,
 				media_id: mediaId,
 				storage_key: storageKey,
 				status: "active",
@@ -212,6 +223,7 @@ export class MediaRepository {
 		await this.db
 			.insertInto("_emdash_media_upload_attempts")
 			.values({
+				site_id: this.siteId,
 				media_id: mediaId,
 				storage_key: storageKey,
 				status: "cleanup",
@@ -219,7 +231,10 @@ export class MediaRepository {
 				updated_at: now,
 			})
 			.onConflict((oc) =>
-				oc.column("storage_key").doUpdateSet({ status: "cleanup", updated_at: now }),
+				oc
+					.column("storage_key")
+					.doUpdateSet({ status: "cleanup", updated_at: now })
+					.where("_emdash_media_upload_attempts.site_id", "=", this.siteId),
 			)
 			.execute();
 	}
@@ -228,6 +243,7 @@ export class MediaRepository {
 		const row = await this.db
 			.selectFrom("_emdash_media_upload_attempts")
 			.select("storage_key")
+			.where("site_id", "=", this.siteId)
 			.where("storage_key", "=", storageKey)
 			.executeTakeFirst();
 		return row !== undefined;
@@ -237,6 +253,7 @@ export class MediaRepository {
 		const result = await this.db
 			.updateTable("_emdash_media_upload_attempts")
 			.set({ status: "cleanup", updated_at: new Date().toISOString() })
+			.where("site_id", "=", this.siteId)
 			.where("storage_key", "=", storageKey)
 			.where((eb) =>
 				eb.not(
@@ -256,6 +273,7 @@ export class MediaRepository {
 	async deleteUploadAttempt(storageKey: string): Promise<void> {
 		await this.db
 			.deleteFrom("_emdash_media_upload_attempts")
+			.where("site_id", "=", this.siteId)
 			.where("storage_key", "=", storageKey)
 			.execute();
 	}
@@ -264,6 +282,7 @@ export class MediaRepository {
 		await this.db
 			.updateTable("_emdash_media_upload_attempts")
 			.set({ updated_at: new Date().toISOString() })
+			.where("site_id", "=", this.siteId)
 			.where("storage_key", "=", storageKey)
 			.execute();
 	}
@@ -271,6 +290,7 @@ export class MediaRepository {
 	async deleteCompletedUploadAttempts(): Promise<number> {
 		const result = await this.db
 			.deleteFrom("_emdash_media_upload_attempts")
+			.where("site_id", "=", this.siteId)
 			.where("status", "=", "active")
 			.where((eb) =>
 				eb.exists(
@@ -279,6 +299,7 @@ export class MediaRepository {
 						.select("media.id")
 						.whereRef("media.id", "=", "_emdash_media_upload_attempts.media_id")
 						.whereRef("media.storage_key", "=", "_emdash_media_upload_attempts.storage_key")
+						.whereRef("media.site_id", "=", "_emdash_media_upload_attempts.site_id")
 						.where("media.status", "=", "ready"),
 				),
 			)
@@ -294,6 +315,7 @@ export class MediaRepository {
 		const rows = await this.db
 			.selectFrom("_emdash_media_upload_attempts")
 			.select("storage_key")
+			.where("site_id", "=", this.siteId)
 			.where((eb) => eb.or([eb("status", "=", "cleanup"), eb("created_at", "<", cutoff)]))
 			.where((eb) =>
 				eb.not(
@@ -325,6 +347,7 @@ export class MediaRepository {
 				...(contentHash !== undefined ? { content_hash: contentHash } : {}),
 			})
 			.where("id", "=", id)
+			.where("site_id", "=", this.siteId)
 			.where("status", "=", "pending")
 			.where("storage_key", "=", expectedStorageKey)
 			.where((eb) =>
@@ -333,6 +356,7 @@ export class MediaRepository {
 						.selectFrom("_emdash_media_upload_attempts")
 						.select("storage_key")
 						.where("media_id", "=", id)
+						.where("site_id", "=", this.siteId)
 						.where("storage_key", "=", storageKey)
 						.where("status", "=", "active"),
 				),
@@ -371,6 +395,7 @@ export class MediaRepository {
 			.updateTable("media")
 			.set(updates)
 			.where("id", "=", id)
+			.where("site_id", "=", this.siteId)
 			.where("status", "=", "pending");
 		if (expectedStorageKey !== undefined) {
 			query = query.where("storage_key", "=", expectedStorageKey);
@@ -385,7 +410,11 @@ export class MediaRepository {
 	 * Mark upload as failed
 	 */
 	async markFailed(id: string, expectedStorageKey?: string): Promise<MediaItem | null> {
-		let query = this.db.updateTable("media").set({ status: "failed" }).where("id", "=", id);
+		let query = this.db
+			.updateTable("media")
+			.set({ status: "failed" })
+			.where("id", "=", id)
+			.where("site_id", "=", this.siteId);
 		if (expectedStorageKey !== undefined) {
 			query = query.where("status", "=", "pending").where("storage_key", "=", expectedStorageKey);
 		}
@@ -402,6 +431,7 @@ export class MediaRepository {
 			.selectFrom("media")
 			.selectAll()
 			.where("storage_key", "=", storageKey)
+			.where("site_id", "=", this.siteId)
 			.where("status", "=", "pending")
 			.executeTakeFirst();
 
@@ -415,6 +445,7 @@ export class MediaRepository {
 		const row = await this.db
 			.selectFrom("media")
 			.selectAll()
+			.where("site_id", "=", this.siteId)
 			.where("id", "=", id)
 			.executeTakeFirst();
 
@@ -429,6 +460,7 @@ export class MediaRepository {
 		const row = await this.db
 			.selectFrom("media")
 			.selectAll()
+			.where("site_id", "=", this.siteId)
 			.where("filename", "=", filename)
 			.executeTakeFirst();
 
@@ -441,6 +473,7 @@ export class MediaRepository {
 				await this.db
 					.selectFrom("media")
 					.select("id")
+					.where("site_id", "=", this.siteId)
 					.where(sql<string>`lower(filename)`, "=", candidate.toLowerCase())
 					.executeTakeFirst(),
 			);
@@ -467,6 +500,7 @@ export class MediaRepository {
 		const row = await this.db
 			.selectFrom("media")
 			.selectAll()
+			.where("site_id", "=", this.siteId)
 			.where("content_hash", "=", contentHash)
 			.where("status", "=", "ready")
 			.executeTakeFirst();
@@ -483,7 +517,10 @@ export class MediaRepository {
 	async findMany(options: FindManyMediaOptions = {}): Promise<FindManyResult<MediaItem>> {
 		const limit = normalizeListLimit(options.limit);
 
-		let query = this.applyListFilters(this.db.selectFrom("media"), options)
+		let query = this.applyListFilters(
+			this.db.selectFrom("media").where("site_id", "=", this.siteId),
+			options,
+		)
 			.selectAll()
 			.orderBy("created_at", "desc")
 			.orderBy("id", "desc")
@@ -519,7 +556,10 @@ export class MediaRepository {
 	async findPage(options: FindMediaPageOptions): Promise<MediaPageResult> {
 		const limit = normalizeListLimit(options.limit);
 		const offset = (options.page - 1) * limit;
-		const filtered = this.applyListFilters(this.db.selectFrom("media"), options);
+		const filtered = this.applyListFilters(
+			this.db.selectFrom("media").where("site_id", "=", this.siteId),
+			options,
+		);
 		const rows = await filtered
 			.selectAll()
 			.orderBy("created_at", "desc")
@@ -551,14 +591,22 @@ export class MediaRepository {
 		if (input.caption !== undefined) updates.caption = input.caption;
 		if (input.width !== undefined) updates.width = input.width;
 		if (input.height !== undefined) updates.height = input.height;
-		if (input.folderId !== undefined) updates.folder_id = input.folderId;
+		if (input.folderId !== undefined) {
+			await this.assertFolder(input.folderId);
+			updates.folder_id = input.folderId;
+		}
 		if (input.focalX !== undefined && input.focalY !== undefined) {
 			updates.focal_x = input.focalX;
 			updates.focal_y = input.focalY;
 		}
 
 		if (Object.keys(updates).length > 0) {
-			await this.db.updateTable("media").set(updates).where("id", "=", id).execute();
+			await this.db
+				.updateTable("media")
+				.set(updates)
+				.where("site_id", "=", this.siteId)
+				.where("id", "=", id)
+				.execute();
 		}
 
 		return this.findById(id);
@@ -583,6 +631,7 @@ export class MediaRepository {
 		const row = await this.db
 			.updateTable("media")
 			.set(updates)
+			.where("site_id", "=", this.siteId)
 			.where("id", "=", id)
 			.where("status", "=", "ready")
 			.returningAll()
@@ -607,6 +656,7 @@ export class MediaRepository {
 				focal_x: null,
 				focal_y: null,
 			})
+			.where("site_id", "=", this.siteId)
 			.where("id", "=", id)
 			.where("status", "=", "ready")
 			.where("storage_key", "=", expectedStorageKey)
@@ -622,6 +672,7 @@ export class MediaRepository {
 	async deleteWithStorageKey(id: string): Promise<string | null> {
 		const deleted = await this.db
 			.deleteFrom("media")
+			.where("site_id", "=", this.siteId)
 			.where("id", "=", id)
 			.returning("storage_key")
 			.executeTakeFirst();
@@ -629,6 +680,7 @@ export class MediaRepository {
 		return null;
 	}
 
+	// Storage deletion must account for every site, even when metadata access is site-scoped.
 	async isStorageKeyReferenced(storageKey: string): Promise<boolean> {
 		const row = await this.db
 			.selectFrom("media")
@@ -647,7 +699,10 @@ export class MediaRepository {
 	 */
 	async count(mimeType?: string | readonly string[]): Promise<number> {
 		const filters = normalizeMimeFilter(mimeType);
-		let query = this.db.selectFrom("media").select((eb) => eb.fn.count<number>("id").as("count"));
+		let query = this.db
+			.selectFrom("media")
+			.where("site_id", "=", this.siteId)
+			.select((eb) => eb.fn.count<number>("id").as("count"));
 
 		if (filters.length > 0) {
 			query = query.where((eb) => mimeMatchExpr(eb, filters));
@@ -701,6 +756,7 @@ export class MediaRepository {
 
 		const rows = await this.db
 			.deleteFrom("media")
+			.where("site_id", "=", this.siteId)
 			.where("status", "=", "pending")
 			.where("created_at", "<", cutoff)
 			.returning("storage_key")
@@ -727,6 +783,17 @@ export class MediaRepository {
 	/**
 	 * Convert database row to MediaItem
 	 */
+	private async assertFolder(folderId: string | null | undefined): Promise<void> {
+		if (!folderId) return;
+		const folder = await this.db
+			.selectFrom("media_folders")
+			.select("id")
+			.where("site_id", "=", this.siteId)
+			.where("id", "=", folderId)
+			.executeTakeFirst();
+		if (!folder) throw new Error("Media folder does not belong to the selected site");
+	}
+
 	private rowToItem(row: MediaRow): MediaItem {
 		const focalPoint = normalizeFocalPoint(row.focal_x, row.focal_y);
 		return {

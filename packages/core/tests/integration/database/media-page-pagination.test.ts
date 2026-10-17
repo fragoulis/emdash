@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it as vitestIt } from "vitest";
 
 import { MediaRepository, type MediaStatus } from "../../../src/database/repositories/media.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialect,
@@ -9,6 +10,8 @@ import {
 } from "../../utils/test-db.js";
 
 describeEachDialect("MediaRepository numbered pages", (dialect) => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let ctx: DialectTestContext;
 	let repo: MediaRepository;
 
@@ -90,18 +93,20 @@ describeEachDialect("MediaRepository numbered pages", (dialect) => {
 		expect(pageResult).toEqual({ items: [], totalCount: 0 });
 	});
 
-	it.each([
+	vitestIt.each([
 		{ limit: -2, expected: 1 },
 		{ limit: 2.9, expected: 2 },
-	])("normalizes a $limit limit for cursor and numbered pages", async ({ limit, expected }) => {
-		await seedMedia();
+	])("normalizes a $limit limit for cursor and numbered pages", ({ limit, expected }) =>
+		runWithContext({ editMode: false, siteId: "site-default" }, async () => {
+			await seedMedia();
 
-		const cursorResult = await repo.findMany({ limit });
-		const pageResult = await repo.findPage({ page: 1, limit });
+			const cursorResult = await repo.findMany({ limit });
+			const pageResult = await repo.findPage({ page: 1, limit });
 
-		expect(cursorResult.items).toHaveLength(expected);
-		expect(pageResult.items).toHaveLength(expected);
-	});
+			expect(cursorResult.items).toHaveLength(expected);
+			expect(pageResult.items).toHaveLength(expected);
+		}),
+	);
 
 	it("defaults a non-number limit for cursor and numbered pages", async () => {
 		await seedMedia();

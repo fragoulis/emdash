@@ -1,8 +1,9 @@
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it as vitestIt } from "vitest";
 
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	type DialectTestContext,
 	describeEachDialect,
@@ -11,6 +12,8 @@ import {
 } from "../../utils/test-db.js";
 
 describeEachDialect("pending media upload publication", (dialect) => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let ctx: DialectTestContext;
 	let repo: MediaRepository;
 

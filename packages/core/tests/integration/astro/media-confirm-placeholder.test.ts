@@ -1,10 +1,11 @@
 import type { APIContext } from "astro";
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST as postConfirm } from "../../../src/astro/routes/api/media/[id]/confirm.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { computeContentHash } from "../../../src/utils/hash.js";
 import { JPEG_4x4 } from "../../utils/image-fixtures.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
@@ -63,6 +64,7 @@ function buildContext(opts: {
 }
 
 describe("POST /media/:id/confirm — placeholder read-back", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {

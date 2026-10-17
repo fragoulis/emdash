@@ -2020,6 +2020,8 @@ async function mediaUpload(
 		);
 	}
 
+	const siteId = getRequestContext()?.siteId;
+	if (!siteId) throw new Error("A server-selected site is required for media upload");
 	const { ulid } = await import("ulidx");
 	const mediaId = ulid();
 	const basename = filename.includes("/")
@@ -2050,6 +2052,7 @@ async function mediaUpload(
 		await db
 			.insertInto("media")
 			.values({
+				site_id: siteId,
 				id: mediaId,
 				filename,
 				mime_type: contentType,

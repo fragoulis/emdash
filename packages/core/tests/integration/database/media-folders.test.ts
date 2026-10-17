@@ -1,11 +1,15 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it as vitestIt } from "vitest";
 
 import { columnExists, indexExists, tableExists } from "../../../src/database/dialect-helpers.js";
 import * as migration072 from "../../../src/database/migrations/072_media_folders.js";
+import { createMigrator } from "../../../src/database/migrations/runner.js";
 import { MediaFolderRepository } from "../../../src/database/repositories/media-folders.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import { EmDashValidationError } from "../../../src/database/repositories/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
+	createTestDatabase,
+	createTestPostgresDatabase,
 	describeEachDialect,
 	setupForDialect,
 	teardownForDialect,
@@ -13,6 +17,8 @@ import {
 } from "../../utils/test-db.js";
 
 describeEachDialect("media folder storage and repositories", (dialect) => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let ctx: DialectTestContext;
 	let folders: MediaFolderRepository;
 	let media: MediaRepository;
@@ -28,7 +34,17 @@ describeEachDialect("media folder storage and repositories", (dialect) => {
 	});
 
 	it("upgrades existing media into the Main library and supports rollback", async () => {
-		await migration072.down(ctx.db);
+		await teardownForDialect(ctx);
+		if (dialect === "postgres") {
+			const pgCtx = await createTestPostgresDatabase();
+			ctx = { db: pgCtx.db, dialect, pgCtx };
+		} else {
+			ctx = { db: createTestDatabase(), dialect };
+		}
+		const { error } = await createMigrator(ctx.db, {
+			migrationTableSchema: ctx.pgCtx?.schemaName,
+		}).migrateTo("071_restore_content_bylines_table");
+		if (error) throw error;
 		await ctx.db
 			.insertInto("media")
 			.values({

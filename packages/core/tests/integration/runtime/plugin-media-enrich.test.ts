@@ -1,9 +1,10 @@
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
 import { createMediaAccessWithWrite } from "../../../src/plugins/context.js";
+import { runWithContext } from "../../../src/request-context.js";
 import type { Storage } from "../../../src/storage/types.js";
 import { JPEG_4x4 } from "../../utils/image-fixtures.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
@@ -48,6 +49,7 @@ function fakeStorage(): Storage {
 }
 
 describe("plugin ctx.media.upload — metadata enrichment", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {
@@ -85,6 +87,7 @@ describe("plugin ctx.media.upload — metadata enrichment", () => {
 });
 
 describe("plugin ctx.media.upload — type restrictions", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {
@@ -180,6 +183,7 @@ describe("plugin ctx.media.upload — type restrictions", () => {
 });
 
 describe("plugin ctx.media.delete", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {

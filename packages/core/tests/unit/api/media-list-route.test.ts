@@ -1,9 +1,10 @@
-import { it, expect, describe, beforeEach, afterEach } from "vitest";
+import { it, expect, describe, beforeEach, afterEach, aroundEach } from "vitest";
 
 import { handleMediaList } from "../../../src/api/handlers/media.js";
 import { mediaListQuery } from "../../../src/api/schemas/media.js";
 import { MediaFolderRepository } from "../../../src/database/repositories/media-folders.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	setupForDialect,
 	teardownForDialect,
@@ -11,6 +12,7 @@ import {
 } from "../../utils/test-db.js";
 
 describe("handleMediaList multi-MIME", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let ctx: DialectTestContext;
 
 	beforeEach(async () => {

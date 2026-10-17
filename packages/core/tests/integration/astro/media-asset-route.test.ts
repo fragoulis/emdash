@@ -3,16 +3,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it as vitestIt } from "vitest";
 
 import { GET } from "../../../src/astro/routes/api/media/asset/[id]/[filename].js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
 import { createMediaAccess } from "../../../src/plugins/context.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { LocalStorage } from "../../../src/storage/local.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 describe("opaque media asset route", () => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let db: Kysely<Database>;
 	let directory: string;
 	let storage: LocalStorage;

@@ -31,6 +31,7 @@ import {
 	type SettingField,
 	type I18nConfig,
 } from "emdash";
+import { getRequestContext } from "emdash/request-context";
 
 import {
 	setCommentModerateCallback,
@@ -66,6 +67,8 @@ const DEFAULT_LIMITS = {
 
 export interface PluginBridgeProps {
 	pluginId: string;
+	/** Trusted selection captured before the bridge RPC crosses isolates. */
+	siteId?: string;
 	pluginVersion: string;
 	capabilities: string[];
 	allowedHosts: string[];
@@ -360,6 +363,7 @@ class CloudflareSandboxedPlugin implements SandboxedPluginInstance {
 		const bridgeBinding = this.createBridge({
 			props: {
 				pluginId: this.manifest.id,
+				siteId: getRequestContext()?.siteId,
 				pluginVersion: this.manifest.version || "0.0.0",
 				capabilities,
 				allowedHosts: this.manifest.allowedHosts || [],

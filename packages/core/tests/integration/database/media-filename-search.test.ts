@@ -1,6 +1,7 @@
-import { it, expect, beforeEach, afterEach } from "vitest";
+import { it as vitestIt, expect, beforeEach, afterEach } from "vitest";
 
 import { MediaRepository } from "../../../src/database/repositories/media.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialect,
@@ -11,26 +12,30 @@ import {
 // #1221: the media library lacked filename search. The repository now accepts
 // a case-insensitive `q` substring filter against the filename.
 describeEachDialect("MediaRepository.findMany filename search (#1221)", (dialect) => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let ctx: DialectTestContext;
 
 	beforeEach(async () => {
 		ctx = await setupForDialect(dialect);
-		const repo = new MediaRepository(ctx.db);
-		await repo.create({
-			filename: "Summer-Vacation.png",
-			mimeType: "image/png",
-			storageKey: "1.png",
-		});
-		await repo.create({
-			filename: "invoice-2024.pdf",
-			mimeType: "application/pdf",
-			storageKey: "2.pdf",
-		});
-		await repo.create({ filename: "logo.svg", mimeType: "image/svg+xml", storageKey: "3.svg" });
-		await repo.create({
-			filename: "100%_complete.png",
-			mimeType: "image/png",
-			storageKey: "4.png",
+		await runWithContext({ editMode: false, siteId: "site-default" }, async () => {
+			const repo = new MediaRepository(ctx.db);
+			await repo.create({
+				filename: "Summer-Vacation.png",
+				mimeType: "image/png",
+				storageKey: "1.png",
+			});
+			await repo.create({
+				filename: "invoice-2024.pdf",
+				mimeType: "application/pdf",
+				storageKey: "2.pdf",
+			});
+			await repo.create({ filename: "logo.svg", mimeType: "image/svg+xml", storageKey: "3.svg" });
+			await repo.create({
+				filename: "100%_complete.png",
+				mimeType: "image/png",
+				storageKey: "4.png",
+			});
 		});
 	});
 

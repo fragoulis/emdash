@@ -1,6 +1,6 @@
 import type { APIContext } from "astro";
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
 	coordinateScopedDbLifecycle,
@@ -118,6 +118,7 @@ function confirmRequest(id: string) {
 }
 
 describe("signed-url media upload hooks", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {
@@ -462,7 +463,7 @@ describe("signed-url media upload hooks", () => {
 		});
 		try {
 			const response = await runWithContext(
-				{ editMode: false, db, deferredTasks: scope.deferredTasks },
+				{ editMode: false, siteId: "site-default", db, deferredTasks: scope.deferredTasks },
 				() =>
 					finishScoped(scope.lifecycle, () =>
 						Promise.resolve(

@@ -78,7 +78,7 @@ export interface TaxonomyDefGroupTable {
 }
 
 export interface MediaTable {
-	site_id: Generated<string>;
+	site_id: string;
 	id: string;
 	filename: string;
 	mime_type: string;
@@ -100,12 +100,14 @@ export interface MediaTable {
 }
 
 export interface MediaFolderTable {
+	site_id: string;
 	id: string;
 	name: string;
 	name_key: string;
 }
 
 export interface MediaUploadAttemptTable {
+	site_id: string;
 	storage_key: string;
 	// No foreign key: this row must survive media deletion until storage cleanup succeeds.
 	media_id: string;
@@ -851,6 +853,7 @@ export interface Database {
 }
 
 export type MediaRow = {
+	site_id: string;
 	id: string;
 	filename: string;
 	mime_type: string;

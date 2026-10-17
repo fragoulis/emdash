@@ -15,10 +15,11 @@
 
 import { Role } from "@emdash-cms/auth";
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import type { Storage } from "../../../src/storage/types.js";
 import {
 	connectMcpHarness,
@@ -60,6 +61,7 @@ async function seedMedia(
 // ---------------------------------------------------------------------------
 
 describe("media_list", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 	let harness: McpHarness;
 
@@ -153,6 +155,7 @@ describe("media_list", () => {
 // ---------------------------------------------------------------------------
 
 describe("media_get", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 	let harness: McpHarness;
 
@@ -214,6 +217,7 @@ describe("media_get", () => {
 // ---------------------------------------------------------------------------
 
 describe("media_update", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 	let harness: McpHarness;
 
@@ -322,6 +326,7 @@ describe("media_update", () => {
 // ---------------------------------------------------------------------------
 
 describe("media_delete", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 	let harness: McpHarness;
 
@@ -470,6 +475,7 @@ describe("media_delete", () => {
 // ---------------------------------------------------------------------------
 
 describe("media_create (bug #14 / F1)", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let db: Kysely<Database>;
 	let harness: McpHarness;
 	let storage: MemoryStorage;
@@ -721,6 +727,7 @@ describe("media_create (bug #14 / F1)", () => {
 // ---------------------------------------------------------------------------
 
 describe("media_upload", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	const PNG_BASE64 =
 		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 	let db: Kysely<Database>;

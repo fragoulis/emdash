@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Kysely, SqliteDialect } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it } from "vitest";
 
 import { NodeSqliteCompatDatabase as BetterSqlite3 } from "#node-sqlite";
 
@@ -14,6 +14,7 @@ import type { Database } from "../../../src/database/types.js";
 import { PluginContextFactory } from "../../../src/plugins/context.js";
 import { parsePluginMediaMetadataPatch } from "../../../src/plugins/media.js";
 import type { ResolvedPlugin } from "../../../src/plugins/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { LocalStorage } from "../../../src/storage/local.js";
 import {
 	describeEachDialect,
@@ -36,6 +37,7 @@ function plugin(capabilities: ResolvedPlugin["capabilities"]): ResolvedPlugin {
 }
 
 describe("sandbox media capabilities", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let sqlite: BetterSqlite3;
 	let db: Kysely<Database>;
 	let directory: string;
@@ -247,6 +249,7 @@ describe("sandbox media capabilities", () => {
 });
 
 describeEachDialect("media metadata capability dialect parity", (dialect) => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let context: DialectTestContext;
 
 	beforeEach(async () => {
