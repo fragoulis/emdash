@@ -20,8 +20,11 @@ Give the new agent the prompt:
 /implement #{ticket-number}.
 
 Before starting the implementation:
-1. Check the codebase if the ticket is whole or partly implemented
-2. Grill me if you find gaps, contradictions and/or blockers
+
+1. Check the codebase if the ticket is whole or partly implemented.
+2. Grill me if you find gaps, contradictions and/or blockers.
+3. Make a plan with the steps and use a subagent to implement each step sequentially.
+4. Consider committing each step separately.
 
 In the commit body, append `Closes #{ticket-number}.`
 
