@@ -1,9 +1,8 @@
 /**
  * Public media URL resolution.
  *
- * Used at render time by the Image components to decide whether a storage
- * key should be served from the configured `publicUrl` (R2 custom domain,
- * S3 CDN) or through the internal `/_emdash/api/media/file/{key}` route.
+ * Used at render time by Image components to serve media through the
+ * site-scoped internal file route.
  */
 import type { Storage } from "../storage/types.js";
 import { INTERNAL_MEDIA_PREFIX } from "./normalize.js";
@@ -30,17 +29,15 @@ export function localMediaFileUrl(key: string): string {
 }
 
 /**
- * Resolve the public URL for a locally stored media key. Returns an empty
- * string when no key is given. When a storage adapter is supplied, defers to
- * `storage.getPublicUrl()`; otherwise returns the internal proxy route.
+ * Resolve a local media key through the site-scoped proxy. Direct storage URLs
+ * bypass the media record's site check.
  */
 export function resolvePublicMediaUrl(
-	storage: Storage | null | undefined,
+	_storage: Storage | null | undefined,
 	storageKey: string,
 ): string {
 	if (!storageKey) return "";
-	if (storage) return storage.getPublicUrl(storageKey);
-	return `/_emdash/api/media/file/${storageKey}`;
+	return localMediaFileUrl(storageKey);
 }
 
 /**
@@ -79,7 +76,7 @@ export function buildRenderMediaUrl(
 ): string {
 	const { storageKey, url, id } = ref;
 	if (storageKey) {
-		return resolve ? resolve(storageKey) : `${INTERNAL_MEDIA_PREFIX}${storageKey}`;
+		return resolve ? resolve(storageKey) : localMediaFileUrl(storageKey);
 	}
 	if (url) {
 		if (resolve && url.startsWith(INTERNAL_MEDIA_PREFIX)) {

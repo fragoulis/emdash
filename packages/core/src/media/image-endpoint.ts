@@ -12,7 +12,19 @@
  * precompiled package and can be unit-tested directly.
  */
 
+import type { Kysely } from "kysely";
+
+import { MediaRepository } from "../database/repositories/media.js";
+import type { Database } from "../database/types.js";
 import { INTERNAL_MEDIA_PREFIX } from "./normalize.js";
+
+export async function isReadyMediaKey(db: Kysely<Database>, key: string): Promise<boolean> {
+	try {
+		return (await new MediaRepository(db).findReadyByStorageKey(key)) !== null;
+	} catch {
+		return false;
+	}
+}
 
 /** Output formats the wrapped endpoint can produce on Cloudflare. */
 export const ALLOWED_TRANSFORM_FORMATS = ["webp", "avif", "jpeg", "png"] as const;
@@ -189,7 +201,7 @@ export function originalMediaHeaders(
 }
 
 /** Storage keys safe to serve: the flat `{ulid}{ext}` shape, no slashes/traversal. */
-const SAFE_STORAGE_KEY = /^[A-Za-z0-9._-]+$/;
+const SAFE_STORAGE_KEY = /^(?:[A-Za-z0-9._-]+|sites\/[A-Za-z0-9_-]+\/media\/[A-Za-z0-9._-]+)$/;
 
 /** Plain decimal digits only -- rejects "1e3", "0x10", "+5", whitespace. */
 const DECIMAL_DIGITS = /^\d+$/;

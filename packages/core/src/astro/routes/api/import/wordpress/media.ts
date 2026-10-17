@@ -13,7 +13,6 @@ import * as path from "node:path";
 import type { APIRoute } from "astro";
 import { MediaRepository, computeContentHash } from "emdash";
 import mime from "mime/lite";
-import { ulid } from "ulidx";
 
 import { requirePerm } from "#api/authorize.js";
 import { apiError, apiSuccess, handleError } from "#api/error.js";
@@ -21,6 +20,7 @@ import { isParseError, parseBody } from "#api/parse.js";
 import { wpMediaImportBody } from "#api/schemas.js";
 import { validateExternalUrl, ssrfSafeFetch, SsrfError } from "#import/ssrf.js";
 import { enrichImageMetadata } from "#media/enrich.js";
+import { newMediaStorageKey } from "#media/storage-key.js";
 import type { EmDashHandlers } from "#types";
 
 import type { AttachmentInfo } from "./analyze.js";
@@ -261,11 +261,10 @@ export async function importMediaWithProgress(
 			});
 
 			// Generate storage key
-			const id = ulid();
 			const ext = attachment.filename
 				? path.extname(attachment.filename)
 				: getExtensionFromMimeType(contentType);
-			const storageKey = `${id}${ext}`;
+			const storageKey = newMediaStorageKey(ext);
 
 			// Upload to storage
 			await storage.upload({

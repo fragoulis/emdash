@@ -8,7 +8,6 @@
 import * as path from "node:path";
 
 import type { APIRoute } from "astro";
-import { ulid } from "ulidx";
 
 import { canReadMediaUsageCount, requirePerm } from "#api/authorize.js";
 import { apiError, apiSuccess, handleError, unwrapResult } from "#api/error.js";
@@ -27,6 +26,7 @@ import {
 import { MediaRepository } from "#db/repositories/media.js";
 import { enrichImageMetadata } from "#media/enrich.js";
 import { matchesMimeAllowlist, resolveUploadMimeType } from "#media/mime.js";
+import { newMediaStorageKey } from "#media/storage-key.js";
 import { computeContentHash } from "#utils/hash.js";
 
 import type { MediaItem } from "../../types.js";
@@ -235,9 +235,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			: file.name;
 
 		// Generate unique storage key
-		const id = ulid();
 		const ext = path.extname(filename) || "";
-		const storageKey = `${id}${ext}`;
+		const storageKey = newMediaStorageKey(ext);
 
 		// Upload to storage using the configured adapter
 		await emdash.storage.upload({

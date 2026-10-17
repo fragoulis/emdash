@@ -7,12 +7,8 @@
 import type { APIRoute } from "astro";
 
 import { apiError, handleError } from "#api/error.js";
-import {
-	IMMUTABLE_IMAGE_CACHE,
-	MUTABLE_MEDIA_CACHE_CONTROL,
-	isNotModified,
-	validatorHeaders,
-} from "#media/image-endpoint.js";
+import { MediaRepository } from "#db/repositories/media.js";
+import { isNotModified, validatorHeaders } from "#media/image-endpoint.js";
 
 import { parseRangeHeader, resolveByteRange } from "../../../../../storage/range.js";
 import { isRefusedStorageKey } from "../../../../../transfer/staging/keys.js";
@@ -80,6 +76,15 @@ export const GET: APIRoute = async ({ params, locals, request, cache }) => {
 		return apiError("NOT_CONFIGURED", "Storage not configured", 500);
 	}
 
+	// The same URL can be requested under different resolved sites.
+	if (cache?.enabled) cache.set(false);
+	try {
+		const item = await new MediaRepository(emdash.db).findReadyByStorageKey(key);
+		if (!item) return apiError("NOT_FOUND", "File not found", 404);
+	} catch (error) {
+		return handleError(error, "Failed to serve file", "FILE_SERVE_ERROR");
+	}
+
 	// An unread download retains its storage connection even for a bodyless response.
 	let unusedBody: ReadableStream<Uint8Array> | undefined;
 	try {
@@ -105,9 +110,7 @@ export const GET: APIRoute = async ({ params, locals, request, cache }) => {
 			return response;
 		}
 
-		const cacheControl = result.contentType.startsWith("image/")
-			? MUTABLE_MEDIA_CACHE_CONTROL
-			: IMMUTABLE_IMAGE_CACHE;
+		const cacheControl = "private, max-age=0, must-revalidate";
 
 		if (isNotModified(request, result.size, result.lastModified)) {
 			return new Response(null, {
