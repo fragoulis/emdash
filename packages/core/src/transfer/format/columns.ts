@@ -210,6 +210,7 @@ const PORTABLE_TABLE_LIST: PortableTableSpec[] = [
 		table: "media_folders",
 		kind: "media_folder",
 		columns: {
+			site_id: TARGET_LOCAL,
 			id: f("id"),
 			name: f("name"),
 			name_key: f("nameKey"),

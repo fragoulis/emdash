@@ -42,6 +42,7 @@ function makeEnv(bucket?: unknown) {
 function makeProps(overrides?: Record<string, unknown>) {
 	return {
 		pluginId: "media-test",
+		siteId: "site-default",
 		pluginVersion: "1.0.0",
 		capabilities: ["media:bytes:read"],
 		allowedHosts: [],
@@ -51,6 +52,32 @@ function makeProps(overrides?: Record<string, unknown>) {
 }
 
 describe("PluginBridge media storage", () => {
+	it("denies media reads without a server-selected site before consulting the database", async () => {
+		const { PluginBridge } = await import("../../src/sandbox/bridge.js");
+		const bridge = new PluginBridge(
+			{ props: makeProps({ siteId: undefined }) } as never,
+			makeEnv({ get: vi.fn() }),
+		);
+		await expect(bridge.mediaReadBytes("media-1")).rejects.toThrow(/server-selected site/);
+		expect(runtimeMocks.readPluginMediaBytes).not.toHaveBeenCalled();
+	});
+
+	it("denies direct media writes without a selected site before storage or database I/O", async () => {
+		const { PluginBridge } = await import("../../src/sandbox/bridge.js");
+		const bucket = { put: vi.fn(), delete: vi.fn() };
+		const database = { prepare: vi.fn() };
+		const bridge = new PluginBridge(
+			{ props: makeProps({ siteId: undefined, capabilities: ["media:write"] }) } as never,
+			{ DB: database, MEDIA: bucket } as never,
+		);
+		await expect(
+			bridge.mediaUpload("blocked.png", "image/png", new Uint8Array([1]).buffer),
+		).rejects.toThrow(/server-selected site/);
+		await expect(bridge.mediaDelete("media-1")).rejects.toThrow(/server-selected site/);
+		expect(database.prepare).not.toHaveBeenCalled();
+		expect(bucket.put).not.toHaveBeenCalled();
+		expect(bucket.delete).not.toHaveBeenCalled();
+	});
 	it("reads bytes using an env.MEDIA R2 binding", async () => {
 		const { PluginBridge } = await import("../../src/sandbox/bridge.js");
 		const body = new ReadableStream<Uint8Array>();

@@ -18,6 +18,7 @@ function makeBridge(capabilities: string[], db: unknown = {}) {
 		{
 			props: {
 				pluginId: "media-test",
+				siteId: "site-default",
 				pluginVersion: "1.0.0",
 				capabilities,
 				allowedHosts: [],

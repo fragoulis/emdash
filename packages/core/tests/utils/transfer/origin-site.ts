@@ -410,7 +410,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 
 	await raw
 		.insertInto("media_folders")
-		.values({ id: fixtureId(1130), name: "Photos", name_key: "photos" })
+		.values({ id: fixtureId(1130), site_id: "site-default", name: "Photos", name_key: "photos" })
 		.execute();
 
 	const media: OriginMedia[] = [
@@ -459,6 +459,7 @@ export async function buildOriginSite(db: Kysely<Database>, storage: Storage): P
 		.insertInto("media")
 		.values(
 			media.map((item, index) => ({
+				site_id: "site-default",
 				id: item.id,
 				filename: `file-${index}${item.storageKey.slice(item.storageKey.lastIndexOf("."))}`,
 				mime_type: item.storageKey.endsWith(".svg") ? "image/svg+xml" : "image/jpeg",

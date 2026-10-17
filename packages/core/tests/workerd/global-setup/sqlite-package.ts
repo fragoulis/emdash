@@ -6,6 +6,7 @@
 
 import type { TestProject } from "vitest/node";
 
+import { runWithContext } from "../../../src/request-context.js";
 import { packageFiles, runExport } from "../../integration/transfer/export/helpers.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 import { createMemoryStorage } from "../../utils/transfer/memory-storage.js";
@@ -22,9 +23,13 @@ export default async function setup(project: TestProject): Promise<void> {
 	try {
 		const storage = createMemoryStorage();
 		await buildOriginSite(db, storage);
-		const run = await runExport(db, storage);
+		const run = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+			runExport(db, storage),
+		);
 		if (run.result.outcome !== "complete") {
-			throw new Error(`SQLite export ended as ${run.result.operation.state}`);
+			throw new Error(
+				`SQLite export ended as ${run.result.operation.state}: ${run.result.operation.errorCode}`,
+			);
 		}
 		const files = await packageFiles(run.reader);
 		project.provide(

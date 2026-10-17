@@ -3,11 +3,12 @@
  * skip-media mode must not create local rows.
  */
 
-import { afterEach, beforeEach, expect, it, vi, type MockInstance } from "vitest";
+import { afterEach, aroundEach, beforeEach, expect, it, vi, type MockInstance } from "vitest";
 
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import { setDefaultDnsResolver } from "../../../src/import/ssrf.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { applySeed } from "../../../src/seed/apply.js";
 import type { SeedFile } from "../../../src/seed/types.js";
 import type { Storage } from "../../../src/storage/types.js";
@@ -119,6 +120,7 @@ function makeSeed(): SeedFile {
 }
 
 describeEachDialect("seed $media idempotency (#3919)", (dialect) => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let ctx: DialectTestContext;
 	let storage: ReturnType<typeof makeTestStorage>;
 	let previousResolver: ReturnType<typeof setDefaultDnsResolver>;

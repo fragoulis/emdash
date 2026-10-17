@@ -1,11 +1,12 @@
 import { env, exports as workerExports } from "cloudflare:workers";
 import { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, aroundEach, beforeAll, describe, expect, it } from "vitest";
 
 import { RawBindingD1Dialect } from "../../../cloudflare/src/db/d1-dialect.js";
 import { runMigrations } from "../../src/database/migrations/runner.js";
 import { MediaRepository } from "../../src/database/repositories/media.js";
 import type { Database } from "../../src/database/types.js";
+import { getRequestContext, runWithContext } from "../../src/request-context.js";
 
 declare global {
 	namespace Cloudflare {
@@ -27,13 +28,15 @@ beforeAll(async () => {
 	db = new Kysely<Database>({ dialect: new RawBindingD1Dialect({ database: env.DB }) });
 	await runMigrations(db);
 	await env.MEDIA.put("private/probe.bin", bytes);
-	const item = await new MediaRepository(db).create({
-		filename: "probe.bin",
-		mimeType: "application/octet-stream",
-		storageKey: "private/probe.bin",
-		size: 1,
-		status: "ready",
-	});
+	const item = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+		new MediaRepository(db).create({
+			filename: "probe.bin",
+			mimeType: "application/octet-stream",
+			storageKey: "private/probe.bin",
+			size: 1,
+			status: "ready",
+		}),
+	);
 	mediaId = item.id;
 });
 
@@ -45,6 +48,7 @@ function bridge(capabilities = ["media:bytes:read"]) {
 	return workerExports.PluginBridge({
 		props: {
 			pluginId: "media-probe",
+			siteId: getRequestContext()?.siteId,
 			pluginVersion: "1.0.0",
 			capabilities,
 			allowedHosts: [],
@@ -58,6 +62,32 @@ async function readBytes(maxBytes?: number) {
 }
 
 describe("sandbox media bytes through R2 bridge RPC", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
+
+	it("cannot read or delete another site's media by ID", async () => {
+		await env.DB.prepare(
+			"INSERT OR IGNORE INTO _emdash_sites (id, slug) VALUES ('site-other', 'other')",
+		).run();
+		await runWithContext({ editMode: false, siteId: "site-other" }, async () => {
+			expect(await bridge(["media:read"]).mediaGet(mediaId)).toBeNull();
+			expect(await bridge(["media:write"]).mediaDelete(mediaId)).toBe(false);
+		});
+		expect(await new MediaRepository(db).findById(mediaId)).not.toBeNull();
+	});
+
+	it("binds direct bridge media upload and deletion to the selected site", async () => {
+		const uploaded = await bridge(["media:write"]).mediaUpload(
+			"new.png",
+			"image/png",
+			new Uint8Array([1, 2]).buffer,
+		);
+		expect(await new MediaRepository(db).findById(uploaded.mediaId)).toMatchObject({
+			filename: "new.png",
+			status: "ready",
+		});
+		expect(await bridge(["media:write"]).mediaDelete(uploaded.mediaId)).toBe(true);
+		expect(await new MediaRepository(db).findById(uploaded.mediaId)).toBeNull();
+	});
 	it("reads exact bytes before, during, and after concurrent calls without a storage callback", async () => {
 		const expectedHash = await crypto.subtle.digest("SHA-256", bytes);
 		async function expectExactBytes(result: Awaited<ReturnType<typeof readBytes>>) {

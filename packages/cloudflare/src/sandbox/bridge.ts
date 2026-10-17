@@ -49,6 +49,7 @@ import {
 	createPluginSecretRedactor,
 	type PluginSecretRedactor,
 } from "emdash/plugins/secret-redactor";
+import { runWithContext } from "emdash/request-context";
 
 import { sandboxHttpFetch } from "./bridge-http.js";
 import type { RedirectBridgeResult, StorageUpdateIfResponse } from "./types.js";
@@ -387,6 +388,8 @@ export interface PluginBridgeEnv {
  */
 export interface PluginBridgeProps {
 	pluginId: string;
+	/** Server-selected site from the runner's request context. */
+	siteId?: string;
 	pluginVersion: string;
 	capabilities: string[];
 	allowedHosts: string[];
@@ -434,6 +437,16 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		if (!this.ctx.props.capabilities.includes(capability)) {
 			throw new Error(`Missing capability: ${capability}`);
 		}
+	}
+
+	private mediaSiteId(): string {
+		const siteId = this.ctx.props.siteId;
+		if (!siteId) throw new Error("A server-selected site is required for media access");
+		return siteId;
+	}
+
+	private withMediaSite<T>(fn: () => T): T {
+		return runWithContext({ editMode: false, siteId: this.mediaSiteId() }, fn);
 	}
 
 	private validateCollection(collection: string): void {
@@ -1617,7 +1630,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		}
 		const { createMediaAccess, D1Dialect, Kysely } = await loadBridgeRuntime();
 		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
-		return createMediaAccess(db).get(id);
+		return this.withMediaSite(() => createMediaAccess(db).get(id));
 	}
 
 	async mediaList(
@@ -1629,7 +1642,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		}
 		const { createMediaAccess, D1Dialect, Kysely } = await loadBridgeRuntime();
 		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
-		return createMediaAccess(db).list(opts);
+		return this.withMediaSite(() => createMediaAccess(db).list(opts));
 	}
 
 	async mediaReadBytes(id: string, maxBytes?: number): Promise<MediaBytes> {
@@ -1664,7 +1677,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		if (!storage) throw new Error("Media storage is not configured");
 		const { D1Dialect, Kysely, readPluginMediaBytes } = await loadBridgeRuntime();
 		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
-		return readPluginMediaBytes(db, storage, id, { maxBytes });
+		return this.withMediaSite(() => readPluginMediaBytes(db, storage, id, { maxBytes }));
 	}
 
 	async mediaUpdateMetadata(id: string, patch: unknown): Promise<PluginMediaItem> {
@@ -1676,7 +1689,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			await loadBridgeRuntime();
 		const parsed: MediaMetadataPatch = parsePluginMediaMetadataPatch(patch);
 		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
-		return updatePluginMediaMetadata(db, id, parsed);
+		return this.withMediaSite(() => updatePluginMediaMetadata(db, id, parsed));
 	}
 
 	/**
@@ -1702,6 +1715,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		if (!this.env.MEDIA) {
 			throw new Error("Media storage (R2) not configured. Add MEDIA binding to wrangler config.");
 		}
+		const siteId = this.mediaSiteId();
 		const { ulid } = await loadBridgeRuntime();
 
 		// Validate MIME type — only allow image, video, audio, and PDF
@@ -1732,9 +1746,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		try {
 			// Create confirmed media record with ISO timestamp (matching core)
 			await this.env.DB.prepare(
-				"INSERT INTO media (id, filename, mime_type, size, storage_key, status, created_at) VALUES (?, ?, ?, ?, ?, 'ready', ?)",
+				"INSERT INTO media (site_id, id, filename, mime_type, size, storage_key, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)",
 			)
-				.bind(mediaId, filename, contentType, bytes.byteLength, storageKey, now)
+				.bind(siteId, mediaId, filename, contentType, bytes.byteLength, storageKey, now)
 				.run();
 		} catch (error) {
 			// Clean up R2 object on DB failure to prevent orphans
@@ -1760,20 +1774,28 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			throw new Error("Missing capability: media:write");
 		}
 
+		const siteId = this.mediaSiteId();
 		// Look up the storage key before deleting
-		const media = await this.env.DB.prepare("SELECT storage_key FROM media WHERE id = ?")
-			.bind(id)
+		const media = await this.env.DB.prepare(
+			"SELECT storage_key FROM media WHERE id = ? AND site_id = ?",
+		)
+			.bind(id, siteId)
 			.first<{ storage_key: string }>();
 
 		if (!media) return false;
 
 		// Delete the DB row
-		const result = await this.env.DB.prepare("DELETE FROM media WHERE id = ?").bind(id).run();
+		const result = await this.env.DB.prepare("DELETE FROM media WHERE id = ? AND site_id = ?")
+			.bind(id, siteId)
+			.run();
 
 		// Delete from R2 if the binding is available
-		if (this.env.MEDIA && media.storage_key) {
+		if (this.env.MEDIA && media.storage_key && (result.meta?.changes ?? 0) > 0) {
+			const shared = await this.env.DB.prepare("SELECT id FROM media WHERE storage_key = ? LIMIT 1")
+				.bind(media.storage_key)
+				.first();
 			try {
-				await this.env.MEDIA.delete(media.storage_key);
+				if (!shared) await this.env.MEDIA.delete(media.storage_key);
 			} catch {
 				// Log but don't fail - the DB row is already deleted
 				console.warn(`[plugin-bridge] Failed to delete R2 object: ${media.storage_key}`);

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it as test } from "vitest";
+import { afterEach, aroundEach, beforeEach, expect, it as test } from "vitest";
 
 import {
 	handleMediaUsageDetails,
@@ -27,6 +27,7 @@ const it = (name: string, fn: () => Promise<void>) =>
 	test(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn));
 
 describeEachDialect("media usage from site settings", (dialect) => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let ctx: DialectTestContext;
 	let favicon: string;
 	let banner: string;

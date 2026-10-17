@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it as vitestIt } from "vitest";
 
 import { MediaRepository } from "../../../src/database/repositories/media.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialect,
@@ -9,6 +10,8 @@ import {
 } from "../../utils/test-db.js";
 
 describeEachDialect("MediaRepository focal point", (dialect) => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let ctx: DialectTestContext;
 
 	beforeEach(async () => {

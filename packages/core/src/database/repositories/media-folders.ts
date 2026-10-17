@@ -2,6 +2,7 @@ import { sql, type Kysely } from "kysely";
 import { ulid } from "ulidx";
 
 import type { Database } from "../types.js";
+import { selectedSiteId } from "./site-settings.js";
 import { decodeCursor, EmDashValidationError, encodeCursor, type FindManyResult } from "./types.js";
 
 export interface MediaFolder {
@@ -42,6 +43,7 @@ export class MediaFolderRepository {
 		let query = this.db
 			.selectFrom("media_folders")
 			.select(["id", "name", "name_key"])
+			.where("site_id", "=", selectedSiteId())
 			.orderBy("name_key", "asc")
 			.orderBy("id", "asc")
 			.limit(limit + 1);
@@ -78,6 +80,7 @@ export class MediaFolderRepository {
 		const row = await this.db
 			.selectFrom("media_folders")
 			.select(["id", "name"])
+			.where("site_id", "=", selectedSiteId())
 			.where("id", "=", id)
 			.executeTakeFirst();
 		return row ?? null;
@@ -87,7 +90,7 @@ export class MediaFolderRepository {
 		const { name, nameKey } = normalizeFolderName(inputName);
 		const row = await this.db
 			.insertInto("media_folders")
-			.values({ id: ulid(), name, name_key: nameKey })
+			.values({ id: ulid(), site_id: selectedSiteId(), name, name_key: nameKey })
 			.returning(["id", "name"])
 			.executeTakeFirstOrThrow();
 		return row;
@@ -98,6 +101,7 @@ export class MediaFolderRepository {
 		const row = await this.db
 			.updateTable("media_folders")
 			.set({ name, name_key: nameKey })
+			.where("site_id", "=", selectedSiteId())
 			.where("id", "=", id)
 			.returning(["id", "name"])
 			.executeTakeFirst();
@@ -107,6 +111,7 @@ export class MediaFolderRepository {
 	async delete(id: string): Promise<boolean> {
 		const row = await this.db
 			.deleteFrom("media_folders")
+			.where("site_id", "=", selectedSiteId())
 			.where("id", "=", id)
 			.returning("id")
 			.executeTakeFirst();

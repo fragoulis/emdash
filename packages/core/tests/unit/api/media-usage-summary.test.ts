@@ -1,6 +1,6 @@
 import { Role, type RoleLevel } from "@emdash-cms/auth";
 import { Kysely, SqliteDialect } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeSqliteCompatDatabase as Database } from "#node-sqlite";
 
@@ -28,6 +28,7 @@ import {
 } from "../../../src/media/usage/content-refresh.js";
 import { CONTENT_SOURCE_SCHEMA_VERSION } from "../../../src/media/usage/content-snapshots.js";
 import { buildContentMediaUsageSourceKey } from "../../../src/media/usage/source-key.js";
+import { runWithContext } from "../../../src/request-context.js";
 
 type ListRouteContext = Parameters<typeof listMedia>[0];
 type GetRouteContext = Parameters<typeof getMediaItem>[0];
@@ -129,6 +130,7 @@ describe("media usage coverage aggregation", () => {
 });
 
 describe("media usage summary handler and routes", () => {
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 	let sqlite: Database;
 	let db: Kysely<DatabaseSchema>;
 	let queries: string[];

@@ -60,8 +60,11 @@ const FLAT_KINDS: Readonly<Record<FlatKind, FlatKindConfig>> = {
 	taxonomy_def: { key: ID_KEY },
 	relation: { key: ID_KEY },
 	byline_field: { key: ID_KEY },
-	media_folder: { key: ID_KEY },
-	media: { key: ID_KEY },
+	media_folder: {
+		key: ID_KEY,
+		derived: (context) => ({ site_id: selectedPlanSiteId(context.plan) }),
+	},
+	media: { key: ID_KEY, derived: (context) => ({ site_id: selectedPlanSiteId(context.plan) }) },
 	term: { key: ID_KEY },
 	byline: { key: ID_KEY },
 	byline_field_value: { key: ["byline_id", "field_id"] },

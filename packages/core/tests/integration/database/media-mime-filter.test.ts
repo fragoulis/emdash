@@ -1,6 +1,7 @@
-import { it, expect, beforeEach, afterEach } from "vitest";
+import { it as vitestIt, expect, beforeEach, afterEach } from "vitest";
 
 import { MediaRepository } from "../../../src/database/repositories/media.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialect,
@@ -9,6 +10,8 @@ import {
 } from "../../utils/test-db.js";
 
 describeEachDialect("MediaRepository.findMany mimeType filter", (dialect) => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let ctx: DialectTestContext;
 
 	beforeEach(async () => {

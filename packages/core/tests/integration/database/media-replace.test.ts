@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it as vitestIt } from "vitest";
 
 import { MediaFolderRepository } from "../../../src/database/repositories/media-folders.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	describeEachDialect,
 	setupForDialect,
@@ -11,6 +12,8 @@ import {
 } from "../../utils/test-db.js";
 
 describeEachDialect("MediaRepository ready-file replacement", (dialect: DialectName) => {
+	const it: typeof vitestIt = (name, fn, options) =>
+		vitestIt(name, () => runWithContext({ editMode: false, siteId: "site-default" }, fn), options);
 	let ctx: DialectTestContext;
 
 	beforeEach(async () => {
