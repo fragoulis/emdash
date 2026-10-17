@@ -426,6 +426,17 @@ export class MediaRepository {
 	/**
 	 * Find the pending media row minted for a signed upload URL.
 	 */
+	async findReadyByStorageKey(storageKey: string): Promise<MediaItem | null> {
+		const row = await this.db
+			.selectFrom("media")
+			.selectAll()
+			.where("site_id", "=", this.siteId)
+			.where("storage_key", "=", storageKey)
+			.where("status", "=", "ready")
+			.executeTakeFirst();
+		return row ? this.rowToItem(row) : null;
+	}
+
 	async findPendingByStorageKey(storageKey: string): Promise<MediaItem | null> {
 		const row = await this.db
 			.selectFrom("media")

@@ -43,6 +43,7 @@ import type { MediaValue } from "../fields/types.js";
 import { getI18nConfig, getLocaleRank, resolveConfiguredLocale } from "../i18n/config.js";
 import { localeMatches, localeOrder } from "../i18n/query.js";
 import { ssrfSafeFetch, validateExternalUrl } from "../import/ssrf.js";
+import { newMediaStorageKey } from "../media/storage-key.js";
 import { markContentMediaUsageCollectionStaleSafely } from "../media/usage/content-refresh.js";
 import {
 	coalesceObjectCacheWrites,
@@ -2509,9 +2510,8 @@ async function resolveMedia(
 		}
 
 		// Generate filename and storage key
-		const storageId = ulid();
 		const finalFilename = filename || generateFilename(url, ext);
-		const storageKey = `${storageId}${ext}`;
+		const storageKey = newMediaStorageKey(ext);
 
 		// Get image dimensions if it's an image
 		let width: number | undefined;

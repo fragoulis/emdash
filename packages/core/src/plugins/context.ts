@@ -7,7 +7,6 @@
 
 import type { Kysely } from "kysely";
 import mime from "mime/lite";
-import { ulid } from "ulidx";
 
 import { GLOBAL_UPLOAD_ALLOWLIST } from "../api/handlers/media-allowlist.js";
 import { handleMediaDelete } from "../api/handlers/media.js";
@@ -48,6 +47,7 @@ import {
 } from "../import/ssrf.js";
 import { enrichImageMetadata } from "../media/enrich.js";
 import { matchesMimeAllowlist, normalizeMime } from "../media/mime.js";
+import { newMediaStorageKey } from "../media/storage-key.js";
 import { markContentMediaUsageCollectionStaleSafely } from "../media/usage/content-refresh.js";
 import { SchemaRegistry } from "../schema/registry.js";
 import { invalidateSiteSettingsCache } from "../settings/index.js";
@@ -991,7 +991,6 @@ function uploadStorageKey(
 	filename: string,
 	mimeType: string,
 ): { basename: string; storageKey: string } {
-	const keyPrefix = ulid();
 	const basename = filename.split("/").pop() ?? filename;
 	const dotIdx = basename.lastIndexOf(".");
 	const nameExt = dotIdx > 0 ? basename.slice(dotIdx + 1).toLowerCase() : "";
@@ -1003,7 +1002,7 @@ function uploadStorageKey(
 		nameType === mimeType
 			? nameExt
 			: (mime.getExtension(mimeType) ?? (nameExtAllowed ? nameExt : null));
-	return { basename, storageKey: ext ? `${keyPrefix}.${ext}` : keyPrefix };
+	return { basename, storageKey: newMediaStorageKey(ext ? `.${ext}` : "") };
 }
 
 /**

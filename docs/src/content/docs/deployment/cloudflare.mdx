@@ -209,16 +209,7 @@ Without `siteUrl`, `EMDASH_SITE_URL`, or `SITE_URL`, setup records the address i
 
 ## Public R2 access
 
-By default, media is served through EmDash's authenticated media route. If the bucket has a public custom domain, set that origin as `publicUrl` so generated media URLs use it:
-
-```js title="astro.config.mjs"
-storage: r2({
-	binding: "MEDIA",
-	publicUrl: "https://media.example.com",
-}),
-```
-
-Public bucket access applies to every reachable object, not only media. Automatic JSON backups use the `backups/` prefix in the same storage backend, so do not expose that prefix through the public domain. [Choose media storage](/deployment/storage/#public-access) explains the safe boundary.
+Keep the R2 bucket private. EmDash serves public media through its site-scoped file route. A public bucket domain bypasses site checks and can expose backups or transfer staging objects. Setting `publicUrl` does not change generated media URLs. See [Choose media storage](/deployment/storage/#public-access).
 
 ## Image transformation
 
