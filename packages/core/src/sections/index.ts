@@ -6,6 +6,7 @@
 
 import type { Kysely } from "kysely";
 
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import { encodeCursor, decodeCursor, type FindManyResult } from "../database/repositories/types.js";
 import type { Database } from "../database/types.js";
 import { getDb } from "../loader.js";
@@ -201,6 +202,7 @@ async function rowToSection(row: SectionRow, db: Kysely<Database>): Promise<Sect
 			.selectFrom("media")
 			.select("storage_key")
 			.where("id", "=", row.preview_media_id)
+			.where("site_id", "=", selectedSiteId())
 			.executeTakeFirst();
 
 		if (media) {

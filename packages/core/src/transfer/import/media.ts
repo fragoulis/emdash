@@ -17,6 +17,7 @@ import { computeContentHash, MAX_CONTENT_HASH_BYTES } from "../../utils/hash.js"
 import { TransferError } from "../errors.js";
 import type { MediaRecord } from "../format/kinds.js";
 import { mediaBlobPath } from "../format/paths.js";
+import { selectedPlanSiteId } from "../format/plan.js";
 import { MEDIA_STORAGE_KEY_ENTITY } from "../ops/identity-map.js";
 import { TransferStagedFileRepository } from "../ops/staged-files.js";
 import { putVerified } from "../staging/stage.js";
@@ -76,6 +77,7 @@ export async function writeMedia(
 		.selectFrom("media")
 		.select(["storage_key", "status"])
 		.where("id", "=", targetId)
+		.where("site_id", "=", selectedPlanSiteId(context.plan))
 		.executeTakeFirst();
 
 	let contentHash: string | null = null;
@@ -85,12 +87,17 @@ export async function writeMedia(
 			.selectFrom("media")
 			.select("content_hash")
 			.where("id", "=", targetId)
+			.where("site_id", "=", selectedPlanSiteId(context.plan))
 			.executeTakeFirstOrThrow();
 		contentHash = stored.content_hash;
 	} else {
 		const media = new MediaRepository(context.db);
 		if (!(await media.hasUploadAttempt(storageKey))) {
-			await media.createUploadAttempt(targetId, storageKey);
+			await media.createTransferUploadAttempt(
+				targetId,
+				storageKey,
+				selectedPlanSiteId(context.plan),
+			);
 		}
 		contentHash = await copyBlob(context, record, storageKey, bytes);
 	}

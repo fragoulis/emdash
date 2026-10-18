@@ -42,7 +42,7 @@ describeEachDialect("import verification stepping", (dialect) => {
 	});
 
 	it("ends a verify step once its byte budget is spent", { timeout: 300_000 }, async () => {
-		source = await setupForDialect(dialect);
+		source = await setupForDialect(dialect === "postgres" ? "sqlite" : dialect);
 		target = await setupForDialect(dialect);
 		const originStorage = createMemoryStorage();
 		const targetStorage = createMemoryStorage();

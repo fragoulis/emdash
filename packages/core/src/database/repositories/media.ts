@@ -199,6 +199,19 @@ export class MediaRepository {
 		if (!(await this.findById(mediaId))) {
 			throw new Error("Media does not belong to the selected site");
 		}
+		await this.insertUploadAttempt(mediaId, storageKey);
+	}
+
+	async createTransferUploadAttempt(
+		mediaId: string,
+		storageKey: string,
+		siteId: string,
+	): Promise<void> {
+		if (siteId !== this.siteId) throw new Error("Transfer site does not match the selected site");
+		await this.insertUploadAttempt(mediaId, storageKey);
+	}
+
+	private async insertUploadAttempt(mediaId: string, storageKey: string): Promise<void> {
 		const now = new Date().toISOString();
 		await this.db
 			.insertInto("_emdash_media_upload_attempts")

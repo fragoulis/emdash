@@ -1,0 +1,42 @@
+# Issue #6 media boundaries
+
+## Findings and changes
+
+- `sections/index.ts` read preview media by ID alone. A site could resolve another site's storage key. The lookup now requires the trusted selected site.
+- Media field validation loaded MIME data by ID without a site constraint. It now queries the selected site. It checks local media references on image and file fields even when there is no MIME allowlist, including nested dark variants.
+- Transfer media record reads through `byIds()` bypassed the export filter. Media export page reads, counts, folder checks, and ID reads now bind to the trusted selected site.
+- Transfer import and verification bind media reads to `plan.target.selectedSiteId`. Transfer upload-attempt creation checks this site against the active trusted site and records it explicitly.
+- Media usage current-source and content-usage joins now exclude local media occurrences whose ID belongs to another site. Usage reads without selected-site context fail closed.
+- The full import journey exposed missing selected-site IDs on taxonomy terms and content-taxonomy links. Both now use the plan's selected site. Taxonomy definitions remain shared.
+
+## PostgreSQL migration diagnosis
+
+An isolated `verify-stepping.test.ts` run reproduced the PostgreSQL setup failure. The test created two PostgreSQL schemas in one worker database. Migration `092_site_identity` calls `db.introspection.getTables()` without constraining results to the active schema. After the source schema migrates, introspection for the target schema sees the source schema's `site_id` columns and skips adding them. The migration then tries to index the target table, which lacks that column.
+
+Published migrations are immutable. The verification test now uses SQLite for the package source and PostgreSQL for the target in its PostgreSQL case. This tests PostgreSQL import and verification without creating two concurrently migrated PostgreSQL schemas. No production migration changed.
+
+## Regression evidence
+
+Tests failed before the media fixes for foreign section preview URLs and foreign media references. Final focused tests passed:
+
+- `site-media-boundaries.test.ts`: 2 passed. Covers section preview, transfer `byIds`, foreign and nested media validation, file fields without MIME rules, no-context denial, and usage lookup.
+- `site-media-postgres.test.ts`: 4 passed.
+- `media-usage-read-repository.test.ts`: 26 passed across SQLite and PostgreSQL.
+- `import-resume.test.ts`: 32 passed across SQLite and PostgreSQL.
+- `verify-stepping.test.ts`: 2 passed. PostgreSQL target path included.
+
+PostgreSQL test files ran sequentially to avoid schema collisions between Vitest workers.
+
+## Validation
+
+- `pnpm format`: passed.
+- `pnpm build`: passed.
+- `pnpm lint:quick`: passed.
+- `pnpm --silent lint:json | jq '.diagnostics | length'`: `0`.
+- `pnpm typecheck`: passed.
+- `git diff --check`: passed.
+- Full test suite not run, as required by repository instructions.
+
+## Commit status
+
+All required focused checks passed. Committed as `fix(core): scope media lookups to selected site`. No PR opened.
