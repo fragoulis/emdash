@@ -2380,6 +2380,7 @@ async function resolveSeedBylineAvatar(
 		.selectFrom("media")
 		.select("id")
 		.where("storage_key", "=", avatar.storageKey)
+		.where("site_id", "=", selectedSiteId())
 		.orderBy("id", "asc")
 		.executeTakeFirst();
 	if (existing) return { id: existing.id, created: false };
@@ -2406,7 +2407,11 @@ async function resolveSeedBylineAvatar(
  */
 async function deleteMediaRow(db: Kysely<Database>, id: string): Promise<void> {
 	try {
-		await db.deleteFrom("media").where("id", "=", id).execute();
+		await db
+			.deleteFrom("media")
+			.where("id", "=", id)
+			.where("site_id", "=", selectedSiteId())
+			.execute();
 	} catch (error) {
 		console.warn(`[seed] failed to clean up orphaned avatar media ${id}:`, error);
 	}

@@ -806,6 +806,17 @@ export class BylineRepository {
 		return touchedGroupShared;
 	}
 
+	private async assertAvatar(mediaId: string | null | undefined): Promise<void> {
+		if (!mediaId) return;
+		const media = await this.db
+			.selectFrom("media")
+			.select("id")
+			.where("id", "=", mediaId)
+			.where("site_id", "=", contentSiteId())
+			.executeTakeFirst();
+		if (!media) throw new Error("Avatar media not found in selected site");
+	}
+
 	async create(input: CreateBylineInput): Promise<BylineSummary> {
 		const id = ulid();
 		const now = new Date().toISOString();
@@ -813,6 +824,7 @@ export class BylineRepository {
 		// Validate customFields before opening the transaction so a bad
 		// value surfaces as VALIDATION_ERROR without aborting an insert.
 		const customFieldWrites = await this.resolveCustomFieldWrites(input.customFields);
+		await this.assertAvatar(input.avatarMediaId);
 
 		// translationOf joins the source's group; otherwise mint a fresh
 		// group = id (matches migration 040's backfill pattern).
@@ -878,6 +890,7 @@ export class BylineRepository {
 		// Validate customFields before opening the transaction so a bad
 		// value surfaces as VALIDATION_ERROR without aborting an update.
 		const customFieldWrites = await this.resolveCustomFieldWrites(input.customFields);
+		await this.assertAvatar(input.avatarMediaId);
 
 		const now = new Date().toISOString();
 		const updates: Record<string, unknown> = { updated_at: now };
