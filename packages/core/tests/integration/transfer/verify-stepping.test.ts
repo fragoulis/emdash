@@ -8,8 +8,11 @@ import { afterEach, expect, it } from "vitest";
 
 import { setI18nConfig } from "../../../src/i18n/config.js";
 import { verifyImportStep } from "../../../src/transfer/export/verify.js";
+import { parsePackagePath } from "../../../src/transfer/format/paths.js";
 import { advanceImport } from "../../../src/transfer/import/index.js";
 import { TransferStepBudget } from "../../../src/transfer/ops/budget.js";
+import { StagedPackageReader } from "../../../src/transfer/staging/package.js";
+import { readStreamBytes } from "../../../src/transfer/staging/stage.js";
 import {
 	describeEachDialect,
 	setupForDialect,
@@ -42,16 +45,26 @@ describeEachDialect("import verification stepping", (dialect) => {
 	});
 
 	it("ends a verify step once its byte budget is spent", { timeout: 300_000 }, async () => {
-		source = await setupForDialect(dialect === "postgres" ? "sqlite" : dialect);
-		target = await setupForDialect(dialect);
+		source = await setupForDialect(dialect);
 		const originStorage = createMemoryStorage();
 		const targetStorage = createMemoryStorage();
 		const site = await buildOriginSite(source.db, originStorage);
-		await seedTarget(target.db);
 		setI18nConfig({ defaultLocale: "en", locales: ["en", "fr"] });
 
 		const exported = await exportOrigin(phase(source.db), originStorage);
-		const operationId = await uploadPackage(target.db, targetStorage, exported);
+		for await (const { entry } of exported.index()) {
+			const parsed = parsePackagePath(entry.path);
+			if (parsed?.type !== "media") continue;
+			const bytes = await readStreamBytes(await exported.blob(parsed.sha256), entry.bytes);
+			await exported.stage.putVerified(entry.path, bytes, entry.bytes, entry.sha256);
+		}
+		const preserved = new StagedPackageReader(exported.stage);
+		await teardownForDialect(source);
+		source = undefined;
+
+		target = await setupForDialect(dialect);
+		await seedTarget(target.db);
+		const operationId = await uploadPackage(target.db, targetStorage, preserved);
 		await analyze(phase(target.db), targetStorage, operationId);
 		await executePlan(target.db, targetStorage, operationId, {
 			[site.ids.alice]: null,
