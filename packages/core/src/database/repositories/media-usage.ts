@@ -32,6 +32,7 @@ import type {
 	MediaUsageTable,
 } from "../types.js";
 import { validateIdentifier } from "../validate.js";
+import { selectedSiteId } from "./site-settings.js";
 import { decodeCursor, encodeCursor, InvalidCursorError, type FindManyResult } from "./types.js";
 
 type DatabaseExecutor = Kysely<Database> | Transaction<Database>;
@@ -1573,14 +1574,7 @@ export class MediaUsageRepository {
 	}
 
 	async findCurrentUsageByMediaId(mediaId: string): Promise<MediaUsageRecord[]> {
-		const rows = await this.db
-			.selectFrom("_emdash_media_usage_sources as s")
-			.innerJoin("_emdash_media_usage as u", (join) =>
-				join
-					.onRef("u.source_key", "=", "s.source_key")
-					.onRef("u.generation", "=", "s.current_generation"),
-			)
-			.select(currentUsageSelect)
+		const rows = await this.currentUsageBaseQuery()
 			.where("u.media_id", "=", mediaId)
 			.orderBy("s.source_key", "asc")
 			.orderBy("u.field_path", "asc")
@@ -2713,6 +2707,7 @@ export class MediaUsageRepository {
 	}
 
 	private currentUsageBaseQuery() {
+		const siteId = selectedSiteId();
 		return this.db
 			.selectFrom("_emdash_media_usage_sources as s")
 			.innerJoin("_emdash_media_usage as u", (join) =>
@@ -2720,10 +2715,25 @@ export class MediaUsageRepository {
 					.onRef("u.source_key", "=", "s.source_key")
 					.onRef("u.generation", "=", "s.current_generation"),
 			)
-			.select(currentUsageSelect);
+			.select(currentUsageSelect)
+			.where((eb) =>
+				eb.or([
+					eb("u.provider", "!=", "local"),
+					eb.not(
+						eb.exists(
+							eb
+								.selectFrom("media")
+								.select("id")
+								.whereRef("media.id", "=", "u.media_id")
+								.where("media.site_id", "!=", siteId),
+						),
+					),
+				]),
+			);
 	}
 
 	private currentContentMediaUsageBaseQuery() {
+		const siteId = selectedSiteId();
 		return this.db
 			.selectFrom("_emdash_media_usage as u")
 			.crossJoin("_emdash_media_usage_sources as s")
@@ -2735,7 +2745,21 @@ export class MediaUsageRepository {
 			.where("s.content_id", "is not", null)
 			.where("s.source_variant", "in", ["columns", "draft_overlay"])
 			.where(contentSourceMatchesActiveCollection("s", "collection.id"))
-			.where(CONTENT_SOURCE_ELIGIBILITY);
+			.where(CONTENT_SOURCE_ELIGIBILITY)
+			.where((eb) =>
+				eb.or([
+					eb("u.provider", "!=", "local"),
+					eb.not(
+						eb.exists(
+							eb
+								.selectFrom("media")
+								.select("id")
+								.whereRef("media.id", "=", "u.media_id")
+								.where("media.site_id", "!=", siteId),
+						),
+					),
+				]),
+			);
 	}
 
 	private async deleteOrphanCandidateIds(

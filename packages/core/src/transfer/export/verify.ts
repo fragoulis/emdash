@@ -51,7 +51,7 @@ import {
 	type MediaKeyIndex,
 } from "../format/media-refs.js";
 import { recordChunkPath } from "../format/paths.js";
-import type { SiteImportPlan } from "../format/plan.js";
+import { selectedPlanSiteId, type SiteImportPlan } from "../format/plan.js";
 import { DECIDED_SETTING_NAMES } from "../format/settings.js";
 import {
 	applyTransformations,
@@ -606,6 +606,7 @@ class VerifyStep {
 				.selectFrom("media")
 				.select(["id", "storage_key"])
 				.where("id", "in", batch)
+				.where("site_id", "=", selectedPlanSiteId(this.#input.plan))
 				.execute();
 			for (const row of found) rows.push({ id: row.id, storageKey: row.storage_key });
 		}

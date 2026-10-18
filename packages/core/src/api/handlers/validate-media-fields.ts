@@ -1,5 +1,6 @@
 import type { Kysely } from "kysely";
 
+import { selectedSiteId } from "../../database/repositories/site-settings.js";
 import type { Database } from "../../database/types.js";
 import { matchesMimeAllowlist, parseAllowedMimeTypes } from "../../media/mime.js";
 import { requestCached } from "../../request-cache.js";
@@ -45,14 +46,14 @@ function addTarget(
 	allowedMimeTypes: readonly string[] | undefined,
 	includeDarkVariant: boolean,
 ): void {
-	if (!allowedMimeTypes?.length || value == null) return;
-	targets.push({ path, value, allowedMimeTypes: [...allowedMimeTypes] });
+	if (value == null) return;
+	targets.push({ path, value, allowedMimeTypes: [...(allowedMimeTypes ?? [])] });
 	const ref = includeDarkVariant ? asMediaRef(value) : null;
 	if (ref && "darkVariant" in ref && ref.darkVariant != null) {
 		targets.push({
 			path: `${path}.darkVariant`,
 			value: ref.darkVariant,
-			allowedMimeTypes: [...allowedMimeTypes],
+			allowedMimeTypes: [...(allowedMimeTypes ?? [])],
 		});
 	}
 }
@@ -146,8 +147,7 @@ async function loadMediaFieldsForCollection(
 			continue;
 		}
 		const list = parseAllowedMimeTypes(row.validation);
-		if (!list) continue;
-		out.push({ slug: row.slug, type: row.type, allowedMimeTypes: list });
+		out.push({ slug: row.slug, type: row.type, allowedMimeTypes: list ?? [] });
 	}
 	return out;
 }
@@ -196,6 +196,7 @@ export async function validateMediaFields(
 				.selectFrom("media")
 				.select(["id", "mime_type"])
 				.where("id", "in", batch)
+				.where("site_id", "=", selectedSiteId())
 				.execute();
 			for (const r of rows) mimeById.set(r.id, r.mime_type);
 		}
@@ -228,7 +229,10 @@ export async function validateMediaFields(
 			mime = ref.mimeType;
 		}
 
-		if (!matchesMimeAllowlist(mime, target.allowedMimeTypes)) {
+		if (
+			target.allowedMimeTypes.length > 0 &&
+			!matchesMimeAllowlist(mime, target.allowedMimeTypes)
+		) {
 			return fail(`Field '${target.path}' does not accept ${mime}`);
 		}
 	}
