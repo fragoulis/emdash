@@ -480,9 +480,12 @@ class TableReader implements KindReader<RecordKind> {
 		const result = new Map<string, SitePackageRecord>();
 		for (const batch of chunks([...new Set(ids)], SQL_BATCH_SIZE)) {
 			const stored = batch.map((id) => this.#config.storedKey?.(id) ?? id);
-			const filter = this.#config.storedKey
-				? this.#config.filter?.({ db, options: this.#options, slugs: this.#slugs })
-				: null;
+			const filter =
+				this.#config.kind === "media"
+					? sql<boolean>`media.site_id = ${selectedSiteId()}`
+					: this.#config.storedKey
+						? this.#config.filter?.({ db, options: this.#options, slugs: this.#slugs })
+						: null;
 			const key = this.#config.storedKey ? sql.ref("options.name") : this.keyExpr();
 			const rows = await sql<Row>`
 				SELECT ${this.selectList()}
@@ -585,6 +588,7 @@ async function nullMissingFolders(
 			.selectFrom("media_folders")
 			.select("id")
 			.where("id", "in", batch)
+			.where("site_id", "=", selectedSiteId())
 			.execute();
 		for (const row of rows) found.add(row.id);
 	}
@@ -696,12 +700,15 @@ function configFor(kind: RecordKind): TableReaderConfig {
 			return {
 				...tableConfig("media"),
 				filter: ({ options }) =>
-					options.exportOperationId === undefined
-						? null
-						: sql<boolean>`media.id IN (
+					sql<boolean>`media.site_id = ${selectedSiteId()}${
+						options.exportOperationId === undefined
+							? sql``
+							: sql` AND media.id IN (
 							SELECT media_id FROM _emdash_transfer_media_blobs
 							WHERE operation_id = ${options.exportOperationId}
-						)`,
+						)`
+					}`,
+				countFilter: () => sql<boolean>`media.site_id = ${selectedSiteId()}`,
 				prepare: attachBlobs,
 				transform: forKind("media", nullMissingFolders),
 			};

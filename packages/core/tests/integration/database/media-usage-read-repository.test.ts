@@ -1,5 +1,5 @@
 import { sql } from "kysely";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, aroundEach } from "vitest";
 
 import { MediaUsageRepository } from "../../../src/database/repositories/media-usage.js";
 import { encodeCursor, InvalidCursorError } from "../../../src/database/repositories/types.js";
@@ -8,6 +8,7 @@ import {
 	type MediaUsageContentSourceVariant,
 } from "../../../src/media/usage/source-key.js";
 import { CONTENT_SOURCE_SCHEMA_VERSION } from "../../../src/media/usage/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SQL_BATCH_SIZE } from "../../../src/utils/chunks.js";
 import {
 	describeEachDialect,
@@ -19,6 +20,8 @@ import {
 describeEachDialect("MediaUsageRepository reads", (dialect) => {
 	let ctx: DialectTestContext;
 	let repo: MediaUsageRepository;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		ctx = await setupForDialect(dialect);
