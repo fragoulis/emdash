@@ -9,6 +9,7 @@
 
 import { sql, type Kysely } from "kysely";
 
+import { selectedSiteId } from "../../database/repositories/site-settings.js";
 import type { Database } from "../../database/types.js";
 import type { Storage } from "../../storage/types.js";
 import { createSha256 } from "../format/digest.js";
@@ -39,6 +40,7 @@ export async function listMediaCandidates(
 	let query = db
 		.selectFrom("media")
 		.select(["id", "storage_key", "status", "size"])
+		.where("site_id", "=", selectedSiteId())
 		.where((eb) =>
 			eb.or([
 				eb("status", "=", "ready"),
@@ -109,7 +111,10 @@ export async function loadMediaKeyRows(db: Db): Promise<Array<{ id: string; stor
 	const rows: Array<{ id: string; storageKey: string }> = [];
 	let after: string | null = null;
 	for (;;) {
-		let query = db.selectFrom("media").select(["id", "storage_key"]);
+		let query = db
+			.selectFrom("media")
+			.select(["id", "storage_key"])
+			.where("site_id", "=", selectedSiteId());
 		if (after !== null) query = query.where(sql<boolean>`${bytewise(db, "id")} > ${after}`);
 		const page = await query.orderBy(bytewise(db, "id")).limit(KEY_INDEX_PAGE).execute();
 		for (const row of page) rows.push({ id: row.id, storageKey: row.storage_key });
