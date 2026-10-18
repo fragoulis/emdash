@@ -4,9 +4,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runSystemCleanup } from "../../../src/cleanup.js";
 import { up } from "../../../src/database/migrations/100_site_media.js";
 import { createMigrator } from "../../../src/database/migrations/runner.js";
+import { BylineRepository } from "../../../src/database/repositories/byline.js";
 import { MediaFolderRepository } from "../../../src/database/repositories/media-folders.js";
 import { MediaRepository } from "../../../src/database/repositories/media.js";
 import { runWithContext } from "../../../src/request-context.js";
+import { listMediaCandidates, loadMediaKeyRows } from "../../../src/transfer/export/media.js";
 import {
 	createTestPostgresDatabase,
 	hasPgTestDatabase,
@@ -82,6 +84,39 @@ describe.skipIf(!hasPgTestDatabase)("PostgreSQL media site ownership", () => {
 		expect((await sql`SELECT id FROM media WHERE status = 'pending'`.execute(ctx.db)).rows).toEqual(
 			[],
 		);
+	});
+
+	it("denies foreign avatars and exports only the selected site's media", async () => {
+		ctx = await setupTestPostgresDatabase();
+		await sql`INSERT INTO _emdash_sites (id, slug) VALUES ('site-foo', 'foo')`.execute(ctx.db);
+		const visit = <T>(siteId: string, fn: () => T) =>
+			runWithContext({ editMode: false, siteId }, fn);
+		const media = new MediaRepository(ctx.db);
+		const bylines = new BylineRepository(ctx.db);
+		const foreign = await visit("site-default", () =>
+			media.create({ filename: "secret.png", mimeType: "image/png", storageKey: "secret.png" }),
+		);
+		await visit("site-foo", async () => {
+			await expect(
+				bylines.create({ slug: "author", displayName: "Author", avatarMediaId: foreign.id }),
+			).rejects.toThrow(/selected site/);
+			const own = await bylines.create({ slug: "author", displayName: "Author" });
+			await expect(bylines.update(own.id, { avatarMediaId: foreign.id })).rejects.toThrow(
+				/selected site/,
+			);
+			expect((await bylines.findById(own.id))?.avatarMediaId).toBeNull();
+			expect(await listMediaCandidates(ctx.db, null, 10)).toEqual([]);
+			expect(await loadMediaKeyRows(ctx.db)).toEqual([]);
+		});
+		await visit("site-default", async () => {
+			expect((await listMediaCandidates(ctx.db, null, 10)).map((item) => item.id)).toEqual([
+				foreign.id,
+			]);
+			expect(await loadMediaKeyRows(ctx.db)).toEqual([
+				{ id: foreign.id, storageKey: "secret.png" },
+			]);
+		});
+		await expect(loadMediaKeyRows(ctx.db)).rejects.toThrow(/server-selected site/);
 	});
 
 	it("denies cross-site reads, edits, folder assignments, and upload attempt access", async () => {
