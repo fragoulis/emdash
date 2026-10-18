@@ -126,7 +126,7 @@ export async function exportOrigin(
 export async function uploadPackage(
 	db: Kysely<Database>,
 	storage: MemoryStorage,
-	exported: ExportPackageReader,
+	exported: StagedPackageReader,
 ): Promise<string> {
 	const manifest = await exported.manifest();
 	const repo = new TransferOperationRepository(db);
