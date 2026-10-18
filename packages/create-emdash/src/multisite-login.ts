@@ -26,7 +26,38 @@ async function loadClerkUI(frontendApi: string): Promise<ClerkUIConstructor> {
   return clerkUI;
 }
 
-export function ClerkLogin({ publishableKey, title, description, errorLabel }) {
+const clerkLocalizations = {
+  ar: () => import("@clerk/localizations/ar-SA").then((module) => module.arSA),
+  bn: () => import("@clerk/localizations/bn-IN").then((module) => module.bnIN),
+  ca: () => import("@clerk/localizations/ca-ES").then((module) => module.caES),
+  "zh-CN": () => import("@clerk/localizations/zh-CN").then((module) => module.zhCN),
+  "zh-TW": () => import("@clerk/localizations/zh-TW").then((module) => module.zhTW),
+  hr: () => import("@clerk/localizations/hr-HR").then((module) => module.hrHR),
+  cs: () => import("@clerk/localizations/cs-CZ").then((module) => module.csCZ),
+  da: () => import("@clerk/localizations/da-DK").then((module) => module.daDK),
+  nl: () => import("@clerk/localizations/nl-NL").then((module) => module.nlNL),
+  "en-GB": () => import("@clerk/localizations/en-GB").then((module) => module.enGB),
+  fa: () => import("@clerk/localizations/fa-IR").then((module) => module.faIR),
+  fr: () => import("@clerk/localizations/fr-FR").then((module) => module.frFR),
+  de: () => import("@clerk/localizations/de-DE").then((module) => module.deDE),
+  he: () => import("@clerk/localizations/he-IL").then((module) => module.heIL),
+  hi: () => import("@clerk/localizations/hi-IN").then((module) => module.hiIN),
+  hu: () => import("@clerk/localizations/hu-HU").then((module) => module.huHU),
+  id: () => import("@clerk/localizations/id-ID").then((module) => module.idID),
+  ja: () => import("@clerk/localizations/ja-JP").then((module) => module.jaJP),
+  nb: () => import("@clerk/localizations/nb-NO").then((module) => module.nbNO),
+  pl: () => import("@clerk/localizations/pl-PL").then((module) => module.plPL),
+  "pt-BR": () => import("@clerk/localizations/pt-BR").then((module) => module.ptBR),
+  "pt-PT": () => import("@clerk/localizations/pt-PT").then((module) => module.ptPT),
+  "es-419": () => import("@clerk/localizations/es-ES").then((module) => module.esES),
+  "es-ES": () => import("@clerk/localizations/es-ES").then((module) => module.esES),
+  sv: () => import("@clerk/localizations/sv-SE").then((module) => module.svSE),
+  th: () => import("@clerk/localizations/th-TH").then((module) => module.thTH),
+  tr: () => import("@clerk/localizations/tr-TR").then((module) => module.trTR),
+  uk: () => import("@clerk/localizations/uk-UA").then((module) => module.ukUA),
+};
+
+export function ClerkLogin({ publishableKey, locale, title, description, errorLabel }) {
   const signInRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState(false);
 
@@ -36,7 +67,9 @@ export function ClerkLogin({ publishableKey, title, description, errorLabel }) {
     let active = true;
     let mounted = false;
 
-    void loadClerkUI(client.frontendApi).then((ClerkUI) => client.load({ ui: { ClerkUI } })).then(() => {
+    const loadLocalization = clerkLocalizations[locale]?.() ?? Promise.resolve(undefined);
+    void Promise.all([loadClerkUI(client.frontendApi), loadLocalization])
+      .then(([ClerkUI, localization]) => client.load({ ui: { ClerkUI }, localization })).then(() => {
       if (!active) return;
       if (client.user) {
         window.location.replace("/admin");
@@ -94,7 +127,7 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
   </head>
   <body>
     <ClerkLogin client:load publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-      title={labels.signIn} description={labels.signInDescription} errorLabel={labels.signInError} />
+      locale={locale} title={labels.signIn} description={labels.signInDescription} errorLabel={labels.signInError} />
   </body>
 </html>
 `;

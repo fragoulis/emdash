@@ -4,3 +4,5 @@
 ---
 
 Adds embedded Clerk sign-in to newly generated multisite admin projects, so staff can sign in directly and continue to `/admin` after authentication.
+
+Clerk's sign-in form uses the selected admin language when Clerk supports it, with English as the fallback.
