@@ -407,6 +407,7 @@ export async function main(templateSource: typeof downloadTemplate = downloadTem
 				pkg.dependencies["@clerk/backend"] = "^3.23.1";
 				pkg.dependencies["@clerk/shared"] = "^4.39.1";
 				pkg.dependencies["@clerk/clerk-js"] = "^6.38.1";
+				pkg.dependencies["@clerk/localizations"] = "^4.23.0";
 				pkg.dependencies["@cloudflare/kumo"] = "^2.6.0";
 				pkg.dependencies["@emdash-cms/admin"] = "^1.2.0";
 				pkg.scripts.build = "node --env-file-if-exists=.env ./build.mjs";

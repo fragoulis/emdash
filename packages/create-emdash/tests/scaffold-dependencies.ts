@@ -19,7 +19,7 @@ export function linkScaffoldDependencies(project: string): void {
 	}
 	const clerkDependencies = resolve(dependencies, "@clerk");
 	mkdirSync(clerkDependencies);
-	for (const name of ["backend", "shared", "clerk-js"]) {
+	for (const name of ["backend", "shared", "clerk-js", "localizations"]) {
 		symlinkSync(
 			resolve(root, "packages/create-emdash/node_modules/@clerk", name),
 			resolve(clerkDependencies, name),

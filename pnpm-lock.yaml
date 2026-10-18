@@ -2336,6 +2336,9 @@ importers:
       '@clerk/clerk-js':
         specifier: ^6.38.1
         version: 6.40.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@6.0.3)(use-sync-external-store@1.6.0(react@19.2.4))(zod@4.6.5)
+      '@clerk/localizations':
+        specifier: ^4.23.0
+        version: 4.24.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@clerk/shared':
         specifier: ^4.39.1
         version: 4.41.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -4402,6 +4405,10 @@ packages:
 
   '@clerk/clerk-js@6.40.0':
     resolution: {integrity: sha512-2MnZ/ygvuCmeuqfXQmsxfQaLN/SSJvQbtT2cLXbgr5VKr3KmZFZBVvX977fG3eZ6pprl4J9pO+I2bbe6BvColg==}
+    engines: {node: '>=20.9.0'}
+
+  '@clerk/localizations@4.24.0':
+    resolution: {integrity: sha512-eodTZgzv+ANC+eHPcT2r805C8OYAbvoMcQ40w1WUiMRibUSf5GfUECGDeoV+Lo+dy4v55TCEJL9VrObxwe4fZA==}
     engines: {node: '>=20.9.0'}
 
   '@clerk/shared@4.41.0':
@@ -14735,6 +14742,13 @@ snapshots:
       - use-sync-external-store
       - utf-8-validate
       - zod
+
+  '@clerk/localizations@4.24.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      '@clerk/shared': 4.41.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    transitivePeerDependencies:
+      - react
+      - react-dom
 
   '@clerk/shared@4.41.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
