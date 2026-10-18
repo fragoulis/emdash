@@ -1,13 +1,62 @@
 export const clerkLoginSource = `import { Clerk } from "@clerk/clerk-js";
-import { LinkButton } from "@cloudflare/kumo";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ClerkUIConstructor } from "@clerk/shared/ui";
 
-export function ClerkLogin({ publishableKey, signInUrl, title, description, continueLabel }) {
+declare global {
+  interface Window {
+    __internal_ClerkUICtor?: ClerkUIConstructor;
+  }
+}
+
+async function loadClerkUI(frontendApi: string): Promise<ClerkUIConstructor> {
+  if (!window.__internal_ClerkUICtor) {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = \`https://\${frontendApi}/npm/@clerk/ui@1/dist/ui.browser.js\`;
+      script.async = true;
+      script.crossOrigin = "anonymous";
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Failed to load Clerk UI components"));
+      document.head.appendChild(script);
+    });
+  }
+
+  const clerkUI = window.__internal_ClerkUICtor;
+  if (!clerkUI) throw new Error("Clerk UI components were unavailable after loading");
+  return clerkUI;
+}
+
+export function ClerkLogin({ publishableKey, title, description, errorLabel }) {
+  const signInRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState(false);
+
   useEffect(() => {
     const client = new Clerk(publishableKey);
-    void client.load().then(() => {
-      if (client.user) window.location.replace("/admin");
-    }).catch(() => {});
+    const node = signInRef.current;
+    let active = true;
+    let mounted = false;
+
+    void loadClerkUI(client.frontendApi).then((ClerkUI) => client.load({ ui: { ClerkUI } })).then(() => {
+      if (!active) return;
+      if (client.user) {
+        window.location.replace("/admin");
+        return;
+      }
+      if (node) {
+        client.mountSignIn(node, {
+          forceRedirectUrl: "/admin",
+          signUpForceRedirectUrl: "/admin",
+        });
+        mounted = true;
+      }
+    }).catch(() => {
+      if (active) setError(true);
+    });
+
+    return () => {
+      active = false;
+      if (mounted && node) client.unmountSignIn(node);
+    };
   }, [publishableKey]);
 
   return (
@@ -16,7 +65,8 @@ export function ClerkLogin({ publishableKey, signInUrl, title, description, cont
         <p className="text-kumo-brand font-semibold mb-5" dir="ltr">EmDash</p>
         <h1 className="text-2xl font-semibold mb-3" dir="auto">{title}</h1>
         <p className="text-kumo-subtle mb-6" dir="auto">{description}</p>
-        <LinkButton href={signInUrl} variant="primary" external><span dir="auto">{continueLabel}</span></LinkButton>
+        {error ? <p className="text-kumo-danger mb-4" role="alert" dir="auto">{errorLabel}</p> : null}
+        <div ref={signInRef} />
       </section>
     </main>
   );
@@ -27,14 +77,11 @@ export const clerkLoginPageSource = `---
 import adminStylesUrl from "@emdash-cms/admin/styles.css?url";
 import { getLocaleDir, loadMessages, resolveLocale } from "@emdash-cms/admin/locales";
 import { translateCentralAdminLabels } from "@emdash-cms/admin/locales/server";
-import { signInUrl } from "../../../clerk.mjs";
 import { ClerkLogin } from "../components/ClerkLogin.js";
 
 export const prerender = false;
 const locale = resolveLocale(Astro.request);
 const labels = translateCentralAdminLabels(await loadMessages(locale));
-const hostedSignIn = new URL(signInUrl);
-hostedSignIn.searchParams.set("redirect_url", process.env.EMDASH_ADMIN_ORIGIN + "/admin");
 Astro.response.headers.set("Cache-Control", "private, no-store");
 ---
 <!doctype html>
@@ -47,8 +94,7 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
   </head>
   <body>
     <ClerkLogin client:load publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-      signInUrl={hostedSignIn.toString()} title={labels.signIn} description={labels.signInDescription}
-      continueLabel={labels.continueToClerk} />
+      title={labels.signIn} description={labels.signInDescription} errorLabel={labels.signInError} />
   </body>
 </html>
 `;

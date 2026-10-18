@@ -89,6 +89,7 @@ const CENTRAL_ADMIN_MESSAGES = {
 	noSiteDescription: msg`You are signed in, but you do not have access to a site yet.`,
 	signInDescription: msg`Sign in with your staff account to manage sites.`,
 	continueToClerk: msg`Continue to Clerk`,
+	signInError: msg`Could not load sign-in. Try again.`,
 	signOut: msg`Sign out`,
 	signOutError: msg`Could not sign out. Try again.`,
 };
@@ -105,6 +106,7 @@ export function translateCentralAdminLabels(messages: Messages) {
 		noSiteDescription: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.noSiteDescription),
 		signInDescription: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signInDescription),
 		continueToClerk: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.continueToClerk),
+		signInError: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signInError),
 		signOut: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signOut),
 		signOutError: resolveToolbarMessage(messages, CENTRAL_ADMIN_MESSAGES.signOutError),
 	};
