@@ -9,13 +9,23 @@ import { join } from "node:path";
 import { runCommand } from "citty";
 import { consola } from "consola";
 import { sql } from "kysely";
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import {
+	describe,
+	it,
+	expect,
+	beforeEach,
+	afterEach,
+	beforeAll,
+	afterAll,
+	aroundEach,
+} from "vitest";
 
 import { exportSeed } from "../../../src/cli/commands/export-seed.js";
 import { seedCommand } from "../../../src/cli/commands/seed.js";
 import { createDatabase } from "../../../src/database/connection.js";
 import { runMigrations } from "../../../src/database/migrations/runner.js";
 import { ContentRepository } from "../../../src/database/repositories/content.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { applySeed } from "../../../src/seed/apply.js";
 import type { SeedFile } from "../../../src/seed/types.js";
@@ -23,6 +33,8 @@ import { validateSeed } from "../../../src/seed/validate.js";
 
 describe("CLI Seed Commands", () => {
 	let tempDir: string;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		tempDir = await mkdtemp(join(tmpdir(), "emdash-cli-test-"));
@@ -259,7 +271,16 @@ describe("CLI Seed Commands", () => {
 			const seedPath = join(tempDir, "seed.json");
 			await writeFile(seedPath, JSON.stringify(seed));
 			await runCommand(seedCommand, {
-				rawArgs: [seedPath, "--cwd", tempDir, "--database", "seed.db", ...flags],
+				rawArgs: [
+					seedPath,
+					"--site-id",
+					"site-default",
+					"--cwd",
+					tempDir,
+					"--database",
+					"seed.db",
+					...flags,
+				],
 			});
 
 			const db = createDatabase({ url: `file:${join(tempDir, "seed.db")}` });

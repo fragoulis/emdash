@@ -51,7 +51,7 @@ describe("export-seed stdout is the seed document alone (#2774)", () => {
 	});
 
 	function run(...args: string[]): CliResult {
-		return runDatabase(dbPath, ...args);
+		return runDatabase(dbPath, "--site-id", "foo", ...args);
 	}
 
 	function runDatabase(databasePath: string, ...args: string[]): CliResult {
@@ -63,6 +63,15 @@ describe("export-seed stdout is the seed document alone (#2774)", () => {
 		if (result.error) throw result.error;
 		return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 	}
+
+	it("requires an explicit site ID without mutating the database", async () => {
+		const before = await readFile(dbPath);
+		const result = runDatabase(dbPath);
+
+		expect(result.code).not.toBe(0);
+		expect(`${result.stdout}${result.stderr}`).toMatch(/site-id/i);
+		expect(await readFile(dbPath)).toEqual(before);
+	});
 
 	it("redirects to a file that parses as JSON", () => {
 		const result = run("--with-content", "all");
@@ -88,7 +97,7 @@ describe("export-seed stdout is the seed document alone (#2774)", () => {
 		const emptyPath = join(projectRoot, "empty.db");
 		await writeFile(emptyPath, "");
 
-		const result = runDatabase(emptyPath);
+		const result = runDatabase(emptyPath, "--site-id", "foo");
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("Run `emdash migrate` before exporting it.");
@@ -105,7 +114,7 @@ describe("export-seed stdout is the seed document alone (#2774)", () => {
 		await outdatedDb.destroy();
 		const before = await readFile(outdatedPath);
 
-		const result = runDatabase(outdatedPath);
+		const result = runDatabase(outdatedPath, "--site-id", "foo");
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("1 pending migration");
@@ -123,7 +132,7 @@ describe("export-seed stdout is the seed document alone (#2774)", () => {
 		await newerDb.destroy();
 		const before = await readFile(newerPath);
 
-		const result = runDatabase(newerPath);
+		const result = runDatabase(newerPath, "--site-id", "foo");
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("Upgrade EmDash before exporting it.");
