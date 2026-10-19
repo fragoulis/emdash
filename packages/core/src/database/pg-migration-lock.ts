@@ -34,7 +34,14 @@ export const MIGRATION_LOCK_BUSY_MESSAGE = "EMDASH_MIGRATION_LOCK_BUSY";
  * blocking adapter, and using the same id keeps old and new builds mutually
  * exclusive on the same lock.
  */
-const KYSELY_PG_MIGRATION_LOCK_ID = BigInt("3853314791062309107");
+export const KYSELY_PG_MIGRATION_LOCK_ID = BigInt("3853314791062309107");
+
+export async function acquirePostgresMigrationLock<DB>(db: Kysely<DB>): Promise<void> {
+	const result = await sql<{ acquired: boolean }>`
+		select pg_try_advisory_xact_lock(${sql.lit(KYSELY_PG_MIGRATION_LOCK_ID)}) as acquired
+	`.execute(db);
+	if (!result.rows[0]?.acquired) throw new Error(MIGRATION_LOCK_BUSY_MESSAGE);
+}
 
 /**
  * Extends the stock adapter so every capability flag and `instanceof` check
@@ -46,12 +53,7 @@ class PostgresAdapter extends KyselyPostgresAdapter {
 		// Transaction-level lock, like the stock adapter: Postgres supports
 		// transactional DDL, so `db` here is the migration transaction and
 		// the lock is released automatically on commit/rollback.
-		const result = await sql<{ acquired: boolean }>`
-			select pg_try_advisory_xact_lock(${sql.lit(KYSELY_PG_MIGRATION_LOCK_ID)}) as acquired
-		`.execute(db);
-		if (!result.rows[0]?.acquired) {
-			throw new Error(MIGRATION_LOCK_BUSY_MESSAGE);
-		}
+		await acquirePostgresMigrationLock(db);
 	}
 }
 

@@ -15,7 +15,8 @@ vi.mock("virtual:emdash/seed", () => ({
 }));
 
 import { POST as postSetup } from "../../../src/astro/routes/api/setup/index.js";
-import { OptionsRepository } from "../../../src/database/repositories/options.js";
+import { SiteSettingsRepository } from "../../../src/database/repositories/site-settings.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { applySeed } from "../../../src/seed/apply.js";
 import {
 	describeEachDialect,
@@ -47,13 +48,15 @@ async function postWizard(
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(body),
 	});
-	return postSetup({
-		params: {},
-		url: new URL(request.url),
-		request,
-		locals: { emdash: { db: ctx.db, config, storage: undefined } },
-		// eslint-disable-next-line typescript/no-unsafe-type-assertion -- minimal stub
-	} as unknown as APIContext);
+	return runWithContext({ editMode: false, siteId: "site-default" }, () =>
+		postSetup({
+			params: {},
+			url: new URL(request.url),
+			request,
+			locals: { emdash: { db: ctx.db, config, storage: undefined } },
+			// eslint-disable-next-line typescript/no-unsafe-type-assertion -- minimal stub
+		} as unknown as APIContext),
+	);
 }
 
 describeEachDialect("POST /setup site title and tagline", (dialect) => {
@@ -61,10 +64,12 @@ describeEachDialect("POST /setup site title and tagline", (dialect) => {
 
 	beforeEach(async () => {
 		ctx = await setupForDialect(dialect);
-		await applySeed(
-			ctx.db,
-			{ version: "1", settings: { ...templateSettings }, collections: [] },
-			{ onConflict: "skip" },
+		await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+			applySeed(
+				ctx.db,
+				{ version: "1", settings: { ...templateSettings }, collections: [] },
+				{ onConflict: "skip" },
+			),
 		);
 	});
 
@@ -82,9 +87,16 @@ describeEachDialect("POST /setup site title and tagline", (dialect) => {
 			});
 			expect(response.status).toBe(200);
 
-			const options = new OptionsRepository(ctx.db);
-			expect(await options.get("site:title")).toBe("Persistence Test 729");
-			expect(await options.get("site:tagline")).toBe("Purple Otter 418");
+			const options = new SiteSettingsRepository(ctx.db);
+			const values = await runWithContext(
+				{ editMode: false, siteId: "site-default" },
+				async () => ({
+					title: await options.get("title"),
+					tagline: await options.get("tagline"),
+				}),
+			);
+			expect(values.title).toBe("Persistence Test 729");
+			expect(values.tagline).toBe("Purple Otter 418");
 		},
 	);
 
@@ -96,7 +108,10 @@ describeEachDialect("POST /setup site title and tagline", (dialect) => {
 		});
 		expect(response.status).toBe(200);
 
-		const options = new OptionsRepository(ctx.db);
-		expect(await options.get("site:tagline")).toBe("");
+		const options = new SiteSettingsRepository(ctx.db);
+		const tagline = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+			options.get("tagline"),
+		);
+		expect(tagline).toBe("");
 	});
 });

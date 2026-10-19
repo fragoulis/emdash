@@ -440,7 +440,7 @@ export interface MigrationTable {
 // Schema Registry Tables
 
 export interface CollectionTable {
-	site_id: Generated<string>;
+	site_id: Generated<string | null>;
 	id: string;
 	slug: string;
 	label: string;
