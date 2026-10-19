@@ -8,8 +8,12 @@ Terms for managing multiple sites in one EmDash installation.
 A blog with its own content, Astro pages, and theme. A site may have more than one hostname.
 _Avoid_: Tenant, blog (when discussing access or data ownership)
 
-**Admin area**:
+**Central admin**:
 The shared interface where staff sign in and manage sites. It has its own hostname, separate from public site hostnames.
+_Avoid_: Admin area
+
+**System administration**:
+The super-admin-only area within central admin for managing sites across the system. It does not require a selected site.
 
 **Site subdomain**:
 A public hostname assigned to a site under the installation's shared domain. It works before the site has a custom domain.
