@@ -1,19 +1,21 @@
 # Local multi-site installation
 
-Use this installation to test `create-emdash`, `create-emdash site`, and site-aware core behavior with real EmDash content. It runs two public sites, `default.localhost` and `foo.localhost`, through one Node host and one PostgreSQL database. The generated project and database state are local and ignored by Git.
+Use this installation to test `create-emdash`, `create-emdash site`, and site-aware core behavior with real EmDash content. It runs explicit public sites at `foo.localhost` and `bar.localhost` through one Node host and one PostgreSQL database. The generated project and database state are local and ignored by Git.
 
 ## Set up and run
 
-1. Install dependencies and build the workspace with `pnpm install --frozen-lockfile && pnpm build`. Start Docker. Provide a local root `.env` with nonempty `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_BOOTSTRAP_USER_ID`. Do not commit these values.
-2. Run `bash infra/local-install/run.sh setup` from the repository root. This copies the local blog template through the generator, sets up the default site, runs `create-emdash site foo`, checks public isolation, and builds both sites with the local Clerk configuration. The first run takes longer than later reuse.
-3. Run `bash infra/local-install/run.sh start`. Open `http://default.localhost:4321/` and `http://foo.localhost:4321/`. The admin hostname is `http://localhost:4321/`. Protected admin routes beyond setup and sign-in are not yet enabled by the generated host.
+1. Install dependencies and build the workspace with `pnpm install --frozen-lockfile && pnpm build`. Start Docker. Provide a local root `.env` with nonempty `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_BOOTSTRAP_USER_ID`. Keep these values local and do not commit them.
+2. Run `bash infra/local-install/run.sh setup` from the repository root. This generates the project, starts its host to initialize shared definitions with zero sites, creates explicit `foo` and `bar` sites, checks public isolation, and builds both presentations. The first run takes longer than later reuse.
+3. Run `bash infra/local-install/run.sh start`. Open `http://foo.localhost:4321/` and `http://bar.localhost:4321/`. The central admin is at `http://localhost:4321/`.
 
 `setup` reuses the installation if its tracked source inputs have not changed. It refuses stale output when an input changes. Run `bash infra/local-install/run.sh reset` to delete the generated project and its disposable PostgreSQL container, then run `setup` again. Reset deletes any manual content changes in that installation.
 
-## Test site behavior
+## Test site and admin behavior
 
 Run `bash infra/local-install/run.sh check` for a fresh, isolated end-to-end check without changing the persistent installation. Build the workspace first. CI runs this check from a clean checkout. The check uses a locally signed Clerk fixture and does not contact a live Clerk account.
 
-For manual inspection, run `setup` and `start`, then visit each public hostname. The generated project is at `templates/.astro/local-install/site/`. The host selects the site from the request hostname; use the public hostnames above for site-facing requests, not a client-supplied site ID. The admin hostname is separate. The generated host blocks most protected admin routes, so this installation cannot yet verify real admin authorization.
+For manual inspection, run `setup` and `start`, then visit both public hostnames and the central admin. The generated project is at `templates/.astro/local-install/site/`. Public requests use their registered hostnames; the client cannot select a site by ID. A super admin signs in and lands on System administration at `/sites`. An empty Sites list, explicit site selection, and the ordinary-staff `/no-access` page are supported. Site membership management and ordinary staff access are not implemented.
 
-Initial setup removes remote featured images from the disposable seed to avoid network downloads. The site command seeds Foo from the starter seed, then the check changes one Foo post and menu item to verify isolation. The persistent installation retains those database changes for inspection. Add new end-to-end assertions to `packages/create-emdash/tests/multisite-setup.test.ts` when they concern the generated host. Run only the relevant test file for core work that has its own test seam. Reset the persistent installation after changes to generator, template, core, admin, or lockfile inputs before trusting its rendered output.
+The `src/default/` generated build folder contains shared admin and starter presentation source. It does not register a public default site. Setup and development-bypass endpoints are blocked on the generated multi-site host.
+
+Initial setup removes remote featured images from the disposable seed to avoid network downloads. The site command seeds Foo and Bar from the starter seed, then the check changes one Foo post and menu item to verify isolation. The persistent installation retains those database changes for inspection. Add new end-to-end assertions to `packages/create-emdash/tests/multisite-setup.test.ts` when they concern the generated host. Run only the relevant test file for core work that has its own test seam. Reset the persistent installation after changes to generator, template, core, admin, or lockfile inputs before trusting its rendered output.
