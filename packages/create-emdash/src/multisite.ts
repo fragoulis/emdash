@@ -47,7 +47,7 @@ export function prepareDefaultPresentation(projectDir: string): void {
 	writeFileSync(resolve(projectDir, "host.mjs"), defaultHostSource);
 	writeFileSync(resolve(projectDir, "build.mjs"), buildSource);
 	writeFileSync(resolve(projectDir, "clerk.mjs"), clerkSource);
-	writeFileSync(resolve(destination, "pages/clerk-login.astro"), clerkLoginPageSource);
+	writeFileSync(resolve(destination, "pages/login.astro"), clerkLoginPageSource);
 	mkdirSync(resolve(destination, "pages/site"), { recursive: true });
 	writeFileSync(resolve(destination, "pages/sites.astro"), sitesPageSource);
 	writeFileSync(resolve(destination, "pages/site/[slug].astro"), sitesPageSource);

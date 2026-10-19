@@ -147,12 +147,12 @@ const server = createServer(async (request, response) => {
   }
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   if (host === adminHost) {
-    if (path === "/_emdash/admin/login" && request.method === "GET") {
-      response.writeHead(302, { Location: "/clerk-login", "Cache-Control": "no-store" });
+    if ((path === "/_emdash/admin/login" || path === "/clerk-login") && request.method === "GET") {
+      response.writeHead(302, { Location: "/login", "Cache-Control": "no-store" });
       response.end();
       return;
     }
-    if (path === "/clerk-login" && request.method === "GET") {
+    if (path === "/login" && request.method === "GET") {
       serve(request, response, "default");
       return;
     }
@@ -187,7 +187,7 @@ const server = createServer(async (request, response) => {
         if (path.startsWith("/_emdash/api/")) {
           response.writeHead(401, { "Cache-Control": "no-store" });
         } else {
-          response.writeHead(302, { Location: "/_emdash/admin/login", "Cache-Control": "no-store" });
+          response.writeHead(302, { Location: "/login", "Cache-Control": "no-store" });
         }
         response.end();
         return;
@@ -247,7 +247,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD" ||
-    /^\\/(?:admin|preview|sites?|clerk-login)(?:\\/|$)/.test(path) || path === "/clerk-login" ||
+    /^\\/(?:admin|preview|sites?|login|clerk-login)(?:\\/|$)/.test(path) || path === "/clerk-login" ||
     path.startsWith("/_emdash/") && !publicApiPath.test(path)) {
     response.writeHead(421);
     response.end();
