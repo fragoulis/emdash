@@ -359,6 +359,10 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		const fooHome = resolve(project, "src/foo/pages/index.astro");
 		const fooPresentation = `${readFileSync(fooHome, "utf8")}\n<p>Foo presentation marker</p>\n`;
 		writeFileSync(fooHome, fooPresentation);
+		writeFileSync(
+			resolve(project, "src/foo/pages/café.astro"),
+			"<html><body>Unicode public route</body></html>",
+		);
 		expect(addSite("foo")).toContain("Site foo registered");
 		expect(readFileSync(fooHome, "utf8")).toBe(fooPresentation);
 		expect(query("SELECT count(*) FROM ec_posts")).toBe(beforeRetry);
@@ -390,6 +394,20 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect(hostOutput).not.toContain("Public site: http://default.localhost");
 		expect(query("SELECT count(*) FROM _emdash_sites")).toBe("2");
 		const callsBeforePublic = clerk.state.requests;
+		for (const path of [
+			"/%5femdash/api/setup/status",
+			"/%5femdash/api/setup/dev-bypass",
+			"/%61dmin",
+		]) {
+			const denied = await request(port, "foo.localhost", path);
+			expect(denied.status, path).toBe(421);
+			expect(denied.body).not.toContain('"needsSetup"');
+			expect(denied.body).not.toContain('"dev-bypass"');
+		}
+		expect((await request(port, "foo.localhost", "/%zz")).status).toBe(421);
+		const unicodePublic = await request(port, "foo.localhost", "/caf%C3%A9");
+		expect(unicodePublic.status).toBe(200);
+		expect(unicodePublic.body).toContain("Unicode public route");
 		const fooPublic = await request(port, "foo.localhost", "/");
 		const barPublic = await request(port, "bar.localhost", "/");
 		expect(fooPublic.body).toContain("Foo only marker");

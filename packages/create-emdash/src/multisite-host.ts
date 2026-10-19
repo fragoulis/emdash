@@ -107,7 +107,14 @@ const server = createServer(async (request, response) => {
     response.end();
     return;
   }
-  const path = new URL(request.url ?? "/", "http://localhost").pathname;
+  let path;
+  try {
+    path = decodeURI(new URL(request.url ?? "/", "http://localhost").pathname);
+  } catch {
+    response.writeHead(421);
+    response.end();
+    return;
+  }
   if (host === adminHost) {
     if ((path === "/_emdash/admin/login" || path === "/clerk-login") && request.method === "GET") {
       response.writeHead(302, { Location: "/login", "Cache-Control": "no-store" });
