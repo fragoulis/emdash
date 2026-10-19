@@ -29,18 +29,27 @@ export async function verifiedIdentity(cookieHeader, origin) {
     return null;
   }
   if (claims.iss !== "https://" + frontendApi || claims.azp !== origin ||
-    claims.sub !== bootstrapUserId || !claims.sid?.startsWith("sess_")) return null;
-  const session = await clerk.sessions.getSession(claims.sid);
-  if (session.status !== "active" || session.userId !== claims.sub) return null;
-  const user = await clerk.users.getUser(claims.sub);
-  if (user.id !== claims.sub || user.publicMetadata?.is_super_admin !== true) return null;
+    typeof claims.sub !== "string" || !claims.sub.startsWith("user_") ||
+    typeof claims.sid !== "string" || !claims.sid.startsWith("sess_")) return null;
+  let session;
+  let user;
+  try {
+    session = await clerk.sessions.getSession(claims.sid);
+    if (session.status !== "active" || session.userId !== claims.sub) return null;
+    user = await clerk.users.getUser(claims.sub);
+  } catch (error) {
+    if (error && typeof error === "object" && "status" in error && error.status === 404) return null;
+    throw error;
+  }
+  if (user.id !== claims.sub) return null;
   const email = user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId);
   if (!email || email.verification?.status !== "verified") return null;
   return {
     subject: user.id,
     email: email.emailAddress,
     name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
-    role: 50,
+    isSuperAdmin: user.publicMetadata?.is_super_admin === true,
+    role: user.publicMetadata?.is_super_admin === true ? 50 : 0,
   };
 }
 
@@ -49,6 +58,7 @@ export async function authenticate(request) {
   if (!origin) throw new Error("Set EMDASH_ADMIN_ORIGIN for Clerk authentication");
   const user = await verifiedIdentity(request.headers.get("cookie"), origin);
   if (!user) throw new Error("Clerk authentication required");
-  return { ...user, name: user.name ?? user.email };
+  if (!user.isSuperAdmin) throw new Error("EmDash system administration access required");
+  return { ...user, role: 50, name: user.name ?? user.email };
 }
 `;

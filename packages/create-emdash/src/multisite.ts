@@ -5,8 +5,9 @@ import { buildSource } from "./multisite-build.js";
 import { clerkSource } from "./multisite-clerk.js";
 import { defaultHostSource } from "./multisite-host.js";
 import { clerkLoginPageSource, clerkLoginSource } from "./multisite-login.js";
+import { clerkSignOutSource, noAccessPageSource } from "./multisite-no-access.js";
 import { multiSiteReadme } from "./multisite-readme.js";
-import { sitesPageSource } from "./multisite-sites.js";
+import { createSitesPageSource } from "./multisite-sites.js";
 
 export function prepareDefaultPresentation(projectDir: string): void {
 	const source = resolve(projectDir, "src");
@@ -49,8 +50,17 @@ export function prepareDefaultPresentation(projectDir: string): void {
 	writeFileSync(resolve(projectDir, "clerk.mjs"), clerkSource);
 	writeFileSync(resolve(destination, "pages/login.astro"), clerkLoginPageSource);
 	mkdirSync(resolve(destination, "pages/site"), { recursive: true });
-	writeFileSync(resolve(destination, "pages/sites.astro"), sitesPageSource);
-	writeFileSync(resolve(destination, "pages/site/[slug].astro"), sitesPageSource);
+	mkdirSync(resolve(destination, "components"), { recursive: true });
+	writeFileSync(
+		resolve(destination, "pages/sites.astro"),
+		createSitesPageSource("../components/ClerkSignOut.js"),
+	);
+	writeFileSync(resolve(destination, "pages/no-access.astro"), noAccessPageSource);
+	writeFileSync(resolve(destination, "components/ClerkSignOut.tsx"), clerkSignOutSource);
+	writeFileSync(
+		resolve(destination, "pages/site/[slug].astro"),
+		createSitesPageSource("../../components/ClerkSignOut.js"),
+	);
 	writeFileSync(resolve(destination, "components/ClerkLogin.tsx"), clerkLoginSource);
 	writeFileSync(resolve(projectDir, "README.md"), multiSiteReadme);
 	const agentsPath = resolve(projectDir, "AGENTS.md");
@@ -63,7 +73,7 @@ export function prepareDefaultPresentation(projectDir: string): void {
 					"Start the Astro dev server",
 					"Build the default presentation and start the Node host",
 				)
-				.replace("This is an EmDash site", "This is an EmDash installation with a default site"),
+				.replace("This is an EmDash site", "This is an EmDash multi-site installation"),
 		);
 	}
 }

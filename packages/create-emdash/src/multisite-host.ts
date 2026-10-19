@@ -1,7 +1,10 @@
 export const defaultHostSource = `import { createServer } from "node:http";
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { Pool } from "pg";
-import { ulid } from "ulidx";
+import { createDialect } from "emdash/db/postgres";
+import { initializeMultisiteDatabase } from "emdash/internal/multisite/initialize";
 import { runWithContext } from "emdash/request-context";
 import { verifiedIdentity } from "./clerk.mjs";
 
@@ -18,6 +21,18 @@ if (!process.env.EMDASH_ADMIN_ORIGIN && adminHost !== "localhost") {
 const adminOrigin = process.env.EMDASH_ADMIN_ORIGIN ?? "http://localhost:" + port;
 process.env.EMDASH_ADMIN_ORIGIN = adminOrigin;
 process.env.ASTRO_NODE_AUTOSTART = "disabled";
+const require = createRequire(import.meta.url);
+const kyselyPath = pathToFileURL(createRequire(require.resolve("emdash/seed")).resolve("kysely")).href;
+const { Kysely } = await import(kyselyPath);
+const initialSeed = JSON.parse(readFileSync(new URL("./seed/seed.json", import.meta.url), "utf8"));
+const initializationDb = new Kysely({
+  dialect: createDialect({ connectionString: process.env.DATABASE_URL }),
+});
+try {
+  await initializeMultisiteDatabase(initializationDb, initialSeed);
+} finally {
+  await initializationDb.destroy();
+}
 const presentations = new Map();
 for (const entry of readdirSync(new URL("./dist/sites/", import.meta.url), { withFileTypes: true })) {
   if (!entry.isDirectory() || !/^[a-z][a-z0-9-]*$/.test(entry.name)) continue;
@@ -26,43 +41,13 @@ for (const entry of readdirSync(new URL("./dist/sites/", import.meta.url), { wit
 }
 if (!presentations.has("default")) throw new Error("Build the default presentation before starting the host");
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
-const setupPage = /^\\/_emdash\\/admin\\/setup(?:\\/|$)/;
 const publicApiPath = /^\\/_emdash\\/api\\/(?:media\\/file\\/|search(?:\\/suggest)?$)/;
 
-async function provisionBootstrapUser(identity) {
-  const connection = await db.connect();
-  try {
-    await connection.query("BEGIN");
-    const linked = await connection.query(
-      "SELECT u.id, u.disabled FROM oauth_accounts a JOIN users u ON u.id = a.user_id WHERE a.provider = 'clerk' AND a.provider_account_id = $1",
-      [identity.subject],
-    );
-    if (linked.rows[0]) {
-      if (linked.rows[0].disabled) throw new Error("Bootstrap user is disabled");
-      await connection.query("UPDATE users SET email = $1, name = $2, updated_at = $3 WHERE id = $4", [
-        identity.email, identity.name, new Date().toISOString(), linked.rows[0].id,
-      ]);
-    } else {
-      const existing = await connection.query("SELECT id FROM users WHERE email = $1", [identity.email]);
-      if (existing.rows.length) throw new Error("Clerk email already belongs to another user");
-      const id = ulid();
-      const now = new Date().toISOString();
-      await connection.query(
-        "INSERT INTO users (id, email, name, avatar_url, role, email_verified, data, created_at, updated_at) VALUES ($1, $2, $3, NULL, 50, 1, NULL, $4, $4)",
-        [id, identity.email, identity.name, now],
-      );
-      await connection.query(
-        "INSERT INTO oauth_accounts (provider, provider_account_id, user_id) VALUES ('clerk', $1, $2)",
-        [identity.subject, id],
-      );
-    }
-    await connection.query("COMMIT");
-  } catch (error) {
-    await connection.query("ROLLBACK");
-    throw error;
-  } finally {
-    connection.release();
-  }
+function safeLoginDestination(request) {
+  const destination = new URL(request.url ?? "/", "http://localhost").searchParams.get("redirect");
+  return destination && /^\\/(?:admin|sites|no-access|site\\/[a-z][a-z0-9-]*)$/.test(destination)
+    ? destination
+    : "/admin";
 }
 
 function hostname(request) {
@@ -82,29 +67,6 @@ async function resolveSite(host) {
 async function activeSites() {
   const result = await db.query("SELECT id, slug FROM _emdash_sites WHERE active = 1 ORDER BY slug");
   return result.rows;
-}
-
-async function setupIsComplete() {
-  try {
-    const result = await db.query("SELECT value FROM options WHERE name = 'emdash:setup_complete'");
-    return result.rows[0]?.value === 'true';
-  } catch (error) {
-    if (error.code === '42P01') return false;
-    throw error;
-  }
-}
-
-function lastSite(request) {
-  const value = request.headers.cookie?.split(';').map((part) => part.trim())
-    .find((part) => part.startsWith('emdash_last_site='));
-  return value?.slice('emdash_last_site='.length) ?? null;
-}
-
-async function registerDefaultHost() {
-  await db.query(
-    "INSERT INTO _emdash_site_hosts (hostname, site_id) SELECT $1, id FROM _emdash_sites WHERE id = 'site-default' ON CONFLICT (hostname) DO NOTHING",
-    [defaultHost],
-  );
 }
 
 function serve(request, response, slug, siteId) {
@@ -152,7 +114,26 @@ const server = createServer(async (request, response) => {
       response.end();
       return;
     }
+    if (/^\\/_emdash\\/(?:admin\\/setup(?:\\/|$)|api\\/(?:setup(?:\\/|$)|auth\\/dev-bypass(?:\\/|$)))/.test(path)) {
+      response.writeHead(403, { "Cache-Control": "no-store" });
+      response.end();
+      return;
+    }
     if (path === "/login" && request.method === "GET") {
+      const destination = safeLoginDestination(request);
+      const requested = new URL(request.url ?? "/", "http://localhost").searchParams.get("redirect");
+      if (requested !== destination) {
+        response.writeHead(302, {
+          Location: "/login?redirect=" + encodeURIComponent(destination),
+          "Cache-Control": "no-store",
+        });
+        response.end();
+        return;
+      }
+      serve(request, response, "default");
+      return;
+    }
+    if (path.startsWith("/_astro/") && (request.method === "GET" || request.method === "HEAD")) {
       serve(request, response, "default");
       return;
     }
@@ -160,15 +141,8 @@ const server = createServer(async (request, response) => {
       path === "/_emdash/admin/";
     const siteSlug = /^\\/site\\/([a-z][a-z0-9-]*)$/.exec(path)?.[1];
     const sitePage = path === "/sites" || siteSlug !== undefined;
-    const setupWrite = path === "/_emdash/api/setup" && request.method === "POST";
-    if (!setupWrite && (request.method !== "GET" && request.method !== "HEAD" ||
-      !setupPage.test(path) && !landing && !sitePage && path !== "/_emdash/api/setup/status" &&
-      path !== "/_emdash/api/manifest" && !path.startsWith("/_astro/"))) {
-      response.writeHead(403, { "Cache-Control": "no-store" });
-      response.end();
-      return;
-    }
-    if (setupWrite && (request.headers.origin !== adminOrigin || request.headers["x-emdash-request"] !== "1")) {
+    const noAccessPage = path === "/no-access";
+    if (request.method !== "GET" && request.method !== "HEAD") {
       response.writeHead(403, { "Cache-Control": "no-store" });
       response.end();
       return;
@@ -187,27 +161,53 @@ const server = createServer(async (request, response) => {
         if (path.startsWith("/_emdash/api/")) {
           response.writeHead(401, { "Cache-Control": "no-store" });
         } else {
-          response.writeHead(302, { Location: "/login", "Cache-Control": "no-store" });
+          const destination = landing ? "/sites" : noAccessPage ? "/no-access" :
+            siteSlug ? "/site/" + siteSlug : path === "/sites" ? "/sites" : "/admin";
+          response.writeHead(302, {
+            Location: "/login?redirect=" + encodeURIComponent(destination),
+            "Cache-Control": "no-store",
+          });
         }
+        response.end();
+        return;
+      }
+      if (!identity.isSuperAdmin) {
+        if (path.startsWith("/_emdash/api/")) {
+          response.writeHead(403, { "Cache-Control": "no-store" });
+          response.end();
+          return;
+        }
+        if (noAccessPage) {
+          serve(request, response, "default");
+          return;
+        }
+        response.writeHead(302, { Location: "/no-access", "Cache-Control": "no-store" });
+        response.end();
+        return;
+      }
+      if (!landing && !sitePage && !noAccessPage) {
+        response.writeHead(403, { "Cache-Control": "no-store" });
+        response.end();
+        return;
+      }
+      if (noAccessPage) {
+        response.writeHead(302, { Location: "/sites", "Cache-Control": "no-store" });
         response.end();
         return;
       }
       if (landing || sitePage) {
         try {
-          if (!(await setupIsComplete())) {
-            response.writeHead(302, { Location: "/_emdash/admin/setup", "Cache-Control": "no-store" });
+          if (landing) {
+            response.writeHead(302, { Location: "/sites", "Cache-Control": "no-store" });
             response.end();
             return;
           }
-          const sites = await activeSites();
-          if (landing) {
-            const preferred = sites.find((site) => site.slug === lastSite(request));
-            const target = preferred ?? (sites.length === 1 ? sites[0] : null);
-            response.writeHead(302, { Location: target ? "/site/" + target.slug : "/sites", "Cache-Control": "no-store" });
-            response.end();
+          if (noAccessPage || path === "/sites") {
+            serve(request, response, "default");
             return;
           }
           if (siteSlug) {
+            const sites = await activeSites();
             const site = sites.find((candidate) => candidate.slug === siteSlug);
             if (!site) {
               response.writeHead(404, { "Cache-Control": "no-store" });
@@ -227,27 +227,13 @@ const server = createServer(async (request, response) => {
           return;
         }
       }
-      if (setupWrite) {
-        try {
-          await provisionBootstrapUser(identity);
-        } catch (error) {
-          console.error("[host] Bootstrap user provisioning failed:", error);
-          response.writeHead(503, { "Cache-Control": "no-store" });
-          response.end();
-          return;
-        }
-      }
     }
-    if (setupPage.test(path) || path === "/_emdash/api/setup/status") {
-      response.once("finish", () => {
-        void registerDefaultHost().catch((error) => console.error("[host] Default host registration failed:", error));
-      });
-    }
-    serve(request, response, "default", "site-default");
+    response.writeHead(403, { "Cache-Control": "no-store" });
+    response.end();
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD" ||
-    /^\\/(?:admin|preview|sites?|login|clerk-login)(?:\\/|$)/.test(path) || path === "/clerk-login" ||
+    /^\\/(?:admin|preview|sites?|login|clerk-login|no-access)(?:\\/|$)/.test(path) || path === "/clerk-login" ||
     path.startsWith("/_emdash/") && !publicApiPath.test(path)) {
     response.writeHead(421);
     response.end();
@@ -273,7 +259,7 @@ server.listen(port, "127.0.0.1", async () => {
   const address = server.address();
   if (!address || typeof address === "string") return;
   const origin = (host) => "http://" + host + ":" + address.port;
-  console.log("[host] Ready: admin " + origin(adminHost) + "/admin; public " + origin(defaultHost));
+  console.log("[host] Ready: admin " + origin(adminHost) + "/admin");
   try {
     const result = await db.query(
       "SELECT h.hostname, s.slug FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE s.active = 1 ORDER BY h.hostname",
@@ -281,8 +267,7 @@ server.listen(port, "127.0.0.1", async () => {
     const hosts = new Set(
       result.rows
         .filter((site) => presentations.has(site.slug))
-        .map((site) => site.hostname)
-        .filter((host) => host !== defaultHost),
+        .map((site) => site.hostname),
     );
     for (const host of hosts) console.log("[host] Public site: " + origin(host));
   } catch (error) {
