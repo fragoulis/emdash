@@ -90,6 +90,7 @@ describe("generated host", () => {
 			{ encoding: "utf8" },
 		).trim();
 		let host: ChildProcess | undefined;
+		let customHost: ChildProcess | undefined;
 		let proxyHost: ChildProcess | undefined;
 		let clerk: Awaited<ReturnType<typeof startClerkFixture>> | undefined;
 		try {
@@ -192,6 +193,34 @@ describe("generated host", () => {
 				status: 200,
 				body: "foo:site-foo",
 			});
+			const customAdminHost = "admin.example.test";
+			const customPort = await freePort();
+			customHost = spawn(process.execPath, [join(project, "host.mjs")], {
+				cwd: project,
+				stdio: ["ignore", "pipe", "pipe"],
+				env: {
+					PATH: process.env.PATH,
+					DATABASE_URL: `postgres://postgres:${password}@127.0.0.1:${port}/test`,
+					PORT: String(customPort),
+					EMDASH_ADMIN_HOST: customAdminHost,
+					EMDASH_ADMIN_ORIGIN: `http://${customAdminHost}:${customPort}`,
+					EMDASH_DEFAULT_HOST: "public.example.test",
+					...clerkEnv,
+				},
+			});
+			let startupOutput = "";
+			customHost.stdout
+				?.setEncoding("utf8")
+				.on("data", (chunk: string) => (startupOutput += chunk));
+			await waitForResponse(customPort, customAdminHost, 302, "/admin");
+			await expect
+				.poll(() => startupOutput)
+				.toContain("[host] Public site: http://foo.localhost:" + customPort);
+			expect(startupOutput).toContain(`http://${customAdminHost}:${customPort}`);
+			expect(startupOutput).toContain(`http://${customAdminHost}:${customPort}/admin`);
+			expect(startupOutput).toContain(`http://public.example.test:${customPort}`);
+			expect(startupOutput).toContain(`http://foo.localhost:${customPort}`);
+			expect(startupOutput).not.toContain("unbuilt.localhost");
 			expect(await get(hostPort, "foo.localhost", "/_emdash/admin")).toMatchObject({ status: 421 });
 			expect(await get(hostPort, "foo.localhost", "/_emdash/api/setup/status")).toMatchObject({
 				status: 421,
@@ -319,6 +348,7 @@ describe("generated host", () => {
 			expect(await get(hostPort, "default.localhost")).toMatchObject({ status: 421 });
 		} finally {
 			host?.kill();
+			customHost?.kill();
 			proxyHost?.kill();
 			await clerk?.close();
 			execFileSync("docker", ["rm", "-f", container], { stdio: "ignore" });
