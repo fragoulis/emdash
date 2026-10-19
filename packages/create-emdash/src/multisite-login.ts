@@ -26,6 +26,11 @@ async function loadClerkUI(frontendApi: string): Promise<ClerkUIConstructor> {
   return clerkUI;
 }
 
+function loginRedirect(): string {
+  const value = new URLSearchParams(window.location.search).get("redirect");
+  return value && /^\\/(?:admin|sites|no-access|site\\/[a-z][a-z0-9-]*)$/.test(value) ? value : "/admin";
+}
+
 const clerkLocalizations = {
   ar: () => import("@clerk/localizations/ar-SA").then((module) => module.arSA),
   bn: () => import("@clerk/localizations/bn-IN").then((module) => module.bnIN),
@@ -72,13 +77,14 @@ export function ClerkLogin({ publishableKey, locale, title, description, errorLa
       .then(([ClerkUI, localization]) => client.load({ ui: { ClerkUI }, localization })).then(() => {
       if (!active) return;
       if (client.user) {
-        window.location.replace("/admin");
+        window.location.replace(loginRedirect());
         return;
       }
       if (node) {
+        const redirect = loginRedirect();
         client.mountSignIn(node, {
-          forceRedirectUrl: "/admin",
-          signUpForceRedirectUrl: "/admin",
+          forceRedirectUrl: redirect,
+          signUpForceRedirectUrl: redirect,
         });
         mounted = true;
       }
