@@ -1,12 +1,29 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:http";
 
-type FixtureState = { active: boolean; superAdmin: boolean; available: boolean };
+type FixtureState = {
+	active: boolean;
+	superAdmin: boolean;
+	available: boolean;
+	emailVerified: boolean;
+	sessionUserId: string;
+	requests: number;
+	primaryEmailAddressId: string | null;
+};
 
 export async function startClerkFixture(origin: string) {
 	const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-	const state: FixtureState = { active: true, superAdmin: true, available: true };
+	const state: FixtureState = {
+		active: true,
+		superAdmin: true,
+		available: true,
+		emailVerified: true,
+		sessionUserId: "user_fixture",
+		requests: 0,
+		primaryEmailAddressId: "idn_fixture",
+	};
 	const server = createServer((request, response) => {
+		state.requests++;
 		response.setHeader("Content-Type", "application/json");
 		if (!state.available) {
 			response.writeHead(503);
@@ -20,7 +37,7 @@ export async function startClerkFixture(origin: string) {
 				JSON.stringify({
 					object: "session",
 					id: "sess_fixture",
-					user_id: "user_fixture",
+					user_id: state.sessionUserId,
 					status: state.active ? "active" : "revoked",
 				}),
 			);
@@ -32,12 +49,12 @@ export async function startClerkFixture(origin: string) {
 					object: "user",
 					id: "user_fixture",
 					public_metadata: { is_super_admin: state.superAdmin },
-					primary_email_address_id: "idn_fixture",
+					primary_email_address_id: state.primaryEmailAddressId,
 					email_addresses: [
 						{
 							id: "idn_fixture",
 							email_address: "admin+fixture@test.com",
-							verification: { status: "verified" },
+							verification: { status: state.emailVerified ? "verified" : "unverified" },
 							linked_to: [],
 						},
 					],
