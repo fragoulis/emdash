@@ -192,14 +192,40 @@ it("sets up a generated site through Clerk and renders the default site", async 
 		});
 		host.stderr?.on("data", (chunk) => console.error("[fixture host]", String(chunk)));
 		await waitFor(async () => (await request(port, "localhost", "/admin")).status === 302);
-		const login = await request(port, "localhost", "/clerk-login");
+		for (const path of [
+			"/admin",
+			"/admin/",
+			"/_emdash/admin",
+			"/_emdash/admin/",
+			"/sites",
+			"/site/default",
+		]) {
+			const adminLogin = await request(port, "localhost", path);
+			expect(adminLogin.status, path).toBe(302);
+			expect(adminLogin.headers.location, path).toBe("/login");
+			expect(adminLogin.headers["cache-control"], path).toBe("no-store");
+		}
+		const oldLogin = await request(port, "localhost", "/_emdash/admin/login");
+		expect(oldLogin.status).toBe(302);
+		expect(oldLogin.headers.location).toBe("/login");
+		const alias = await request(port, "localhost", "/clerk-login");
+		expect(alias.status).toBe(302);
+		expect(alias.headers.location).toBe("/login");
+		const login = await request(port, "localhost", "/login");
 		expect(login.status).toBe(200);
 		expect(login.body).toContain("Sign in to EmDash");
-		const arabicLogin = await request(port, "localhost", "/clerk-login", {
+		const arabicLogin = await request(port, "localhost", "/login", {
 			"Accept-Language": "ar",
 		});
 		expect(arabicLogin.body).toContain('dir="rtl"');
-		expect((await request(port, "default.localhost", "/clerk-login")).status).toBe(421);
+		for (const path of [
+			"/login",
+			"/login/reset-password",
+			"/clerk-login",
+			"/_emdash/admin/login",
+		]) {
+			expect((await request(port, "default.localhost", path)).status, path).toBe(421);
+		}
 		const cli = resolve(import.meta.dirname, "../dist/index.mjs");
 		const siteCommand = (slug: string) =>
 			execFileSync(process.execPath, [cli, "site", slug], {
