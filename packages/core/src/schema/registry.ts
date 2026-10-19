@@ -573,6 +573,7 @@ export class SchemaRegistry {
 				registeredCollectionId: existing?.id,
 			});
 			const values: Insertable<CollectionTable> = {
+				site_id: null,
 				id: capture.collectionId,
 				slug: input.slug,
 				label: input.label,
@@ -738,6 +739,7 @@ export class SchemaRegistry {
 					registeredCollectionId: existing?.id,
 				});
 				const collectionValues: Insertable<CollectionTable> = {
+					site_id: null,
 					id: capture.collectionId,
 					slug: input.slug,
 					label: input.label,
