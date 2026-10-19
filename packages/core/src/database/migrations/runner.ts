@@ -108,6 +108,7 @@ import * as m097 from "./097_site_settings.js";
 import * as m098 from "./098_site_taxonomies.js";
 import * as m099 from "./099_site_menus.js";
 import * as m100 from "./100_site_media.js";
+import * as m101 from "./101_shared_collection_definitions.js";
 import { CONTENT_SIZED_MIGRATIONS } from "./content-sized.js";
 
 const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
@@ -210,6 +211,7 @@ const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
 	"098_site_taxonomies": m098,
 	"099_site_menus": m099,
 	"100_site_media": m100,
+	"101_shared_collection_definitions": m101,
 });
 
 /** Ordered names from the statically registered migration set. */
@@ -310,6 +312,7 @@ const MIGRATION_TABLE = "_emdash_migrations";
 
 export interface MigrationOptions {
 	migrationTableSchema?: string;
+	skipFastPath?: boolean;
 	/**
 	 * Override how long to wait for a concurrent migrator to finish before
 	 * giving up. Defaults to MIGRATION_RACE_WAIT_MS; tests shorten it so the
@@ -579,7 +582,7 @@ export async function runMigrations(
 	// newer build (e.g. mid-deploy old isolate, or downgrade) still skips
 	// the migrator instead of falling through to the race-recovery path
 	// unnecessarily.
-	if (!options?.migrationTableSchema) {
+	if (!options?.migrationTableSchema && !options?.skipFastPath) {
 		const initialCount = await getAppliedMigrationCount(db);
 		if (initialCount !== null && initialCount >= MIGRATION_COUNT) {
 			return { applied: [] };

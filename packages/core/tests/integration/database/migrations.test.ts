@@ -577,6 +577,7 @@ describe("Database Migrations (Integration)", () => {
 			.insertInto("media")
 			.values({
 				id: "media-1",
+				site_id: "site-default",
 				filename: "photo.jpg",
 				mime_type: "image/jpeg",
 				size: 1024000,
