@@ -269,5 +269,24 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, "127.0.0.1");
+server.listen(port, "127.0.0.1", async () => {
+  const address = server.address();
+  if (!address || typeof address === "string") return;
+  const origin = (host) => "http://" + host + ":" + address.port;
+  console.log("[host] Ready: admin " + origin(adminHost) + "/admin; public " + origin(defaultHost));
+  try {
+    const result = await db.query(
+      "SELECT h.hostname, s.slug FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE s.active = 1 ORDER BY h.hostname",
+    );
+    const hosts = new Set(
+      result.rows
+        .filter((site) => presentations.has(site.slug))
+        .map((site) => site.hostname)
+        .filter((host) => host !== defaultHost),
+    );
+    for (const host of hosts) console.log("[host] Public site: " + origin(host));
+  } catch (error) {
+    console.error("[host] Could not list public site URLs:", error);
+  }
+});
 `;
