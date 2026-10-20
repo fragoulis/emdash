@@ -35,8 +35,8 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
     </header>
     <main class="mx-auto max-w-5xl p-6">
       <p class="text-sm font-semibold text-kumo-brand">{labels.systemAdministration}</p>
-      <h1 class="mt-2 text-2xl font-semibold" dir="auto">{Astro.url.pathname.startsWith("/site/") ? decodeURIComponent(Astro.url.pathname.slice("/site/".length)) : labels.sites}</h1>
-      <p class="mt-3 text-kumo-subtle" dir="auto">{labels.sitesDescription}</p>
+      <h1 class="mt-2 text-2xl font-semibold">{Astro.url.pathname.startsWith("/site/") ? <bdi dir="auto">{decodeURIComponent(Astro.url.pathname.slice("/site/".length))}</bdi> : labels.sites}</h1>
+      <p class="mt-3 text-kumo-subtle">{labels.sitesDescription}</p>
       <div class="mt-6"><SystemSites client:load labels={labels} /></div>
     </main>
   </body>
