@@ -2,6 +2,8 @@ import type { Kysely } from "kysely";
 
 import type { Database } from "../database/types.js";
 import { invalidateSiteSettingsCache } from "../settings/index.js";
+import { bumpRunningExportWriteEpochs } from "../transfer/fence.js";
+import { isMissingTableError } from "../utils/db-errors.js";
 
 export interface RegisteredSite {
 	id: string;
@@ -102,6 +104,11 @@ export async function updateRegisteredSiteTitle(
 			.executeTakeFirst();
 		if ((write.numInsertedOrUpdatedRows ?? 0n) === 0n)
 			return { ok: false, reason: "stale" } as const;
+		try {
+			await bumpRunningExportWriteEpochs(trx);
+		} catch (error) {
+			if (!isMissingTableError(error)) throw error;
+		}
 		await trx
 			.insertInto("audit_logs")
 			.values({

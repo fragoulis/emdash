@@ -1,12 +1,13 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { readinessSource } from "../src/multisite-readiness.js";
 import { prepareDefaultPresentation } from "../src/multisite.js";
 import { startClerkFixture } from "./clerk-fixture.js";
 import { linkScaffoldDependencies } from "./scaffold-dependencies.js";
@@ -124,14 +125,11 @@ describe("generated host", () => {
 				'import { getRequestContext } from "emdash/request-context";\n' +
 				'export function handler(request, response) { if (request.url === "/explode") throw new Error("Fixture failure"); response.end(getRequestContext()?.siteId ?? "none"); }\n';
 			writeFileSync(join(project, "dist/sites/default/server/entry.mjs"), defaultEntry);
+			writeFileSync(join(project, "readiness.mjs"), readinessSource);
+			const { artifactVersion } = await import(pathToFileURL(join(project, "readiness.mjs")).href);
 			writeFileSync(
 				join(project, "dist/sites/default/version.json"),
-				JSON.stringify({
-					version: createHash("sha256")
-						.update("server/entry.mjs")
-						.update(defaultEntry)
-						.digest("hex"),
-				}),
+				JSON.stringify({ version: artifactVersion(join(project, "dist/sites/default")) }),
 			);
 			const fooEntry =
 				'import { getRequestContext } from "emdash/request-context";\n' +
@@ -139,9 +137,7 @@ describe("generated host", () => {
 			writeFileSync(join(project, "dist/sites/foo/server/entry.mjs"), fooEntry);
 			writeFileSync(
 				join(project, "dist/sites/foo/version.json"),
-				JSON.stringify({
-					version: createHash("sha256").update("server/entry.mjs").update(fooEntry).digest("hex"),
-				}),
+				JSON.stringify({ version: artifactVersion(join(project, "dist/sites/foo")) }),
 			);
 			const hostPort = await freePort();
 			clerk = await startClerkFixture(`http://localhost:${hostPort}`);
@@ -328,7 +324,9 @@ describe("generated host", () => {
 					),
 				),
 			);
-			expect(concurrent.map((result) => result.status).toSorted((a, b) => a - b)).toEqual([200, 409]);
+			expect(concurrent.map((result) => result.status).toSorted((a, b) => a - b)).toEqual([
+				200, 409,
+			]);
 			const changed = concurrent.find((result) => result.status === 200)!;
 			expect(["Foo title A", "Foo title B"]).toContain(JSON.parse(changed.body).data.title);
 			const audit = execFileSync(
