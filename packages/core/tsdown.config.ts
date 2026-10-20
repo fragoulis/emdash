@@ -96,6 +96,7 @@ export default defineConfig({
 		// Fail-fast Postgres migration lock (used by @emdash-cms/cloudflare's Hyperdrive adapter)
 		"src/database/pg-migration-lock.ts",
 		"src/multisite/initialize.ts",
+		"src/multisite/registry.ts",
 		// Row-based migration lock (used by @emdash-cms/cloudflare's D1 adapters)
 		"src/database/migration-lock.ts",
 		// Storage adapters (runtime - loaded via virtual:emdash/storage)
