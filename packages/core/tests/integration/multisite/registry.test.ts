@@ -84,6 +84,30 @@ describeEachDialect("multisite registry service", (dialect: DialectName) => {
 		).toEqual({ ok: false, reason: "not_found" });
 	});
 
+	it("bumps running export write epochs in the title transaction", async () => {
+		const { db } = ctx;
+		await db.insertInto("_emdash_sites").values({ id: "site-alpha", slug: "alpha" }).execute();
+		const { TransferOperationRepository } =
+			await import("../../../../src/transfer/ops/operations.js");
+		const repo = new TransferOperationRepository(db);
+		const { operation } = await repo.create({ kind: "export", createdBy: "operator" });
+		await db
+			.updateTable("_emdash_transfer_operations")
+			.set({ state: "running" })
+			.where("id", "=", operation.id)
+			.execute();
+
+		const changed = await updateRegisteredSiteTitle(db, {
+			siteId: "site-alpha",
+			title: "Alpha title",
+			expectedRevision: null,
+			actorId: "operator",
+		});
+
+		expect(changed.ok).toBe(true);
+		expect((await repo.require(operation.id)).writeEpoch).toBe(1);
+	});
+
 	it("rolls back the title when its audit insert fails", async () => {
 		const { db } = ctx;
 		await db.insertInto("_emdash_sites").values({ id: "site-alpha", slug: "alpha" }).execute();
@@ -94,6 +118,15 @@ describeEachDialect("multisite registry service", (dialect: DialectName) => {
 				value: JSON.stringify("Before"),
 				site_id: "site-alpha",
 			})
+			.execute();
+		const { TransferOperationRepository } =
+			await import("../../../../src/transfer/ops/operations.js");
+		const repo = new TransferOperationRepository(db);
+		const { operation } = await repo.create({ kind: "export", createdBy: "operator" });
+		await db
+			.updateTable("_emdash_transfer_operations")
+			.set({ state: "running" })
+			.where("id", "=", operation.id)
 			.execute();
 		if (dialect === "postgres") {
 			await sql`CREATE FUNCTION reject_registry_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END; $$`.execute(
@@ -117,6 +150,7 @@ describeEachDialect("multisite registry service", (dialect: DialectName) => {
 			}),
 		).rejects.toThrow();
 		expect((await getRegisteredSite(db, "site-alpha"))?.title).toBe("Before");
+		expect((await repo.require(operation.id)).writeEpoch).toBe(0);
 	});
 
 	it("allows only one concurrent write with the same revision and records no title or credentials", async () => {
