@@ -9,6 +9,7 @@ import { clerkSignOutSource, noAccessPageSource } from "./multisite-no-access.js
 import { readinessSource } from "./multisite-readiness.js";
 import { multiSiteReadme } from "./multisite-readme.js";
 import { createSitesPageSource } from "./multisite-sites.js";
+import { systemSitesSource } from "./multisite-system-sites.js";
 
 export function prepareDefaultPresentation(projectDir: string): void {
 	const source = resolve(projectDir, "src");
@@ -59,6 +60,7 @@ export function prepareDefaultPresentation(projectDir: string): void {
 	);
 	writeFileSync(resolve(destination, "pages/no-access.astro"), noAccessPageSource);
 	writeFileSync(resolve(destination, "components/ClerkSignOut.tsx"), clerkSignOutSource);
+	writeFileSync(resolve(destination, "components/SystemSites.tsx"), systemSitesSource);
 	writeFileSync(
 		resolve(destination, "pages/site/[slug].astro"),
 		createSitesPageSource("../../components/ClerkSignOut.js"),
