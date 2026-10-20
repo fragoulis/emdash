@@ -160,8 +160,8 @@ export function invalidateSiteSettingsSnapshot(): void {
  * Called from every `site:*` write path. Other isolates still serve their
  * own cached copy while a background refresh picks up remote writes.
  */
-export function invalidateSiteSettingsCache(): void {
-	const siteId = getRequestContext()?.siteId;
+export function invalidateSiteSettingsCache(siteIdOverride?: string): void {
+	const siteId = siteIdOverride ?? getRequestContext()?.siteId;
 	if (!siteId) return;
 	invalidateSiteSettingsSnapshot();
 	invalidateObjectCache(`${SETTINGS_CACHE_NAMESPACE}:${siteId}`);

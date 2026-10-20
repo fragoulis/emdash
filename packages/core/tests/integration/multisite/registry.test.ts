@@ -1,78 +1,169 @@
-import { describe, expect, it } from "vitest";
+import { sql } from "kysely";
+import { afterEach, beforeEach, expect, it } from "vitest";
 
 import {
 	getRegisteredSite,
 	listRegisteredSites,
 	updateRegisteredSiteTitle,
 } from "../../../src/multisite/registry.js";
-import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
+import {
+	describeEachDialect,
+	setupForDialect,
+	teardownForDialect,
+	type DialectName,
+	type DialectTestContext,
+} from "../../utils/test-db.js";
 
-describe("multisite registry service", () => {
-	it("lists disabled sites and updates only the title with a revision precondition and audit", async () => {
-		const db = await setupTestDatabase();
-		try {
-			await db
-				.insertInto("_emdash_sites")
-				.values([
-					{ id: "site-alpha", slug: "alpha", active: 1 },
-					{ id: "site-beta", slug: "beta", active: 0 },
-				])
-				.execute();
-			await db
-				.insertInto("_emdash_site_hosts")
-				.values({ hostname: "alpha.example.test", site_id: "site-alpha" })
-				.execute();
-			await db
-				.insertInto("options")
-				.values({
-					name: "site:site-alpha:title",
-					value: JSON.stringify("Alpha title"),
-					site_id: "site-alpha",
-				})
-				.execute();
-
-			const sites = await listRegisteredSites(db);
-			expect(sites).toEqual([
-				expect.objectContaining({
-					id: "site-alpha",
-					slug: "alpha",
-					status: "active",
-					title: "Alpha title",
-					domains: ["alpha.example.test"],
-				}),
-				expect.objectContaining({
-					id: "site-beta",
-					slug: "beta",
-					status: "disabled",
-					title: null,
-					domains: [],
-				}),
-				expect.objectContaining({ id: "site-default", slug: "default", status: "active" }),
-			]);
-			const current = await getRegisteredSite(db, "site-alpha");
-			const changed = await updateRegisteredSiteTitle(db, {
-				siteId: "site-alpha",
-				title: "Updated",
-				expectedRevision: current?.titleRevision ?? null,
-				actorId: "operator",
-			});
-			expect(changed.ok).toBe(true);
-			const stale = await updateRegisteredSiteTitle(db, {
-				siteId: "site-alpha",
-				title: "Lost update",
-				expectedRevision: current?.titleRevision ?? null,
-				actorId: "other",
-			});
-			expect(stale).toEqual({ ok: false, reason: "stale" });
-			expect((await getRegisteredSite(db, "site-alpha"))?.title).toBe("Updated");
-			const audit = await db
-				.selectFrom("audit_logs")
-				.select(["actor_id", "resource_id", "details"])
-				.executeTakeFirstOrThrow();
-			expect(audit).toMatchObject({ actor_id: "operator", resource_id: "site-alpha" });
-			expect(audit.details).not.toContain("Updated");
-		} finally {
-			await teardownTestDatabase(db);
-		}
+describeEachDialect("multisite registry service", (dialect: DialectName) => {
+	let ctx: DialectTestContext;
+	beforeEach(async () => {
+		ctx = await setupForDialect(dialect);
 	});
+	afterEach(async () => teardownForDialect(ctx));
+
+	it("lists all sites and updates a missing title without changing another site's settings", async () => {
+		const { db } = ctx;
+		await db
+			.insertInto("_emdash_sites")
+			.values([
+				{ id: "site-alpha", slug: "alpha", active: 1 },
+				{ id: "site-beta", slug: "beta", active: 0 },
+			])
+			.execute();
+		await db
+			.insertInto("_emdash_site_hosts")
+			.values([
+				{ hostname: "alpha.example.test", site_id: "site-alpha" },
+				{ hostname: "beta.example.test", site_id: "site-beta" },
+			])
+			.execute();
+		await db
+			.insertInto("options")
+			.values({
+				name: "site:site-beta:title",
+				value: JSON.stringify("Beta title"),
+				site_id: "site-beta",
+			})
+			.execute();
+
+		const sites = await listRegisteredSites(db);
+		expect(sites).toEqual([
+			expect.objectContaining({
+				id: "site-alpha",
+				slug: "alpha",
+				status: "active",
+				title: null,
+				domains: ["alpha.example.test"],
+			}),
+			expect.objectContaining({
+				id: "site-beta",
+				slug: "beta",
+				status: "disabled",
+				title: "Beta title",
+				domains: ["beta.example.test"],
+			}),
+			expect.objectContaining({ id: "site-default", slug: "default", status: "active" }),
+		]);
+
+		const changed = await updateRegisteredSiteTitle(db, {
+			siteId: "site-alpha",
+			title: "Alpha title",
+			expectedRevision: null,
+			actorId: "operator",
+		});
+		expect(changed.ok).toBe(true);
+		expect((await getRegisteredSite(db, "site-alpha"))?.title).toBe("Alpha title");
+		expect((await getRegisteredSite(db, "site-beta"))?.title).toBe("Beta title");
+		expect(
+			await updateRegisteredSiteTitle(db, {
+				siteId: "site-missing",
+				title: "No site",
+				expectedRevision: null,
+				actorId: "operator",
+			}),
+		).toEqual({ ok: false, reason: "not_found" });
+	});
+
+	it("rolls back the title when its audit insert fails", async () => {
+		const { db } = ctx;
+		await db.insertInto("_emdash_sites").values({ id: "site-alpha", slug: "alpha" }).execute();
+		await db
+			.insertInto("options")
+			.values({
+				name: "site:site-alpha:title",
+				value: JSON.stringify("Before"),
+				site_id: "site-alpha",
+			})
+			.execute();
+		if (dialect === "postgres") {
+			await sql`CREATE FUNCTION reject_registry_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END; $$`.execute(
+				db,
+			);
+			await sql`CREATE TRIGGER reject_registry_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_registry_audit()`.execute(
+				db,
+			);
+		} else {
+			await sql`CREATE TRIGGER reject_registry_audit BEFORE INSERT ON audit_logs BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`.execute(
+				db,
+			);
+		}
+		const before = await getRegisteredSite(db, "site-alpha");
+		await expect(
+			updateRegisteredSiteTitle(db, {
+				siteId: "site-alpha",
+				title: "After",
+				expectedRevision: before?.titleRevision ?? null,
+				actorId: "operator",
+			}),
+		).rejects.toThrow();
+		expect((await getRegisteredSite(db, "site-alpha"))?.title).toBe("Before");
+	});
+
+	it("allows only one concurrent write with the same revision and records no title or credentials", async () => {
+		const { db } = ctx;
+		await db.insertInto("_emdash_sites").values({ id: "site-alpha", slug: "alpha" }).execute();
+		await db
+			.insertInto("options")
+			.values({
+				name: "site:site-alpha:title",
+				value: JSON.stringify("Before"),
+				site_id: "site-alpha",
+			})
+			.execute();
+		const revision = (await getRegisteredSite(db, "site-alpha"))?.titleRevision ?? null;
+		const results = await Promise.all([
+			updateRegisteredSiteTitle(db, {
+				siteId: "site-alpha",
+				title: "First secret-looking title",
+				expectedRevision: revision,
+				actorId: "actor-one",
+			}),
+			updateRegisteredSiteTitle(db, {
+				siteId: "site-alpha",
+				title: "Second secret-looking title",
+				expectedRevision: revision,
+				actorId: "actor-two",
+			}),
+		]);
+		expect(results.filter((result) => result.ok)).toHaveLength(1);
+		expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, reason: "stale" }]);
+		const logs = await db
+			.selectFrom("audit_logs")
+			.select(["actor_id", "resource_id", "timestamp", "details"])
+			.execute();
+		expect(logs).toHaveLength(1);
+		expect(logs[0]).toMatchObject({ resource_id: "site-alpha" });
+		expect(logs[0]?.actor_id).toMatch(/^actor-(one|two)$/);
+		expect(logs[0]?.timestamp).toBeTruthy();
+		expect(logs[0]?.details).not.toMatch(
+			/First secret-looking title|Second secret-looking title|credential|password/i,
+		);
+	});
+});
+
+it("loads the emitted registry module from the package build", async () => {
+	const built = await import("emdash/internal/multisite/registry");
+	expect(built.listRegisteredSites).toBeTypeOf("function");
+	expect(built.getRegisteredSite).toBeTypeOf("function");
+	expect(built.updateRegisteredSiteTitle).toBeTypeOf("function");
 });

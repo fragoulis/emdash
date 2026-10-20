@@ -1,6 +1,7 @@
 import type { Kysely } from "kysely";
 
 import type { Database } from "../database/types.js";
+import { invalidateSiteSettingsCache } from "../settings/index.js";
 
 export interface RegisteredSite {
 	id: string;
@@ -65,30 +66,24 @@ export async function updateRegisteredSiteTitle(
 		title: string;
 		expectedRevision: string | null;
 		actorId: string;
-		changedAt?: string;
 	},
 ): Promise<SiteRegistryResult<RegisteredSite>> {
-	return db.transaction().execute(async (trx) => {
-		const current = await trx
-			.selectFrom("options")
-			.select(["revision", "site_id"])
-			.where("name", "=", `site:${input.siteId}:title`)
-			.executeTakeFirst();
-		if (
-			current?.site_id !== input.siteId ||
-			(current?.revision ?? null) !== input.expectedRevision
-		) {
-			return {
-				ok: false,
-				reason: current ? "stale" : input.expectedRevision === null ? "stale" : "not_found",
-			};
-		}
+	const result = await db.transaction().execute(async (trx) => {
 		const site = await trx
 			.selectFrom("_emdash_sites")
 			.select("id")
 			.where("id", "=", input.siteId)
 			.executeTakeFirst();
-		if (!site) return { ok: false, reason: "not_found" };
+		if (!site) return { ok: false, reason: "not_found" } as const;
+		const current = await trx
+			.selectFrom("options")
+			.select(["revision", "site_id"])
+			.where("name", "=", `site:${input.siteId}:title`)
+			.executeTakeFirst();
+		if (current && current.site_id !== input.siteId) return { ok: false, reason: "stale" } as const;
+		if ((current?.revision ?? null) !== input.expectedRevision) {
+			return { ok: false, reason: "stale" } as const;
+		}
 		const revision = crypto.randomUUID();
 		const write = await trx
 			.insertInto("options")
@@ -102,10 +97,11 @@ export async function updateRegisteredSiteTitle(
 				conflict
 					.column("name")
 					.doUpdateSet({ value: JSON.stringify(input.title), revision })
-					.where("revision", "=", input.expectedRevision ?? ""),
+					.where("options.revision", "=", input.expectedRevision ?? ""),
 			)
 			.executeTakeFirst();
-		if ((write.numInsertedOrUpdatedRows ?? 0n) === 0n) return { ok: false, reason: "stale" };
+		if ((write.numInsertedOrUpdatedRows ?? 0n) === 0n)
+			return { ok: false, reason: "stale" } as const;
 		await trx
 			.insertInto("audit_logs")
 			.values({
@@ -115,13 +111,12 @@ export async function updateRegisteredSiteTitle(
 				action: "settings_update",
 				resource_type: "site",
 				resource_id: input.siteId,
-				details: JSON.stringify({
-					field: "title",
-					changedAt: input.changedAt ?? new Date().toISOString(),
-				}),
+				details: JSON.stringify({ field: "title" }),
 				status: "success",
 			})
 			.execute();
-		return { ok: true, value: (await getRegisteredSite(trx, input.siteId))! };
+		return { ok: true, value: (await getRegisteredSite(trx, input.siteId))! } as const;
 	});
+	if (result.ok) invalidateSiteSettingsCache(input.siteId);
+	return result;
 }
