@@ -2,6 +2,9 @@
 	"useTabs": true,
 	"experimentalSortImports": {},
 	"ignorePatterns": [
+		".agents/**",
+		".claude/**",
+		"**/skills/**",
 		"**/dist/**",
 		"**/node_modules/**",
 		"**/*.mdx",
