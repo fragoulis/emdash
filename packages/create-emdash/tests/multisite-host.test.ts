@@ -1,4 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -118,15 +119,28 @@ describe("generated host", () => {
 			for (const slug of ["default", "foo"]) {
 				mkdirSync(join(project, "dist/sites", slug, "server"), { recursive: true });
 			}
-			writeFileSync(
-				join(project, "dist/sites/default/server/entry.mjs"),
+			const defaultEntry =
 				'import { getRequestContext } from "emdash/request-context";\n' +
-					'export function handler(request, response) { if (request.url === "/explode") throw new Error("Fixture failure"); response.end(getRequestContext()?.siteId ?? "none"); }\n',
+				'export function handler(request, response) { if (request.url === "/explode") throw new Error("Fixture failure"); response.end(getRequestContext()?.siteId ?? "none"); }\n';
+			writeFileSync(join(project, "dist/sites/default/server/entry.mjs"), defaultEntry);
+			writeFileSync(
+				join(project, "dist/sites/default/version.json"),
+				JSON.stringify({
+					version: createHash("sha256")
+						.update("server/entry.mjs")
+						.update(defaultEntry)
+						.digest("hex"),
+				}),
 			);
-			writeFileSync(
-				join(project, "dist/sites/foo/server/entry.mjs"),
+			const fooEntry =
 				'import { getRequestContext } from "emdash/request-context";\n' +
-					'export function handler(request, response) { if (request.url === "/explode") throw new Error("Fixture failure"); response.end("foo:" + getRequestContext()?.siteId); }\n',
+				'export function handler(request, response) { if (request.url === "/explode") throw new Error("Fixture failure"); response.end("foo:" + getRequestContext()?.siteId); }\n';
+			writeFileSync(join(project, "dist/sites/foo/server/entry.mjs"), fooEntry);
+			writeFileSync(
+				join(project, "dist/sites/foo/version.json"),
+				JSON.stringify({
+					version: createHash("sha256").update("server/entry.mjs").update(fooEntry).digest("hex"),
+				}),
 			);
 			const hostPort = await freePort();
 			clerk = await startClerkFixture(`http://localhost:${hostPort}`);

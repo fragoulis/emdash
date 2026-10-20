@@ -6,6 +6,7 @@ import { clerkSource } from "./multisite-clerk.js";
 import { defaultHostSource } from "./multisite-host.js";
 import { clerkLoginPageSource, clerkLoginSource } from "./multisite-login.js";
 import { clerkSignOutSource, noAccessPageSource } from "./multisite-no-access.js";
+import { readinessSource } from "./multisite-readiness.js";
 import { multiSiteReadme } from "./multisite-readme.js";
 import { createSitesPageSource } from "./multisite-sites.js";
 
@@ -46,6 +47,7 @@ export function prepareDefaultPresentation(projectDir: string): void {
 			),
 	);
 	writeFileSync(resolve(projectDir, "host.mjs"), defaultHostSource);
+	writeFileSync(resolve(projectDir, "readiness.mjs"), readinessSource);
 	writeFileSync(resolve(projectDir, "build.mjs"), buildSource);
 	writeFileSync(resolve(projectDir, "clerk.mjs"), clerkSource);
 	writeFileSync(resolve(destination, "pages/login.astro"), clerkLoginPageSource);
