@@ -7,21 +7,11 @@ import { getLocaleDir, loadMessages, resolveLocale } from "@emdash-cms/admin/loc
 import { translateCentralAdminLabels } from "@emdash-cms/admin/locales/server";
 import { LinkButton } from "@cloudflare/kumo";
 import { ClerkSignOut } from "${componentImport}";
-import pg from "pg";
+import { SystemSites } from "${componentImport.replace("ClerkSignOut", "SystemSites")}";
 
 export const prerender = false;
 const locale = resolveLocale(Astro.request);
 const labels = translateCentralAdminLabels(await loadMessages(locale));
-const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
-let sites;
-try {
-  await db.connect();
-  sites = (await db.query("SELECT slug FROM _emdash_sites WHERE active = 1 ORDER BY slug")).rows;
-} finally {
-  await db.end();
-}
-const selected = Astro.url.pathname.startsWith("/site/")
-  ? Astro.url.pathname.slice("/site/".length) : null;
 Astro.response.headers.set("Cache-Control", "private, no-store");
 ---
 <!doctype html>
@@ -45,17 +35,9 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
     </header>
     <main class="mx-auto max-w-5xl p-6">
       <p class="text-sm font-semibold text-kumo-brand">{labels.systemAdministration}</p>
-      <h1 class="mt-2 text-2xl font-semibold">{selected || labels.sites}</h1>
-      {!selected && sites.length > 0 && <p class="mt-3 text-kumo-subtle" dir="auto">{labels.sitesDescription}</p>}
-      {sites.length === 0 && <section class="mt-8 rounded-xl border border-kumo-line bg-kumo-base p-6">
-        <h2 class="text-lg font-semibold">{labels.noSitesTitle}</h2>
-        <p class="mt-2 text-kumo-subtle" dir="auto">{labels.noSitesDescription}</p>
-      </section>}
-      {!selected && sites.length > 0 && <ul class="mt-6 grid gap-3 sm:grid-cols-2">
-        {sites.map((site) => <li class="rounded-xl border border-kumo-line bg-kumo-base p-4 shadow-sm">
-          <LinkButton href={\`/site/\${encodeURIComponent(site.slug)}\`} variant="secondary">{site.slug}</LinkButton>
-        </li>)}
-      </ul>}
+      <h1 class="mt-2 text-2xl font-semibold" dir="auto">{Astro.url.pathname.startsWith("/site/") ? decodeURIComponent(Astro.url.pathname.slice("/site/".length)) : labels.sites}</h1>
+      <p class="mt-3 text-kumo-subtle" dir="auto">{labels.sitesDescription}</p>
+      <div class="mt-6"><SystemSites client:load labels={labels} /></div>
     </main>
   </body>
 </html>
