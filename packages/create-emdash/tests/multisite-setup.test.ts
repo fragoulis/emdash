@@ -48,7 +48,10 @@ function request(
 				res.on("end", () => done({ status: res.statusCode ?? 0, body, headers: res.headers }));
 			},
 		);
-		req.on("error", fail);
+		req.setTimeout(15_000, () => req.destroy(new Error("request timed out")));
+		req.on("error", (error) =>
+			fail(new Error(`${method} ${hostname}${path}: ${error.message}`, { cause: error })),
+		);
 		req.end();
 	});
 }
@@ -181,16 +184,60 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				timeout: 180_000,
 				stdio: "pipe",
 			});
+		const buildAsync = () =>
+			new Promise<void>((resolveBuild, rejectBuild) => {
+				const child = spawn(process.execPath, [resolve(project, "build.mjs")], {
+					cwd: project,
+					env,
+					stdio: "pipe",
+				});
+				let output = "";
+				const timeout = setTimeout(() => child.kill("SIGTERM"), 180_000);
+				child.stdout?.setEncoding("utf8").on("data", (chunk) => (output += chunk));
+				child.stderr?.setEncoding("utf8").on("data", (chunk) => (output += chunk));
+				child.once("error", (error) => {
+					clearTimeout(timeout);
+					rejectBuild(error);
+				});
+				child.once("exit", (code, signal) => {
+					clearTimeout(timeout);
+					if (code === 0) resolveBuild();
+					else
+						rejectBuild(
+							new Error(`Generated presentation build failed (${signal ?? code}): ${output}`),
+						);
+				});
+			});
 		let hostOutput = "";
+		let hostErrorOutput = "";
 		const startHost = () => {
 			hostOutput = "";
+			hostErrorOutput = "";
 			host = spawn(process.execPath, [resolve(project, "host.mjs")], {
 				cwd: project,
 				env,
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 			host.stdout?.setEncoding("utf8").on("data", (chunk) => (hostOutput += chunk));
-			host.stderr?.on("data", (chunk) => console.error("[fixture host]", String(chunk)));
+			host.stderr?.setEncoding("utf8").on("data", (chunk) => {
+				hostErrorOutput += chunk;
+				console.error("[fixture host]", String(chunk));
+			});
+		};
+		let clerkRequestsAtProbe = 0;
+		const requestHost = async (
+			hostname: string,
+			path: string,
+			headers: Record<string, string> = {},
+		) => {
+			try {
+				return await request(port, hostname, path, headers);
+			} catch (error) {
+				throw new Error(
+					`${String(error)}\\nHost exit code: ${host?.exitCode}\\nClerk fixture requests: ${clerkRequestsAtProbe} -> ${clerk?.state.requests ?? "unavailable"}\\nHost stdout:\\n${hostOutput}\\nHost stderr:\\n${hostErrorOutput}`,
+					{ cause: error },
+				);
+			}
 		};
 		const cookie = { Cookie: `__session=${clerk.jwt()}` };
 		const query = (sql: string) =>
@@ -221,6 +268,7 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 					const page = await context.newPage();
 					await page.goto(`http://localhost:${port}/sites`);
 					await page.getByRole("heading", { name: "Sites", exact: true }).waitFor();
+					await page.locator("main section").waitFor();
 					const layout = await page.evaluate(() => {
 						const mainElement = document.querySelector("main")!;
 						const heading = mainElement.querySelector("h1")!;
@@ -313,6 +361,49 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			});
 		expect(addSite("foo")).toContain("Site foo registered");
 		expect(addSite("bar")).toContain("Site bar registered");
+		const registeredBeforeBuild = await request(
+			port,
+			"localhost",
+			"/_emdash/api/system/sites?limit=100",
+			cookie,
+		);
+		expect(registeredBeforeBuild.status).toBe(200);
+		const registeredData = JSON.parse(registeredBeforeBuild.body).data.items;
+		expect(registeredData.map((site: { slug: string }) => site.slug)).toEqual(["bar", "foo"]);
+		expect(
+			registeredData.every(
+				(site: { readiness: { status: string } }) => site.readiness.status === "unavailable",
+			),
+		).toBe(true);
+		const unavailablePublic = await request(port, "foo.localhost", "/");
+		expect(unavailablePublic.status).toBe(503);
+		expect(unavailablePublic.body).toBe("");
+		{
+			const { chromium } = await import("../../../node_modules/@playwright/test/index.mjs");
+			const browser = await chromium.launch();
+			try {
+				const context = await browser.newContext({ locale: "en" });
+				await context.addCookies([
+					{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+				]);
+				const page = await context.newPage();
+				await page.goto(`http://localhost:${port}/sites`);
+				await page.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
+				expect(await page.locator("main").innerText()).toContain("Unavailable");
+				expect(await page.locator("main").innerText()).toContain(
+					"Check the installed site build and host logs",
+				);
+				if (process.env.EMDASH_CAPTURE_SETUP) {
+					await page.screenshot({
+						path: "/tmp/emdash-56-sites-unavailable-en.png",
+						fullPage: true,
+					});
+				}
+				await context.close();
+			} finally {
+				await browser.close();
+			}
+		}
 		const collectionsBefore = query("SELECT count(*) FROM _emdash_collections");
 		const fieldsBefore = query("SELECT count(*) FROM _emdash_fields");
 		const fooPosts = query(
@@ -393,6 +484,45 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect(hostOutput).toContain(`[host] Public site: http://foo.localhost:${port}`);
 		expect(hostOutput).not.toContain("Public site: http://default.localhost");
 		expect(query("SELECT count(*) FROM _emdash_sites")).toBe("2");
+		expect((await request(port, "foo.localhost", "/readiness-check")).status).toBe(404);
+		const initialFooVersion = JSON.parse(
+			readFileSync(resolve(project, "dist/sites/foo/version.json"), "utf8"),
+		).version;
+		for (let visit = 0; visit < 2; visit++) {
+			const fooCategory = await request(port, "foo.localhost", "/category/development");
+			const barCategory = await request(port, "bar.localhost", "/category/development");
+			expect(fooCategory.status).toBe(200);
+			expect(barCategory.status).toBe(200);
+			expect(fooCategory.body).toContain("Foo development");
+			expect(fooCategory.body).not.toContain("Bar development");
+			expect(barCategory.body).toContain("Bar development");
+			expect(barCategory.body).not.toContain("Foo development");
+		}
+		writeFileSync(
+			resolve(project, "src/foo/pages/readiness-check.astro"),
+			"<html><body>New foo presentation version</body></html>",
+		);
+		await buildAsync();
+		expect((await requestHost("foo.localhost", "/")).status).toBe(200);
+		expect((await requestHost("foo.localhost", "/readiness-check")).status).toBe(404);
+		expect((await requestHost("localhost", "/admin", cookie)).status).toBe(302);
+		clerkRequestsAtProbe = clerk.state.requests;
+		const latestFooVersion = JSON.parse(
+			readFileSync(resolve(project, "dist/sites/foo/version.json"), "utf8"),
+		).version;
+		const readinessResponse = await requestHost(
+			"localhost",
+			"/_emdash/api/system/sites/foo",
+			cookie,
+		);
+		expect(readinessResponse.status).toBe(200);
+		expect(JSON.parse(readinessResponse.body).data.readiness).toMatchObject({
+			status: "ready",
+			loadedVersion: initialFooVersion,
+			latestVersion: latestFooVersion,
+			pendingRestart: true,
+		});
+		expect(initialFooVersion).not.toBe(latestFooVersion);
 		const callsBeforePublic = clerk.state.requests;
 		for (const path of [
 			"/%5femdash/api/setup/status",
@@ -421,6 +551,8 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		for (let visit = 0; visit < 2; visit++) {
 			const fooCategory = await request(port, "foo.localhost", "/category/development");
 			const barCategory = await request(port, "bar.localhost", "/category/development");
+			expect(fooCategory.status).toBe(200);
+			expect(barCategory.status).toBe(200);
 			expect(fooCategory.body).toContain("Foo development");
 			expect(fooCategory.body).not.toContain("Bar development");
 			expect(barCategory.body).toContain("Bar development");
@@ -429,11 +561,9 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect(clerk.state.requests).toBe(callsBeforePublic);
 		const sites = await request(port, "localhost", "/sites", cookie);
 		expect(sites.status).toBe(200);
-		expect(sites.body).toContain("foo");
-		expect(sites.body).toContain("bar");
-		expect(sites.body).not.toContain('href="/site/default"');
-		expect((await request(port, "localhost", "/site/foo", cookie)).body).toContain("foo");
-		expect((await request(port, "localhost", "/site/bar", cookie)).body).toContain("bar");
+		expect(sites.body).toContain("System administration");
+		expect((await request(port, "localhost", "/site/foo", cookie)).status).toBe(200);
+		expect((await request(port, "localhost", "/site/bar", cookie)).status).toBe(200);
 		expect(
 			(
 				await request(port, "localhost", "/admin", {
@@ -455,6 +585,9 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect(arabicSites.body).toContain('dir="rtl"');
 
 		clerk.state.superAdmin = false;
+		expect((await request(port, "localhost", "/_emdash/api/system/sites", cookie)).status).toBe(
+			403,
+		);
 		for (const path of ["/admin", "/sites", "/site/foo"]) {
 			const denied = await request(port, "localhost", path, cookie);
 			expect(denied.headers.location).toBe("/no-access");
@@ -471,6 +604,8 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect((await request(port, "localhost", "/_emdash/api/setup/status", cookie)).status).toBe(
 			403,
 		);
+		query("UPDATE _emdash_sites SET active = 0 WHERE slug = 'bar'");
+		expect((await request(port, "bar.localhost", "/")).status).toBe(421);
 		const { chromium } = await import("../../../node_modules/@playwright/test/index.mjs");
 		const browser = await chromium.launch();
 		try {
@@ -497,34 +632,221 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
 			await adminPage.getByRole("button", { name: "Sign out" }).waitFor();
 			expect(await adminPage.locator("html").getAttribute("dir")).toBe("rtl");
+			await adminPage.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
+			await adminPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
+			const rtlLayout = await adminPage.evaluate(() => {
+				const rtl = document.documentElement.dir === "rtl";
+				const selectors = ["main > p", "main > h1", "main section h2", "main li > p"];
+				const englishDirection = (text: string) => {
+					const element = [...document.querySelectorAll("main bdi")].find(
+						(item) => item.textContent?.trim() === text,
+					);
+					return element ? getComputedStyle(element).direction : undefined;
+				};
+				const misaligned = selectors.flatMap((selector) =>
+					[...document.querySelectorAll(selector)].flatMap((element) => {
+						const range = document.createRange();
+						range.selectNodeContents(element);
+						const rects = [...range.getClientRects()];
+						if (rects.length === 0) return [];
+						const firstTop = Math.min(...rects.map((rect) => rect.top));
+						const firstLine = rects.filter((rect) => Math.abs(rect.top - firstTop) < 2);
+						const lineStart = rtl
+							? Math.max(...firstLine.map((rect) => rect.right))
+							: Math.min(...firstLine.map((rect) => rect.left));
+						const box = element.getBoundingClientRect();
+						const boxStart = rtl ? box.right : box.left;
+						const distance = Math.abs(lineStart - boxStart);
+						if (distance <= 2) return [];
+						const style = getComputedStyle(element);
+						return [
+							{
+								selector,
+								text: element.textContent?.trim().replace(/\s+/g, " ").slice(0, 100),
+								direction: style.direction,
+								textAlign: style.textAlign,
+								lineStart,
+								boxStart,
+								distance,
+							},
+						];
+					}),
+				);
+				return {
+					direction: getComputedStyle(document.documentElement).direction,
+					overflow: document.documentElement.scrollWidth > window.innerWidth,
+					misaligned,
+					proseDirections: {
+						description: englishDirection("Manage the sites in this EmDash installation."),
+						pendingRestart: englishDirection(
+							"A restart is needed to load the latest presentation version.",
+						),
+						disabledExplanation: englishDirection(
+							"This site is disabled. Its registration and data remain, but it is not available to visitors or site administrators.",
+						),
+					},
+				};
+			});
 			if (process.env.EMDASH_CAPTURE_SETUP) {
-				await adminPage.screenshot({ path: "/tmp/emdash-26-sites-ar.png", fullPage: true });
+				await adminPage.screenshot({ path: "/tmp/emdash-56-sites-ar.png", fullPage: true });
 			}
+			expect(rtlLayout).toEqual({
+				direction: "rtl",
+				overflow: false,
+				misaligned: [],
+				proseDirections: {
+					description: "ltr",
+					pendingRestart: "ltr",
+					disabledExplanation: "ltr",
+				},
+			});
 			await adminPage.getByRole("main").getByRole("link", { name: "foo" }).click();
 			await adminPage.getByRole("heading", { name: "foo" }).waitFor();
+			await adminPage.locator("main input").waitFor();
+			const managementAlignment = await adminPage.evaluate(() => {
+				const selectors = [
+					"main > p",
+					"main > h1",
+					"main section > p",
+					"main section h2",
+					"main form > p",
+				];
+				return selectors.flatMap((selector) =>
+					[...document.querySelectorAll(selector)].flatMap((element) => {
+						const range = document.createRange();
+						range.selectNodeContents(element);
+						const rects = [...range.getClientRects()];
+						if (rects.length === 0) return [];
+						const firstTop = Math.min(...rects.map((rect) => rect.top));
+						const firstLine = rects.filter((rect) => Math.abs(rect.top - firstTop) < 2);
+						const lineStart = Math.max(...firstLine.map((rect) => rect.right));
+						const box = element.getBoundingClientRect();
+						const distance = Math.abs(lineStart - box.right);
+						if (distance <= 2) return [];
+						const style = getComputedStyle(element);
+						return [
+							{
+								selector,
+								text: element.textContent?.trim().replace(/\s+/g, " ").slice(0, 100),
+								direction: style.direction,
+								textAlign: style.textAlign,
+								lineStart,
+								boxStart: box.right,
+								distance,
+							},
+						];
+					}),
+				);
+			});
+			if (process.env.EMDASH_CAPTURE_SETUP) {
+				await adminPage.screenshot({
+					path: "/tmp/emdash-56-site-management-ar.png",
+					fullPage: true,
+				});
+			}
+			expect(managementAlignment).toEqual([]);
+			const openAdmin = adminPage.locator("main button:disabled");
+			await openAdmin.waitFor();
+			expect(await openAdmin.count()).toBeGreaterThan(0);
+			expect(await adminPage.locator("main section").innerText()).toContain(
+				"Site admin access is not available yet.",
+			);
 			await adminPage.goBack();
 			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
 			await adminPage.goForward();
 			await adminPage.getByRole("heading", { name: "foo" }).waitFor();
 			await adminContext.close();
+
+			const editContext = await browser.newContext({ locale: "en" });
+			await editContext.addCookies([
+				{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+			]);
+			const firstEditor = await editContext.newPage();
+			const secondEditor = await editContext.newPage();
+			await firstEditor.goto(`http://localhost:${port}/sites`);
+			await firstEditor.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
+			await firstEditor.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
+			expect(await firstEditor.locator("main").innerText()).toContain("Disabled");
+			expect(await firstEditor.locator("main").innerText()).toContain("foo.localhost");
+			expect(await firstEditor.locator("main").innerText()).toContain(
+				"A restart is needed to load the latest presentation version.",
+			);
+			if (process.env.EMDASH_CAPTURE_SETUP) {
+				await firstEditor.screenshot({ path: "/tmp/emdash-56-sites-en.png", fullPage: true });
+			}
+			await firstEditor.getByRole("main").getByRole("link", { name: "bar" }).click();
+			await firstEditor.getByRole("heading", { name: "bar" }).waitFor();
+			await firstEditor.getByLabel("Title").waitFor();
+			expect(await firstEditor.locator("main").innerText()).toContain("Disabled");
+			await firstEditor.goto(`http://localhost:${port}/sites`);
+			await firstEditor.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
+			await firstEditor.getByRole("main").getByRole("link", { name: "foo" }).click();
+			await firstEditor.getByLabel("Title").waitFor();
+			if (process.env.EMDASH_CAPTURE_SETUP) {
+				await firstEditor.screenshot({
+					path: "/tmp/emdash-56-site-management-en.png",
+					fullPage: true,
+				});
+			}
+			await secondEditor.goto(`http://localhost:${port}/site/foo`);
+			await secondEditor.getByLabel("Title").waitFor();
+			await firstEditor.getByLabel("Title").fill("Foo title from first tab");
+			const titleSave = firstEditor.waitForResponse(
+				(response) =>
+					response.url().endsWith("/_emdash/api/system/sites/foo") &&
+					response.request().method() === "PATCH",
+			);
+			await firstEditor.getByRole("button", { name: "Save title" }).click();
+			expect((await titleSave).status()).toBe(200);
+			const fooSiteId = query("SELECT id FROM _emdash_sites WHERE slug = 'foo'");
+			expect(query("SELECT value FROM options WHERE name = 'site:" + fooSiteId + ":title'")).toBe(
+				'"Foo title from first tab"',
+			);
+			const audit = query(
+				"SELECT timestamp || '|' || actor_id || '|' || resource_id || '|' || action || '|' || status || '|' || details FROM audit_logs WHERE resource_type = 'site' ORDER BY timestamp DESC LIMIT 1",
+			).split("|");
+			expect(audit[0]).toMatch(/^\d{4}-\d{2}-\d{2}/);
+			expect(audit.slice(1).join("|")).toBe(
+				`user_fixture|${fooSiteId}|settings_update|success|{"field":"title"}`,
+			);
+			expect(
+				query(
+					"SELECT value FROM options WHERE name = 'site:" +
+						query("SELECT id FROM _emdash_sites WHERE slug = 'bar'") +
+						":title'",
+				),
+			).not.toBe('"Foo title from first tab"');
+			await firstEditor.getByLabel("Title").waitFor({ state: "visible" });
+			expect(await firstEditor.getByLabel("Title").inputValue()).toBe("Foo title from first tab");
+			await secondEditor.getByLabel("Title").fill("Stale title from second tab");
+			await secondEditor.getByRole("button", { name: "Save title" }).click();
+			const conflictAlert = secondEditor.getByRole("alert");
+			await conflictAlert.waitFor({ state: "visible" });
+			expect(await conflictAlert.innerText()).toContain("changed elsewhere");
+			await secondEditor.getByRole("button", { name: "Reload latest" }).click();
+			await secondEditor.getByLabel("Title").waitFor({ state: "visible" });
+			expect(await secondEditor.getByLabel("Title").inputValue()).toBe("Foo title from first tab");
+			await editContext.close();
 		} finally {
 			await browser.close();
 		}
-		query("UPDATE _emdash_sites SET active = 0 WHERE slug = 'bar'");
-		expect((await request(port, "bar.localhost", "/")).status).toBe(421);
-		expect((await request(port, "localhost", "/site/bar", cookie)).status).toBe(404);
+		expect((await request(port, "localhost", "/site/bar", cookie)).status).toBe(200);
 		query("UPDATE _emdash_sites SET active = 1 WHERE slug = 'bar'");
 		clerk.state.superAdmin = true;
 		expect((await request(port, "localhost", "/no-access", cookie)).headers.location).toBe(
 			"/sites",
 		);
 		clerk.state.active = false;
+		expect((await request(port, "localhost", "/_emdash/api/system/sites", cookie)).status).toBe(
+			401,
+		);
 		expect((await request(port, "localhost", "/admin", cookie)).headers.location).toContain(
 			"/login?",
 		);
 		clerk.state.active = true;
 		clerk.state.available = false;
 		expect((await request(port, "localhost", "/admin", cookie)).status).toBe(503);
+		clerk.state.available = true;
 		expect((await request(port, "foo.localhost", "/")).status).toBe(200);
 		const siteDataBeforeRecovery = query(
 			"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo')",
@@ -542,6 +864,25 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				"SELECT title FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo') AND slug = 'a-weekend-with-a-side-project'",
 			),
 		).toBe("Foo only marker");
+		if (host && host.exitCode === null) {
+			host.kill();
+			await new Promise<void>((done) => host?.once("exit", () => done()));
+		}
+		startHost();
+		await waitFor(
+			async () => (await request(port, "foo.localhost", "/readiness-check")).status === 200,
+		);
+		const afterRestart = await requestHost("localhost", "/_emdash/api/system/sites/foo", cookie);
+		expect(afterRestart.status).toBe(200);
+		expect(JSON.parse(afterRestart.body).data.readiness).toMatchObject({
+			status: "ready",
+			loadedVersion: latestFooVersion,
+			latestVersion: latestFooVersion,
+			pendingRestart: false,
+		});
+		expect((await request(port, "foo.localhost", "/readiness-check")).body).toContain(
+			"New foo presentation version",
+		);
 		completed = true;
 		if (keep) writeFileSync(resolve(workspace, "postgres-container"), container);
 	} finally {
