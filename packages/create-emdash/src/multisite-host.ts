@@ -4,8 +4,9 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Pool } from "pg";
 import { createDialect } from "emdash/db/postgres";
+import { LocalStorage } from "emdash/storage/local";
 import { initializeMultisiteDatabase } from "emdash/internal/multisite/initialize";
-import { listRegisteredSites, updateRegisteredSiteTitle } from "emdash/internal/multisite/registry";
+import { createRegisteredSite, listRegisteredSites, updateRegisteredSiteTitle } from "emdash/internal/multisite/registry";
 import { runWithContext } from "emdash/request-context";
 import { verifiedIdentity } from "./clerk.mjs";
 import { loadPresentations } from "./readiness.mjs";
@@ -21,12 +22,16 @@ if (!process.env.EMDASH_ADMIN_ORIGIN && adminHost !== "localhost") {
   throw new Error("Set EMDASH_ADMIN_ORIGIN for the central admin");
 }
 const adminOrigin = process.env.EMDASH_ADMIN_ORIGIN ?? "http://localhost:" + port;
+const adminUrl = new URL(adminOrigin);
+const siteDomain = process.env.EMDASH_SITE_DOMAIN ?? defaultHost.split(".").slice(1).join(".");
+if (!/^[a-z0-9.-]+$/.test(siteDomain)) throw new Error("Set a valid EMDASH_SITE_DOMAIN");
 process.env.EMDASH_ADMIN_ORIGIN = adminOrigin;
 process.env.ASTRO_NODE_AUTOSTART = "disabled";
 const require = createRequire(import.meta.url);
 const kyselyPath = pathToFileURL(createRequire(require.resolve("emdash/seed")).resolve("kysely")).href;
 const { Kysely } = await import(kyselyPath);
 const initialSeed = JSON.parse(readFileSync(new URL("./seed/seed.json", import.meta.url), "utf8"));
+const seedStorage = new LocalStorage({ directory: fileURLToPath(new URL("./uploads", import.meta.url)), baseUrl: "/_emdash/api/media/file" });
 const initializationDb = new Kysely({
   dialect: createDialect({ connectionString: process.env.DATABASE_URL }),
 });
@@ -81,11 +86,28 @@ async function systemSites(request, response, identity, route) {
   if (!identity?.isSuperAdmin) return apiError(response, 403, "FORBIDDEN", "System administration access required");
   const method = request.method;
   const origin = request.headers.origin;
-  if (method === "PATCH" && (request.headers["x-emdash-request"] !== "1" || origin !== adminOrigin)) {
+  if ((method === "PATCH" || method === "POST") && (request.headers["x-emdash-request"] !== "1" || origin !== adminOrigin)) {
     return apiError(response, 403, "CSRF_REJECTED", "Cross-origin request blocked");
   }
   const slug = route[1];
   try {
+    if (method === "POST" && !slug) {
+      const body = await readJson(request);
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => !["title", "slug"].includes(key)) || typeof body.title !== "string" || !body.title.trim() || body.title.length > 120 || typeof body.slug !== "string" || !/^[a-z][a-z0-9-]{0,62}$/.test(body.slug) || ["default", "admin", "localhost"].includes(body.slug)) {
+        return apiError(response, 400, "VALIDATION_ERROR", "Invalid site title or slug");
+      }
+      try {
+        const requestKey = request.headers["idempotency-key"];
+        if (typeof requestKey !== "string" || !/^[A-Za-z0-9._:-]{16,128}$/.test(requestKey)) return apiError(response, 400, "VALIDATION_ERROR", "A valid Idempotency-Key is required");
+        const hostname = body.slug + "." + siteDomain;
+        const siteUrl = adminUrl.protocol + "//" + hostname + (adminUrl.port ? ":" + adminUrl.port : "");
+        const site = await createRegisteredSite(registryDb, { title: body.title.trim(), slug: body.slug, hostname, siteUrl, actorId: identity.subject, actorScope: identity.subject, actorSource: "system-admin", requestKey, seed: initialSeed, storage: seedStorage });
+        return json(response, 201, { success: true, data: { ...site, readiness: getPresentationReadiness(site.presentation) } });
+      } catch (error) {
+        if (error instanceof Error && /already (registered|used)/.test(error.message)) return apiError(response, 409, "CONFLICT", error.message);
+        throw error;
+      }
+    }
     if (method === "GET" && !slug) {
       const url = new URL(request.url, adminOrigin);
       const rawLimit = url.searchParams.get("limit");
@@ -98,7 +120,7 @@ async function systemSites(request, response, identity, route) {
       const all = await listRegisteredSites(registryDb);
       const filtered = cursor ? all.filter((site) => site.slug > cursor[0] || site.slug === cursor[0] && site.id > cursor[1]) : all;
       const page = filtered.slice(0, limit + 1);
-      const items = page.slice(0, limit).map((site) => ({ ...site, readiness: getPresentationReadiness(site.slug) }));
+      const items = page.slice(0, limit).map((site) => ({ ...site, readiness: getPresentationReadiness(site.presentation) }));
       const last = items.at(-1);
       const nextCursor = page.length > limit && last ? encodeSiteCursor(last.slug, last.id) : undefined;
       return json(response, 200, { success: true, data: { items, ...(nextCursor ? { nextCursor } : {}) } });
@@ -106,7 +128,7 @@ async function systemSites(request, response, identity, route) {
     if (method === "GET" && slug) {
       const site = (await listRegisteredSites(registryDb)).find((item) => item.slug === slug);
       if (!site) return apiError(response, 404, "NOT_FOUND", "Site not found");
-      return json(response, 200, { success: true, data: { ...site, readiness: getPresentationReadiness(site.slug) } });
+      return json(response, 200, { success: true, data: { ...site, readiness: getPresentationReadiness(site.presentation) } });
     }
     if (method === "PATCH" && slug) {
       const body = await readJson(request);
@@ -117,7 +139,7 @@ async function systemSites(request, response, identity, route) {
       if (!target) return apiError(response, 404, "NOT_FOUND", "Site not found");
       const result = await updateRegisteredSiteTitle(registryDb, { siteId: target.id, title: body.title.trim(), expectedRevision: body.expectedRevision, actorId: identity.subject });
       if (!result.ok) return apiError(response, result.reason === "not_found" ? 404 : 409, result.reason === "not_found" ? "NOT_FOUND" : "CONFLICT", result.reason === "not_found" ? "Site not found" : "Site title changed; reload and try again");
-      return json(response, 200, { success: true, data: { ...result.value, readiness: getPresentationReadiness(result.value.slug) } });
+      return json(response, 200, { success: true, data: { ...result.value, readiness: getPresentationReadiness(result.value.presentation) } });
     }
     return apiError(response, method === "GET" || method === "PATCH" ? 404 : 405, method === "GET" || method === "PATCH" ? "NOT_FOUND" : "METHOD_NOT_ALLOWED", "System site endpoint not found");
   } catch (error) {
@@ -143,7 +165,7 @@ function hostname(request) {
 
 async function resolveSite(host) {
   const result = await db.query(
-    "SELECT s.id, s.slug FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE h.hostname = $1 AND s.active = 1",
+    "SELECT s.id, s.slug, COALESCE(s.presentation, s.slug) AS presentation FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE h.hostname = $1 AND s.active = 1",
     [host],
   );
   return result.rows[0] ?? null;
@@ -235,7 +257,7 @@ const server = createServer(async (request, response) => {
     const sitePage = path === "/sites" || siteSlug !== undefined;
     const noAccessPage = path === "/no-access";
     const systemRoute = systemSitesPath.exec(path);
-    if (request.method !== "GET" && request.method !== "HEAD" && !(systemRoute && request.method === "PATCH")) {
+    if (request.method !== "GET" && request.method !== "HEAD" && !(systemRoute && (request.method === "PATCH" || request.method === "POST"))) {
       response.writeHead(403, { "Cache-Control": "no-store" });
       response.end();
       return;
@@ -343,7 +365,7 @@ const server = createServer(async (request, response) => {
       response.end();
       return;
     }
-    serve(request, response, site.slug, site.id);
+    serve(request, response, site.presentation, site.id);
   } catch (error) {
     console.error("[host] Site lookup failed:", error);
     response.writeHead(503);
@@ -362,7 +384,7 @@ server.listen(port, "127.0.0.1", async () => {
     );
     const hosts = new Set(
       result.rows
-        .filter((site) => presentations.has(site.slug))
+        .filter((site) => presentations.has(site.presentation ?? site.slug))
         .map((site) => site.hostname),
     );
     for (const host of hosts) console.log("[host] Public site: " + origin(host));

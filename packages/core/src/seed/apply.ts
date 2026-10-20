@@ -273,6 +273,7 @@ async function applySeedWrites(
 		includeContent = false,
 		storage,
 		skipMediaDownload = false,
+		failOnMediaError = false,
 		onConflict = "skip",
 	} = options;
 
@@ -309,6 +310,7 @@ async function applySeedWrites(
 		db,
 		storage: storage ?? null,
 		skipMediaDownload,
+		failOnMediaError,
 		mediaCache: new Map(), // Cache downloaded media by URL to avoid re-downloading
 		budget,
 	};
@@ -2173,6 +2175,7 @@ interface MediaContext {
 	db: Kysely<Database>;
 	storage: Storage | null;
 	skipMediaDownload: boolean;
+	failOnMediaError: boolean;
 	mediaCache: Map<string, MediaValue>; // URL -> resolved MediaValue
 	budget: SeedBudget | null;
 }
@@ -2467,6 +2470,7 @@ async function resolveMedia(
 			`  ⚠️ Error processing $media ${url}:`,
 			error instanceof Error ? error.message : error,
 		);
+		if (ctx.failOnMediaError) throw error;
 		result.media.skipped++;
 		return null;
 	}

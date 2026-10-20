@@ -770,6 +770,7 @@ export interface SiteTable {
 	id: string;
 	slug: string;
 	active: Generated<number>;
+	presentation: string | null;
 }
 
 export interface SiteHostTable {
@@ -777,9 +778,19 @@ export interface SiteHostTable {
 	site_id: string;
 }
 
+export interface SiteCreationRequestTable {
+	actor_scope: string;
+	actor_id: string | null;
+	request_key: string;
+	payload_hash: string;
+	site_id: string;
+	created_at: string;
+}
+
 export interface Database {
 	_emdash_sites: SiteTable;
 	_emdash_site_hosts: SiteHostTable;
+	_emdash_site_creation_requests: SiteCreationRequestTable;
 	revisions: RevisionTable;
 	_emdash_revision_prune_queue: RevisionPruneQueueTable;
 	taxonomies: TaxonomyTable;
