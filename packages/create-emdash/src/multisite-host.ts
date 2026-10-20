@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Pool } from "pg";
 import { createDialect } from "emdash/db/postgres";
 import { initializeMultisiteDatabase } from "emdash/internal/multisite/initialize";
+import { listRegisteredSites, updateRegisteredSiteTitle } from "emdash/internal/multisite/registry";
 import { runWithContext } from "emdash/request-context";
 import { verifiedIdentity } from "./clerk.mjs";
 import { loadPresentations } from "./readiness.mjs";
@@ -37,7 +38,95 @@ try {
 const { presentations, getPresentationReadiness } = await loadPresentations(fileURLToPath(new URL("./dist/sites/", import.meta.url)));
 if (!presentations.has("default")) throw new Error("Build the default presentation before starting the host");
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
+const registryDb = new Kysely({ dialect: createDialect({ connectionString: process.env.DATABASE_URL }) });
 const publicApiPath = /^\\/_emdash\\/api\\/(?:media\\/file\\/|search(?:\\/suggest)?$)/;
+const systemSitesPath = /^\\/_emdash\\/api\\/system\\/sites(?:\\/([a-z][a-z0-9-]*))?$/;
+
+function json(response, status, body) {
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  response.end(JSON.stringify(body));
+}
+
+function apiError(response, status, code, message) {
+  json(response, status, { success: false, error: { code, message } });
+}
+
+async function readJson(request, maxBytes = 4096) {
+  const chunks = [];
+  let size = 0;
+  let tooLarge = false;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maxBytes) tooLarge = true;
+    else if (!tooLarge) chunks.push(chunk);
+  }
+  if (tooLarge) throw Object.assign(new Error("too large"), { status: 413 });
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch { throw Object.assign(new Error("invalid json"), { status: 400 }); }
+}
+
+function encodeSiteCursor(slug, id) {
+  return Buffer.from(JSON.stringify([slug, id])).toString("base64url");
+}
+
+function decodeSiteCursor(value) {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (Array.isArray(parsed) && parsed.length === 2 && parsed.every((part) => typeof part === "string")) return parsed;
+  } catch {}
+  return null;
+}
+
+async function systemSites(request, response, identity, route) {
+  if (!identity?.isSuperAdmin) return apiError(response, 403, "FORBIDDEN", "System administration access required");
+  const method = request.method;
+  const origin = request.headers.origin;
+  if (method === "PATCH" && (request.headers["x-emdash-request"] !== "1" || origin !== adminOrigin)) {
+    return apiError(response, 403, "CSRF_REJECTED", "Cross-origin request blocked");
+  }
+  const slug = route[1];
+  try {
+    if (method === "GET" && !slug) {
+      const url = new URL(request.url, adminOrigin);
+      const rawLimit = url.searchParams.get("limit");
+      const parsedLimit = rawLimit === null ? 50 : Number(rawLimit);
+      if (!Number.isInteger(parsedLimit) || parsedLimit < 1) return apiError(response, 400, "VALIDATION_ERROR", "Invalid limit");
+      const limit = Math.min(parsedLimit, 100);
+      const cursorValue = url.searchParams.get("cursor");
+      const cursor = cursorValue ? decodeSiteCursor(cursorValue) : null;
+      if (cursorValue && !cursor) return apiError(response, 400, "VALIDATION_ERROR", "Invalid cursor");
+      const all = await listRegisteredSites(registryDb);
+      const filtered = cursor ? all.filter((site) => site.slug > cursor[0] || site.slug === cursor[0] && site.id > cursor[1]) : all;
+      const page = filtered.slice(0, limit + 1);
+      const items = page.slice(0, limit).map((site) => ({ ...site, readiness: getPresentationReadiness(site.slug) }));
+      const last = items.at(-1);
+      const nextCursor = page.length > limit && last ? encodeSiteCursor(last.slug, last.id) : undefined;
+      return json(response, 200, { success: true, data: { items, ...(nextCursor ? { nextCursor } : {}) } });
+    }
+    if (method === "GET" && slug) {
+      const site = (await listRegisteredSites(registryDb)).find((item) => item.slug === slug);
+      if (!site) return apiError(response, 404, "NOT_FOUND", "Site not found");
+      return json(response, 200, { success: true, data: { ...site, readiness: getPresentationReadiness(site.slug) } });
+    }
+    if (method === "PATCH" && slug) {
+      const body = await readJson(request);
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => !["title", "expectedRevision"].includes(key)) || typeof body.title !== "string" || !body.title.trim() || body.title.length > 120 || !(body.expectedRevision === null || typeof body.expectedRevision === "string")) {
+        return apiError(response, 400, "VALIDATION_ERROR", "Invalid site title update");
+      }
+      const target = (await listRegisteredSites(registryDb)).find((item) => item.slug === slug);
+      if (!target) return apiError(response, 404, "NOT_FOUND", "Site not found");
+      const result = await updateRegisteredSiteTitle(registryDb, { siteId: target.id, title: body.title.trim(), expectedRevision: body.expectedRevision, actorId: identity.subject });
+      if (!result.ok) return apiError(response, result.reason === "not_found" ? 404 : 409, result.reason === "not_found" ? "NOT_FOUND" : "CONFLICT", result.reason === "not_found" ? "Site not found" : "Site title changed; reload and try again");
+      return json(response, 200, { success: true, data: { ...result.value, readiness: getPresentationReadiness(result.value.slug) } });
+    }
+    return apiError(response, method === "GET" || method === "PATCH" ? 404 : 405, method === "GET" || method === "PATCH" ? "NOT_FOUND" : "METHOD_NOT_ALLOWED", "System site endpoint not found");
+  } catch (error) {
+    if (error?.status === 413) return apiError(response, 413, "PAYLOAD_TOO_LARGE", "Request body too large");
+    if (error?.status === 400) return apiError(response, 400, "INVALID_JSON", "Request body must be valid JSON");
+    console.error("[host] System site request failed:", error);
+    return apiError(response, 500, "INTERNAL_ERROR", "System site request failed");
+  }
+}
 
 function safeLoginDestination(request) {
   const destination = new URL(request.url ?? "/", "http://localhost").searchParams.get("redirect");
@@ -60,8 +149,8 @@ async function resolveSite(host) {
   return result.rows[0] ?? null;
 }
 
-async function activeSites() {
-  const result = await db.query("SELECT id, slug FROM _emdash_sites WHERE active = 1 ORDER BY slug");
+async function registeredSites() {
+  const result = await db.query("SELECT id, slug FROM _emdash_sites ORDER BY slug");
   return result.rows;
 }
 
@@ -145,7 +234,8 @@ const server = createServer(async (request, response) => {
     const siteSlug = /^\\/site\\/([a-z][a-z0-9-]*)$/.exec(path)?.[1];
     const sitePage = path === "/sites" || siteSlug !== undefined;
     const noAccessPage = path === "/no-access";
-    if (request.method !== "GET" && request.method !== "HEAD") {
+    const systemRoute = systemSitesPath.exec(path);
+    if (request.method !== "GET" && request.method !== "HEAD" && !(systemRoute && request.method === "PATCH")) {
       response.writeHead(403, { "Cache-Control": "no-store" });
       response.end();
       return;
@@ -172,6 +262,10 @@ const server = createServer(async (request, response) => {
           });
         }
         response.end();
+        return;
+      }
+      if (systemRoute) {
+        await systemSites(request, response, identity, systemRoute);
         return;
       }
       if (!identity.isSuperAdmin) {
@@ -210,15 +304,14 @@ const server = createServer(async (request, response) => {
             return;
           }
           if (siteSlug) {
-            const sites = await activeSites();
+            const sites = await registeredSites();
             const site = sites.find((candidate) => candidate.slug === siteSlug);
             if (!site) {
               response.writeHead(404, { "Cache-Control": "no-store" });
               response.end();
               return;
             }
-            response.setHeader("Set-Cookie", "emdash_last_site=" + site.slug + "; Path=/; HttpOnly; SameSite=Lax");
-            serve(request, response, "default", site.id);
+            serve(request, response, "default");
             return;
           }
           serve(request, response, "default");

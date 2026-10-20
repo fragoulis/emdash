@@ -28,6 +28,7 @@ function get(
 	path = "/",
 	headers: Record<string, string> = {},
 	method = "GET",
+	payload?: string,
 ) {
 	return new Promise<{ status: number; body: string; location?: string }>((done, fail) => {
 		const request = httpRequest(
@@ -48,7 +49,7 @@ function get(
 			},
 		);
 		request.on("error", fail);
-		request.end();
+		request.end(payload);
 	});
 }
 
@@ -161,14 +162,26 @@ describe("generated host", () => {
 			};
 			host = spawn(process.execPath, [join(project, "host.mjs")], {
 				cwd: project,
-				stdio: "ignore",
+				stdio: ["ignore", "ignore", "pipe"],
 				env,
 			});
-			await waitForResponse(hostPort, "localhost", 302, "/admin");
+			let hostError = "";
+			host.stderr?.setEncoding("utf8").on("data", (chunk: string) => (hostError += chunk));
+			try {
+				await waitForResponse(hostPort, "localhost", 302, "/admin");
+			} catch (error) {
+				throw new Error(`${String(error)}\n${hostError}`, { cause: error });
+			}
 			expect(await get(hostPort, "localhost", "/admin", cookie)).toMatchObject({
 				status: 302,
 				location: "/sites",
 			});
+			expect(
+				await get(hostPort, "localhost", "/_emdash/api/system/sites", {}, "GET"),
+			).toMatchObject({ status: 401 });
+			expect(
+				await get(hostPort, "foo.localhost", "/_emdash/api/system/sites", cookie),
+			).toMatchObject({ status: 421 });
 			expect(
 				await get(hostPort, "localhost", "/login?redirect=https%3A%2F%2Fevil.example"),
 			).toMatchObject({ status: 302, location: "/login?redirect=%2Fadmin" });
@@ -246,9 +259,117 @@ describe("generated host", () => {
 				status: 302,
 				location: "/sites",
 			});
+			const apiCookie = {
+				Cookie: `__session=${clerk.jwt()}`,
+				Origin: `http://localhost:${hostPort}`,
+			};
+			const listed = await get(hostPort, "localhost", "/_emdash/api/system/sites", apiCookie);
+			expect(listed.status).toBe(200);
+			expect(JSON.parse(listed.body).data.items.map((site: { slug: string }) => site.slug)).toEqual(
+				["foo", "unbuilt"],
+			);
+			const detail = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites/unbuilt",
+				apiCookie,
+			);
+			expect(JSON.parse(detail.body).data.readiness).toMatchObject({ status: "unavailable" });
+			const badCsrf = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites/foo",
+				{ Cookie: apiCookie.Cookie },
+				"PATCH",
+				JSON.stringify({ title: "Changed", expectedRevision: null }),
+			);
+			expect(badCsrf.status).toBe(403);
+			const badOrigin = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites/foo",
+				{ ...apiCookie, Origin: "https://attacker.example" },
+				"PATCH",
+				JSON.stringify({ title: "Changed", expectedRevision: null }),
+			);
+			expect(badOrigin.status).toBe(403);
+			const invalidJson = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites/foo",
+				{ ...apiCookie, "X-EmDash-Request": "1" },
+				"PATCH",
+				"{",
+			);
+			expect(invalidJson.status).toBe(400);
+			const oversized = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites/foo",
+				{ ...apiCookie, "X-EmDash-Request": "1" },
+				"PATCH",
+				"x".repeat(4097),
+			);
+			expect(oversized.status).toBe(413);
+			const patchHeaders = {
+				...apiCookie,
+				"X-EmDash-Request": "1",
+				"Content-Type": "application/json",
+			};
+			const concurrent = await Promise.all(
+				["Foo title A", "Foo title B"].map((title) =>
+					get(
+						hostPort,
+						"localhost",
+						"/_emdash/api/system/sites/foo",
+						patchHeaders,
+						"PATCH",
+						JSON.stringify({ title, expectedRevision: null }),
+					),
+				),
+			);
+			expect(concurrent.map((result) => result.status).toSorted((a, b) => a - b)).toEqual([200, 409]);
+			const changed = concurrent.find((result) => result.status === 200)!;
+			expect(["Foo title A", "Foo title B"]).toContain(JSON.parse(changed.body).data.title);
+			const audit = execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT actor_id || ':' || resource_id || ':' || (timestamp IS NOT NULL)::text || ':' || count(*) OVER () FROM audit_logs WHERE action = 'settings_update' AND resource_type = 'site' AND status = 'success'",
+				],
+				{ encoding: "utf8" },
+			).trim();
+			expect(audit).toContain("user_fixture:site-foo:true:1");
+			expect(
+				JSON.parse(
+					(await get(hostPort, "localhost", "/_emdash/api/system/sites/unbuilt", apiCookie)).body,
+				).data.title,
+			).toBeNull();
+			clerk.state.superAdmin = false;
+			const revokedAuthority = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				apiCookie,
+			);
+			expect(revokedAuthority.status).toBe(403);
+			clerk.state.superAdmin = true;
 			expect(
 				await get(hostPort, "localhost", "/no-access", { Cookie: `__session=${clerk.jwt()}` }),
 			).toMatchObject({ status: 302, location: "/sites" });
+			expect(await get(hostPort, "localhost", "/site/foo", cookie)).toMatchObject({
+				status: 200,
+				body: "none",
+			});
 			expect(
 				await get(hostPort, "foo.localhost", "/", { "X-EmDash-Site-Id": "site-other" }),
 			).toMatchObject({ status: 200, body: "foo:site-foo" });
