@@ -39,9 +39,15 @@ describe("default site scaffold", () => {
 			stdio: "pipe",
 			timeout: 120_000,
 		});
-		expect(existsSync(resolve(project, "dist/sites/default/server/entry.mjs"))).toBe(true);
-		expect(existsSync(resolve(project, "dist/sites/foo/server/entry.mjs"))).toBe(true);
-		expect(existsSync(resolve(project, "dist/sites/default/client/_astro"))).toBe(true);
-		expect(existsSync(resolve(project, "dist/sites/foo/client/_astro"))).toBe(true);
+		for (const slug of ["default", "foo"]) {
+			const site = resolve(project, "dist/sites", slug);
+			const { version, generation } = JSON.parse(
+				readFileSync(resolve(site, "version.json"), "utf8"),
+			);
+			expect(generation).toMatch(/^[a-f0-9-]{36}$/);
+			expect(existsSync(resolve(site, "generations", generation, "server/entry.mjs"))).toBe(true);
+			expect(existsSync(resolve(site, "generations", generation, "client/_astro"))).toBe(true);
+			expect(version).toMatch(/^[a-f0-9]{64}$/);
+		}
 	}, 120_000);
 });

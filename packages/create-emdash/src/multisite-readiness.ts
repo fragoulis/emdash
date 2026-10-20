@@ -26,11 +26,14 @@ export function artifactVersion(directory) {
 }
 
 function readLatest(directory) {
-  if (!existsSync(join(directory, "server/entry.mjs"))) throw new Error();
   const metadata = JSON.parse(readFileSync(join(directory, "version.json"), "utf8"));
   if (typeof metadata.version !== "string" || !/^[a-f0-9]{64}$/.test(metadata.version)) throw new Error();
-  const actualVersion = artifactVersion(directory);
-  return { version: actualVersion, valid: metadata.version === actualVersion };
+  const generation = metadata.generation;
+  if (generation !== undefined && (typeof generation !== "string" || !/^[a-f0-9-]{36}$/.test(generation))) throw new Error();
+  const artifactDirectory = generation === undefined ? directory : join(directory, "generations", generation);
+  if (!existsSync(join(artifactDirectory, "server/entry.mjs"))) throw new Error();
+  const actualVersion = artifactVersion(artifactDirectory);
+  return { version: actualVersion, generation, artifactDirectory, valid: metadata.version === actualVersion };
 }
 
 export async function loadPresentations(root) {
@@ -48,13 +51,11 @@ export async function loadPresentations(root) {
       const initial = readLatest(directory);
       if (!initial.valid) throw new Error();
       attemptedVersions.set(entry.name, initial.version);
-      const handlerUrl = pathToFileURL(join(directory, "server/entry.mjs")).href;
+      const handlerUrl = pathToFileURL(join(initial.artifactDirectory, "server/entry.mjs")).href;
       const { handler } = await import(handlerUrl);
       if (typeof handler !== "function") throw new Error();
-      const afterImport = readLatest(directory);
-      if (!afterImport.valid || afterImport.version !== initial.version) throw new Error();
       presentations.set(entry.name, handler);
-      loadedVersions.set(entry.name, afterImport.version);
+      loadedVersions.set(entry.name, initial.version);
     } catch {}
   }
   function getPresentationReadiness(slug) {
