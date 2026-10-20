@@ -39,7 +39,7 @@ export function prepareDefaultPresentation(projectDir: string): void {
 			.replace(nodeDatabase, 'import { postgres } from "emdash/db";')
 			.replace(
 				'\toutput: "server",',
-				'\tsrcDir: `./src/${process.env.EMDASH_BUILD_SITE || "default"}`,\n\toutDir: `./dist/sites/${process.env.EMDASH_BUILD_SITE || "default"}`,\n\toutput: "server",',
+				'\tsrcDir: `./src/${process.env.EMDASH_BUILD_SITE || "default"}`,\n\toutDir: process.env.EMDASH_BUILD_OUTPUT || `./dist/sites/${process.env.EMDASH_BUILD_SITE || "default"}`,\n\toutput: "server",',
 			)
 			.replace(sqliteConfig, "database: postgres({ connectionString: process.env.DATABASE_URL }),")
 			.replace(
