@@ -90,43 +90,57 @@ describe("generated presentation readiness", () => {
 		}
 	});
 
-	it("reports the current artifact version without replacing the loaded handler", async () => {
+	it("keeps lazy imports in the loaded generation after a new build is published", async () => {
 		const root = mkdtempSync(join(tmpdir(), "emdash-readiness-"));
 		try {
 			const { loadPresentations, artifactVersion } = await loadArtifactModule(root);
 			const site = join(root, "foo");
-			mkdirSync(join(site, "server"), { recursive: true });
-			const entryPath = "server/entry.mjs";
-			const entry = join(site, entryPath);
-			const loadedSource = "export const handler = () => 'loaded';";
-			writeFileSync(entry, loadedSource);
-			writeFileSync(join(site, "asset.txt"), "first asset");
-			writeFileSync(join(site, "version.json"), JSON.stringify({ version: artifactVersion(site) }));
+			const oldId = "11111111-1111-4111-8111-111111111111";
+			const newId = "22222222-2222-4222-8222-222222222222";
+			const oldGeneration = join(site, "generations", oldId);
+			const newGeneration = join(site, "generations", newId);
+			mkdirSync(join(oldGeneration, "server/chunks"), { recursive: true });
+			writeFileSync(
+				join(oldGeneration, "server/chunks/lazy.mjs"),
+				"export const value = 'old asset';",
+			);
+			writeFileSync(
+				join(oldGeneration, "server/entry.mjs"),
+				"export async function handler() { return (await import('./chunks/lazy.mjs')).value; }",
+			);
+			const firstVersion = artifactVersion(oldGeneration);
+			writeFileSync(
+				join(site, "version.json"),
+				JSON.stringify({ version: firstVersion, generation: oldId }),
+			);
 			const { presentations, getPresentationReadiness } = await loadPresentations(root);
-			const loadedHandler = presentations.get("foo");
-			const initial = getPresentationReadiness("foo");
-			expect(initial.pendingRestart).toBe(false);
+			const oldHandler = presentations.get("foo");
+			expect(getPresentationReadiness("foo").pendingRestart).toBe(false);
 
-			writeFileSync(join(site, "asset.txt"), "replacement asset");
-			const nextVersion = artifactVersion(site);
-			writeFileSync(join(site, "version.json"), JSON.stringify({ version: nextVersion }));
-			const changed = getPresentationReadiness("foo");
-			expect(changed).toMatchObject({
+			mkdirSync(join(newGeneration, "server/chunks"), { recursive: true });
+			writeFileSync(
+				join(newGeneration, "server/chunks/lazy.mjs"),
+				"export const value = 'new asset';",
+			);
+			writeFileSync(
+				join(newGeneration, "server/entry.mjs"),
+				"export async function handler() { return (await import('./chunks/lazy.mjs')).value; }",
+			);
+			const nextVersion = artifactVersion(newGeneration);
+			writeFileSync(
+				join(site, "version.json"),
+				JSON.stringify({ version: nextVersion, generation: newId }),
+			);
+			expect(getPresentationReadiness("foo")).toMatchObject({
 				status: "ready",
-				loadedVersion: initial.loadedVersion,
+				loadedVersion: firstVersion,
 				latestVersion: nextVersion,
 				pendingRestart: true,
 			});
-			expect(loadedHandler?.()).toBe("loaded");
-
-			rmSync(entry);
-			const missingEntry = getPresentationReadiness("foo");
-			expect(missingEntry).toMatchObject({
-				status: "unavailable",
-				loadedVersion: initial.loadedVersion,
-				latestVersion: null,
-				pendingRestart: false,
-			});
+			expect(await oldHandler?.()).toBe("old asset");
+			const restarted = await loadPresentations(root);
+			expect(await restarted.presentations.get("foo")?.()).toBe("new asset");
+			expect(restarted.getPresentationReadiness("foo").pendingRestart).toBe(false);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
