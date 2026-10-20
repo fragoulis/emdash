@@ -1,12 +1,13 @@
 export const defaultHostSource = `import { createServer } from "node:http";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Pool } from "pg";
 import { createDialect } from "emdash/db/postgres";
 import { initializeMultisiteDatabase } from "emdash/internal/multisite/initialize";
 import { runWithContext } from "emdash/request-context";
 import { verifiedIdentity } from "./clerk.mjs";
+import { loadPresentations } from "./readiness.mjs";
 
 const adminHost = process.env.EMDASH_ADMIN_HOST ?? "localhost";
 const defaultHost = process.env.EMDASH_DEFAULT_HOST ?? "default.localhost";
@@ -33,12 +34,7 @@ try {
 } finally {
   await initializationDb.destroy();
 }
-const presentations = new Map();
-for (const entry of readdirSync(new URL("./dist/sites/", import.meta.url), { withFileTypes: true })) {
-  if (!entry.isDirectory() || !/^[a-z][a-z0-9-]*$/.test(entry.name)) continue;
-  const { handler } = await import("./dist/sites/" + entry.name + "/server/entry.mjs");
-  presentations.set(entry.name, handler);
-}
+const { presentations, getPresentationReadiness } = await loadPresentations(fileURLToPath(new URL("./dist/sites/", import.meta.url)));
 if (!presentations.has("default")) throw new Error("Build the default presentation before starting the host");
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const publicApiPath = /^\\/_emdash\\/api\\/(?:media\\/file\\/|search(?:\\/suggest)?$)/;
