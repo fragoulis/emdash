@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -115,6 +115,10 @@ describe("generated host", () => {
 
 			cpSync(join(template, "src"), join(project, "src"), { recursive: true });
 			cpSync(join(template, "seed"), join(project, "seed"), { recursive: true });
+			const seedPath = join(project, "seed/seed.json");
+			const hostSeed = JSON.parse(readFileSync(seedPath, "utf8"));
+			for (const post of hostSeed.content.posts) delete post.data.featured_image;
+			writeFileSync(seedPath, JSON.stringify(hostSeed));
 			cpSync(join(template, "astro.config.mjs"), join(project, "astro.config.mjs"));
 			prepareDefaultPresentation(project);
 			linkScaffoldDependencies(project);
@@ -259,10 +263,241 @@ describe("generated host", () => {
 				Cookie: `__session=${clerk.jwt()}`,
 				Origin: `http://localhost:${hostPort}`,
 			};
+			const anonymousCreate = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					Origin: apiCookie.Origin,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "anonymous-create-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "No access", slug: "no-access-site" }),
+			);
+			expect(anonymousCreate.status).toBe(401);
+			execFileSync("docker", [
+				"exec",
+				container,
+				"psql",
+				"-U",
+				"postgres",
+				"-d",
+				"test",
+				"-c",
+				"CREATE FUNCTION reject_site_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action = 'site_create' THEN RAISE EXCEPTION 'site audit rejected'; END IF; RETURN NEW; END; $$; CREATE TRIGGER reject_site_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_site_audit();",
+			]);
+			const failedCreate = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...apiCookie,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "rollback-create-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "Rollback", slug: "rollback-site" }),
+			);
+			expect(failedCreate.status).toBe(500);
+			const rollbackSiteCount = execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT count(*) FROM _emdash_sites WHERE slug = 'rollback-site'",
+				],
+				{ encoding: "utf8" },
+			).trim();
+			expect(rollbackSiteCount).toBe("0");
+			const orphanedSeedCount = execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT (SELECT count(*) FROM ec_posts p WHERE NOT EXISTS (SELECT 1 FROM _emdash_sites s WHERE s.id = p.site_id)) + (SELECT count(*) FROM options o WHERE o.site_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM _emdash_sites s WHERE s.id = o.site_id)) + (SELECT count(*) FROM taxonomies t WHERE NOT EXISTS (SELECT 1 FROM _emdash_sites s WHERE s.id = t.site_id))",
+				],
+				{ encoding: "utf8" },
+			).trim();
+			expect(orphanedSeedCount).toBe("0");
+			execFileSync("docker", [
+				"exec",
+				container,
+				"psql",
+				"-U",
+				"postgres",
+				"-d",
+				"test",
+				"-c",
+				"DROP TRIGGER reject_site_audit ON audit_logs; DROP FUNCTION reject_site_audit();",
+			]);
+			const rollbackRetry = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...apiCookie,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "rollback-create-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "Rollback", slug: "rollback-site" }),
+			);
+			expect(rollbackRetry.status).toBe(201);
+			const rollbackAuditCount = execFileSync(
+				"docker",
+				[
+					"exec",
+					container,
+					"psql",
+					"-U",
+					"postgres",
+					"-d",
+					"test",
+					"-t",
+					"-A",
+					"-c",
+					"SELECT count(*) FROM audit_logs WHERE resource_id = (SELECT id FROM _emdash_sites WHERE slug = 'rollback-site') AND action = 'site_create'",
+				],
+				{ encoding: "utf8" },
+			).trim();
+			expect(rollbackAuditCount).toBe("1");
+			const created = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...apiCookie,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "site-create-new-example-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "New example", slug: "new-example" }),
+			);
+			expect(created.status, `${created.body}\n${hostError}`).toBe(201);
+			expect(JSON.parse(created.body).data).toMatchObject({
+				slug: "new-example",
+				presentation: "default",
+				readiness: { status: "ready" },
+			});
+			expect(await get(hostPort, "new-example.localhost")).toMatchObject({
+				status: 200,
+				body: JSON.parse(created.body).data.id,
+			});
+			const retry = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...apiCookie,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "site-create-new-example-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "New example", slug: "new-example" }),
+			);
+			expect(retry.status).toBe(201);
+			expect(JSON.parse(retry.body).data.id).toBe(JSON.parse(created.body).data.id);
+			const independentClaim = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...apiCookie,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "independent-claim-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "New example", slug: "new-example" }),
+			);
+			expect(independentClaim.status).toBe(409);
+			const titleUpdate = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites/new-example",
+				{ ...apiCookie, "X-EmDash-Request": "1", "Content-Type": "application/json" },
+				"PATCH",
+				JSON.stringify({
+					title: "Renamed example",
+					expectedRevision: JSON.parse(created.body).data.titleRevision,
+				}),
+			);
+			expect(titleUpdate.status).toBe(200);
+			const replayAfterEdit = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...apiCookie,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "site-create-new-example-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "New example", slug: "new-example" }),
+			);
+			expect(JSON.parse(replayAfterEdit.body).data.title).toBe("Renamed example");
+			const changedRetry = await get(
+				hostPort,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...apiCookie,
+					"X-EmDash-Request": "1",
+					"Content-Type": "application/json",
+					"Idempotency-Key": "site-create-new-example-0001",
+				},
+				"POST",
+				JSON.stringify({ title: "Different title", slug: "new-example" }),
+			);
+			expect(changedRetry.status).toBe(409);
+			const concurrentClaims = await Promise.all(
+				["First claim", "Second claim"].map((title) =>
+					get(
+						hostPort,
+						"localhost",
+						"/_emdash/api/system/sites",
+						{
+							...apiCookie,
+							"X-EmDash-Request": "1",
+							"Content-Type": "application/json",
+							"Idempotency-Key": "site-create-race-" + (title === "First claim" ? "0001" : "0002"),
+						},
+						"POST",
+						JSON.stringify({ title, slug: "race-site" }),
+					),
+				),
+			);
+			expect(concurrentClaims.map((response) => response.status).toSorted((a, b) => a - b)).toEqual(
+				[201, 409],
+			);
+			expect(await get(hostPort, "race-site.localhost")).toMatchObject({ status: 200 });
 			const listed = await get(hostPort, "localhost", "/_emdash/api/system/sites", apiCookie);
 			expect(listed.status).toBe(200);
 			expect(JSON.parse(listed.body).data.items.map((site: { slug: string }) => site.slug)).toEqual(
-				["foo", "unbuilt"],
+				["foo", "new-example", "race-site", "rollback-site", "unbuilt"],
 			);
 			const detail = await get(
 				hostPort,
@@ -342,7 +577,7 @@ describe("generated host", () => {
 					"-t",
 					"-A",
 					"-c",
-					"SELECT actor_id || ':' || resource_id || ':' || (timestamp IS NOT NULL)::text || ':' || count(*) OVER () FROM audit_logs WHERE action = 'settings_update' AND resource_type = 'site' AND status = 'success'",
+					"SELECT actor_id || ':' || resource_id || ':' || (timestamp IS NOT NULL)::text || ':' || count(*) OVER (PARTITION BY resource_id) FROM audit_logs WHERE action = 'settings_update' AND resource_type = 'site' AND status = 'success'",
 				],
 				{ encoding: "utf8" },
 			).trim();

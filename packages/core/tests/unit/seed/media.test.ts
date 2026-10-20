@@ -4,14 +4,25 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import type { Database } from "../../../src/database/types.js";
 import { setDefaultDnsResolver } from "../../../src/import/ssrf.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
-import { applySeed, applySeedWithinBudget } from "../../../src/seed/apply.js";
+import { applySeed as applySeedUnscoped, applySeedWithinBudget } from "../../../src/seed/apply.js";
 import type { SeedFile } from "../../../src/seed/types.js";
 import type { Storage, UploadOptions } from "../../../src/storage/types.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 // Regex patterns for file validation
 const PNG_EXTENSION_REGEX = /\.png$/;
+
+function applySeed(
+	db: Kysely<Database>,
+	seed: SeedFile,
+	options: Parameters<typeof applySeedUnscoped>[2],
+) {
+	return runWithContext({ editMode: false, siteId: "site-default" }, () =>
+		applySeedUnscoped(db, seed, options),
+	);
+}
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -209,6 +220,34 @@ describe("$media seed resolution", () => {
 			id: media.id,
 			alt: "Test image",
 		});
+	});
+
+	it("rejects a failed media reference when strict seed application is requested", async () => {
+		mockFetch.mockRejectedValueOnce(new Error("network unavailable"));
+		const seed: SeedFile = {
+			version: "1",
+			content: {
+				posts: [
+					{
+						id: "post-failed-media",
+						slug: "failed-media",
+						data: {
+							title: "Failed media",
+							featured_image: { $media: { url: "https://example.com/image.png" } },
+						},
+					},
+				],
+			},
+		};
+		await expect(
+			db
+				.transaction()
+				.execute((trx) =>
+					applySeed(trx, seed, { includeContent: true, storage, failOnMediaError: true }),
+				),
+		).rejects.toThrow();
+		expect(await db.selectFrom("ec_posts").select("id").execute()).toEqual([]);
+		expect(storage.uploads).toHaveLength(0);
 	});
 
 	it("should cache repeated $media URLs", async () => {
@@ -916,11 +955,8 @@ describe("$media seed resolution", () => {
 		const downloadsPerCall: number[] = [];
 		for (let call = 0; call < 10; call++) {
 			const before = mockFetch.mock.calls.length;
-			const { complete } = await applySeedWithinBudget(
-				db,
-				seed,
-				{ includeContent: true, storage },
-				{ mediaDownloads: 1 },
+			const { complete } = await runWithContext({ editMode: false, siteId: "site-default" }, () =>
+				applySeedWithinBudget(db, seed, { includeContent: true, storage }, { mediaDownloads: 1 }),
 			);
 			downloadsPerCall.push(mockFetch.mock.calls.length - before);
 			if (complete) break;
