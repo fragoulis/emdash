@@ -109,6 +109,8 @@ import * as m098 from "./098_site_taxonomies.js";
 import * as m099 from "./099_site_menus.js";
 import * as m100 from "./100_site_media.js";
 import * as m101 from "./101_shared_collection_definitions.js";
+import * as m102 from "./102_site_presentation_assignment.js";
+import * as m103 from "./103_site_creation_requests.js";
 import { CONTENT_SIZED_MIGRATIONS } from "./content-sized.js";
 
 const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
@@ -212,6 +214,8 @@ const MIGRATIONS: Readonly<Record<string, Migration>> = Object.freeze({
 	"099_site_menus": m099,
 	"100_site_media": m100,
 	"101_shared_collection_definitions": m101,
+	"102_site_presentation_assignment": m102,
+	"103_site_creation_requests": m103,
 });
 
 /** Ordered names from the statically registered migration set. */

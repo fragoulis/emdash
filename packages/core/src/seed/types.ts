@@ -399,6 +399,9 @@ export interface SeedApplyOptions {
 	 * is unavailable or undesirable.
 	 */
 	skipMediaDownload?: boolean;
+
+	/** Reject a seed when a media reference cannot be stored. */
+	failOnMediaError?: boolean;
 }
 
 /**
