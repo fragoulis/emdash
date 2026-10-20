@@ -125,8 +125,8 @@ function settingsCache(siteId: string): SingleFlightCache<Partial<SiteSettings>>
  * Called from every `site:*` write path. Other isolates still serve their
  * own cached copy until they expire — staleness bounded by isolate lifetime.
  */
-export function invalidateSiteSettingsCache(): void {
-	const siteId = getRequestContext()?.siteId;
+export function invalidateSiteSettingsCache(siteIdOverride?: string): void {
+	const siteId = siteIdOverride ?? getRequestContext()?.siteId;
 	if (!siteId) return;
 	invalidateSingleFlightCache(settingsCache(siteId));
 	invalidateObjectCache(`${SETTINGS_CACHE_NAMESPACE}:${siteId}`);
