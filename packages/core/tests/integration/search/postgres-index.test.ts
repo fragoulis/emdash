@@ -187,6 +187,62 @@ describePg("PostgreSQL search index lifecycle", () => {
 		expect(remaining.map((row) => row.id)).toEqual([ids.get(second)]);
 	});
 
+	it("rebuilds and searches 200 rows with 100 searchable fields", async () => {
+		await fts.disableSearch("post");
+		const registry = new SchemaRegistry(ctx.db);
+		const additionalFields = Array.from({ length: 98 }, (_, index) => `search_${index}`);
+		for (const slug of additionalFields) {
+			await registry.createField("post", {
+				slug,
+				label: slug,
+				type: "string",
+				searchable: true,
+			});
+		}
+		const searchableFields = ["title", "content", ...additionalFields];
+		const columns = ["id", "site_id", "slug", "status", ...searchableFields];
+		const rows = Array.from({ length: 200 }, (_, index) => {
+			const phrase = `rebuildneedle row${index}`;
+			return [
+				`rebuild-${index}`,
+				"site-a",
+				`rebuild-${index}`,
+				"published",
+				...searchableFields.map((field) => (field === "content" ? "[]" : phrase)),
+			];
+		});
+		await sql`INSERT INTO ${sql.ref("ec_post")} (${sql.join(columns.map((column) => sql.ref(column)))})
+			VALUES ${sql.join(rows.map((row) => sql`(${sql.join(row.map((value) => sql`${value}`))})`))}`.execute(
+			ctx.db,
+		);
+
+		const index = new PostgresSearchIndex(ctx.db);
+		await index.ensureCollectionIndex("post", searchableFields, "title");
+		const rebuilt = await index.rebuildCollection("post", { kind: "site", siteId: "site-a" });
+		expect(rebuilt.indexed).toBe(200);
+		const results = await searchPostgresCollection(
+			ctx.db,
+			"post",
+			"rebuildneedle",
+			{ siteId: "site-a", status: "published", limit: 250 },
+			searchableFields,
+		);
+		expect(results).toHaveLength(200);
+
+		await ctx.db
+			.updateTable("ec_post")
+			.set({ title: "triggerupdated phrase" })
+			.where("id", "=", "rebuild-0")
+			.execute();
+		const updated = await ctx.db
+			.selectFrom("_emdash_search_post")
+			.select(["search_vector", "field_vectors"])
+			.where("content_id", "=", "rebuild-0")
+			.executeTakeFirstOrThrow();
+		expect(String(updated.search_vector)).toContain("triggerupd");
+		expect(updated.field_vectors).toHaveProperty("search_97");
+	});
+
 	it("maintains vectors on writes and keeps rebuild and statistics site-scoped", async () => {
 		const aItem = await add("site-a", "a-entry", "ΆΝΘΡΩΠΟΣ");
 		await add("site-b", "b-entry", "άνθρωποι");

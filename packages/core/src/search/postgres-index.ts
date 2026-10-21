@@ -83,12 +83,19 @@ export class PostgresSearchIndex {
 		const vectorExpr = vectorParts.join(" || ");
 		const titleIdx = titleField ? searchableFields.indexOf(titleField) : -1;
 		const titleExpr = titleIdx < 0 ? "''" : fieldExpressions[titleIdx];
-		const fieldPairs = searchableFields
-			.map(
-				(field, i) =>
-					`'${field}', to_tsvector(_emdash_search_config(NEW.locale), ${fieldExpressions[i]})::text`,
-			)
-			.join(", ");
+		const fieldVectorObjects = [];
+		for (let offset = 0; offset < searchableFields.length; offset += 50) {
+			const fieldChunk = searchableFields.slice(offset, offset + 50);
+			fieldVectorObjects.push(
+				`jsonb_build_object(${fieldChunk
+					.map((field, fieldOffset) => {
+						const fieldIndex = offset + fieldOffset;
+						return `'${field}', to_tsvector(_emdash_search_config(NEW.locale), ${fieldExpressions[fieldIndex]})::text`;
+					})
+					.join(", ")})`,
+			);
+		}
+		const fieldVectorsExpr = fieldVectorObjects.join(" || ");
 		const functionName = this.quote(
 			postgresSearchIdentifier(`_emdash_search_${collection}_sync_fn`),
 		);
@@ -110,7 +117,7 @@ export class PostgresSearchIndex {
 			INSERT INTO ${index} (site_id, content_id, locale, search_vector, title_vector, field_vectors)
 			VALUES (NEW.site_id, NEW.id, NEW.locale, ${vectorExpr},
 				setweight(to_tsvector(_emdash_search_config(NEW.locale), ${titleExpr}), 'A'),
-				jsonb_build_object(${fieldPairs}))
+				${fieldVectorsExpr})
 			ON CONFLICT (site_id, content_id) DO UPDATE SET locale = EXCLUDED.locale,
 				search_vector = EXCLUDED.search_vector, title_vector = EXCLUDED.title_vector,
 				field_vectors = EXCLUDED.field_vectors;
@@ -142,7 +149,7 @@ export class PostgresSearchIndex {
 		const titleField = collectionRow?.title_field ?? undefined;
 		const rowBatchSize = Math.max(
 			1,
-			Math.min(REBUILD_BATCH_SIZE, Math.floor(60_000 / (searchable.length * 2 + 10))),
+			Math.min(REBUILD_BATCH_SIZE, Math.floor(60_000 / (searchable.length * 6 + 10))),
 		);
 		const fieldTypes = new Map(
 			(await this.getFieldDefinitions(collection)).map((field) => [field.slug, field.type]),
@@ -181,11 +188,17 @@ export class PostgresSearchIndex {
 						? (rawVectors[searchable.indexOf(titleField)] ?? sql`''::tsvector`)
 						: sql`''::tsvector`;
 					const weightedTitle = sql`setweight(${titleVector}, 'A')`;
-					const pairs = searchable.flatMap((field, i) => [
-						sql`${field}::text`,
-						sql`(${rawVectors[i]})::text`,
-					]);
-					const fieldVectors = sql`jsonb_build_object(${sql.join(pairs)})`;
+					const fieldVectorObjects = [];
+					for (let offset = 0; offset < searchable.length; offset += 50) {
+						const pairs = searchable
+							.slice(offset, offset + 50)
+							.flatMap((field, fieldOffset) => [
+								sql`${field}::text`,
+								sql`(${rawVectors[offset + fieldOffset]})::text`,
+							]);
+						fieldVectorObjects.push(sql`jsonb_build_object(${sql.join(pairs)})`);
+					}
+					const fieldVectors = sql`(${sql.join(fieldVectorObjects, sql` || `)})`;
 					valueRows.push(
 						sql`(${siteId}, ${contentId}, ${locale}, ${combined}, ${weightedTitle}, ${fieldVectors})`,
 					);
