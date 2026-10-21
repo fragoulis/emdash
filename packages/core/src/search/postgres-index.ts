@@ -148,51 +148,62 @@ export class PostgresSearchIndex {
 		let lastId = "";
 		let indexed = 0;
 		while (true) {
-			const rows = await sql<Record<string, unknown>>`SELECT * FROM ${sql.ref(contentName)}
-				WHERE deleted_at IS NULL AND (site_id, id) > (${lastSite}, ${lastId})
-				${scope.kind === "site" ? sql`AND site_id = ${scope.siteId}` : sql``}
-				ORDER BY site_id, id LIMIT ${rowBatchSize}`.execute(this.db);
+			const runBatch = async (trx: Kysely<Database>) => {
+				const selected = await sql<Record<string, unknown>>`SELECT * FROM ${sql.ref(contentName)}
+					WHERE deleted_at IS NULL AND (site_id, id) > (${lastSite}, ${lastId})
+					${scope.kind === "site" ? sql`AND site_id = ${scope.siteId}` : sql``}
+					ORDER BY site_id, id LIMIT ${rowBatchSize} FOR UPDATE`.execute(trx);
+				if (!selected.rows.length) return selected;
+				const valueRows = [];
+				for (const row of selected.rows) {
+					const siteId = databaseText(row.site_id);
+					const contentId = databaseText(row.id);
+					const locale = databaseText(row.locale);
+					const config = resolvePostgresTextSearchConfig(locale);
+					const values = searchable.map((field) => {
+						const value = row[field];
+						return fieldTypes.get(field) === "portableText"
+							? extractPortableText(value)
+							: databaseText(value);
+					});
+					const rawVectors = values.map(
+						(value) => sql`to_tsvector(${config}::regconfig, ${value})`,
+					);
+					const weightedVectors = rawVectors.map(
+						(vector, i) => sql`setweight(${vector}, ${searchable[i] === titleField ? "A" : "B"})`,
+					);
+					let combined = weightedVectors[0] ?? sql`''::tsvector`;
+					for (const vector of weightedVectors.slice(1)) combined = sql`(${combined} || ${vector})`;
+					const titleVector = titleField
+						? (rawVectors[searchable.indexOf(titleField)] ?? sql`''::tsvector`)
+						: sql`''::tsvector`;
+					const weightedTitle = sql`setweight(${titleVector}, 'A')`;
+					const pairs = searchable.flatMap((field, i) => [
+						sql`${field}::text`,
+						sql`(${rawVectors[i]})::text`,
+					]);
+					const fieldVectors = sql`jsonb_build_object(${sql.join(pairs)})`;
+					valueRows.push(
+						sql`(${siteId}, ${contentId}, ${locale}, ${combined}, ${weightedTitle}, ${fieldVectors})`,
+					);
+				}
+				await sql`INSERT INTO ${sql.ref(index.replaceAll('"', ""))} (site_id, content_id, locale, search_vector, title_vector, field_vectors)
+					VALUES ${sql.join(valueRows, sql`, `)}
+					ON CONFLICT (site_id, content_id) DO UPDATE SET locale = EXCLUDED.locale,
+					search_vector = EXCLUDED.search_vector, title_vector = EXCLUDED.title_vector, field_vectors = EXCLUDED.field_vectors`.execute(
+					trx,
+				);
+				return selected;
+			};
+			const rows = this.db.isTransaction
+				? await runBatch(this.db)
+				: await this.db.transaction().execute(runBatch);
 			if (!rows.rows.length) break;
-			const valueRows = [];
 			for (const row of rows.rows) {
-				const siteId = databaseText(row.site_id);
-				const contentId = databaseText(row.id);
-				const locale = databaseText(row.locale);
-				const config = resolvePostgresTextSearchConfig(locale);
-				const values = searchable.map((field) => {
-					const value = row[field];
-					return fieldTypes.get(field) === "portableText"
-						? extractPortableText(value)
-						: databaseText(value);
-				});
-				const rawVectors = values.map((value) => sql`to_tsvector(${config}::regconfig, ${value})`);
-				const weightedVectors = rawVectors.map(
-					(vector, i) => sql`setweight(${vector}, ${searchable[i] === titleField ? "A" : "B"})`,
-				);
-				let combined = weightedVectors[0] ?? sql`''::tsvector`;
-				for (const vector of weightedVectors.slice(1)) combined = sql`(${combined} || ${vector})`;
-				const titleVector = titleField
-					? (rawVectors[searchable.indexOf(titleField)] ?? sql`''::tsvector`)
-					: sql`''::tsvector`;
-				const weightedTitle = sql`setweight(${titleVector}, 'A')`;
-				const pairs = searchable.flatMap((field, i) => [
-					sql`${field}::text`,
-					sql`(${rawVectors[i]})::text`,
-				]);
-				const fieldVectors = sql`jsonb_build_object(${sql.join(pairs)})`;
-				valueRows.push(
-					sql`(${siteId}, ${contentId}, ${locale}, ${combined}, ${weightedTitle}, ${fieldVectors})`,
-				);
-				lastSite = siteId;
-				lastId = contentId;
+				lastSite = databaseText(row.site_id);
+				lastId = databaseText(row.id);
 				indexed++;
 			}
-			await sql`INSERT INTO ${sql.ref(index.replaceAll('"', ""))} (site_id, content_id, locale, search_vector, title_vector, field_vectors)
-				VALUES ${sql.join(valueRows, sql`, `)}
-				ON CONFLICT (site_id, content_id) DO UPDATE SET locale = EXCLUDED.locale,
-				search_vector = EXCLUDED.search_vector, title_vector = EXCLUDED.title_vector, field_vectors = EXCLUDED.field_vectors`.execute(
-				this.db,
-			);
 		}
 		while (true) {
 			const stale = await sql`DELETE FROM ${sql.ref(index.replaceAll('"', ""))} AS s

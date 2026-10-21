@@ -1,3 +1,4 @@
+import type { KyselyPlugin } from "kysely";
 import { sql } from "kysely";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -193,6 +194,97 @@ describePg("PostgreSQL search index lifecycle", () => {
 			/selected site/i,
 		);
 		await expect(fts.getIndexStats("post")).rejects.toThrow(/selected site/i);
+	});
+
+	it("keeps edits made during a paused rebuild from being overwritten", async () => {
+		const item = await add("site-a", "rebuild-race", "stale emerald");
+		const deletedItem = await add("site-a", "rebuild-delete-race", "stale deletedword");
+		let batchRead!: () => void;
+		let releaseBatch!: () => void;
+		const readReady = new Promise<void>((resolve) => (batchRead = resolve));
+		const batchGate = new Promise<void>((resolve) => (releaseBatch = resolve));
+		let paused = false;
+		const plugin: KyselyPlugin = {
+			transformQuery(args) {
+				return args.node;
+			},
+			async transformResult(args) {
+				if (
+					!paused &&
+					args.result.rows.some(
+						(row) =>
+							(row.id === item.id && row.title === "stale emerald") ||
+							(row.id === deletedItem.id && row.title === "stale deletedword"),
+					)
+				) {
+					paused = true;
+					batchRead();
+					await batchGate;
+				}
+				return args.result;
+			},
+		};
+		const rebuild = new PostgresSearchIndex(ctx.db.withPlugin(plugin)).rebuildCollection("post", {
+			kind: "site",
+			siteId: "site-a",
+		});
+		let updateDone = false;
+		let update: Promise<unknown> | undefined;
+		let observedUpdateState = false;
+		try {
+			await readReady;
+			update = ctx.db
+				.transaction()
+				.execute(async (trx) => {
+					await sql`SET LOCAL application_name = 'ticket64-rebuild-race-update'`.execute(trx);
+					await trx
+						.updateTable("ec_post")
+						.set({ title: "fresh sapphire" })
+						.where("id", "=", item.id)
+						.execute();
+					await trx
+						.updateTable("ec_post")
+						.set({ deleted_at: new Date().toISOString() })
+						.where("id", "=", deletedItem.id)
+						.execute();
+				})
+				.finally(() => {
+					updateDone = true;
+				});
+			const deadline = Date.now() + 10_000;
+			while (!updateDone && Date.now() < deadline) {
+				const waiting = await sql<{ waiting: boolean }>`SELECT EXISTS (
+					SELECT 1 FROM pg_stat_activity
+					WHERE application_name = 'ticket64-rebuild-race-update' AND wait_event_type = 'Lock'
+				) AS waiting`.execute(ctx.db);
+				if (waiting.rows[0]?.waiting) {
+					observedUpdateState = true;
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+			observedUpdateState ||= updateDone;
+		} finally {
+			releaseBatch();
+			await Promise.all([rebuild, update]);
+		}
+		expect(observedUpdateState).toBe(true);
+
+		const vector = await ctx.db
+			.selectFrom("_emdash_search_post")
+			.select("search_vector")
+			.where("site_id", "=", "site-a")
+			.where("content_id", "=", item.id)
+			.executeTakeFirstOrThrow();
+		expect(String(vector.search_vector)).toContain("sapphir");
+		expect(String(vector.search_vector)).not.toContain("emerald");
+		const deletedVector = await ctx.db
+			.selectFrom("_emdash_search_post")
+			.select("content_id")
+			.where("site_id", "=", "site-a")
+			.where("content_id", "=", deletedItem.id)
+			.executeTakeFirst();
+		expect(deletedVector).toBeUndefined();
 	});
 
 	it("weights the configured custom title field rather than a literal title field", async () => {

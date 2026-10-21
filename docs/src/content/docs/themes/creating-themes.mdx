@@ -362,7 +362,7 @@ Both backends index configured searchable fields, including text extracted from 
 
 Search configuration belongs to the shared collection schema. Search results and suggestions use the selected site's content and locale. Search, suggestions, statistics, and rebuild operations require trusted selected-site context; requests without it fail closed. Statistics report the selected site's indexed content, and rebuild refreshes that site's index. Suggestions include published entries only; anonymous search also returns published entries only.
 
-PostgreSQL upgrades run a forward migration that creates indexes for enabled collections and existing content. The indexes stay current as content changes. Use the search rebuild operation to refresh an index after changing searchable fields. Search statistics and rebuild require the `search:manage` permission. SQLite search indexes keep their existing behavior.
+PostgreSQL upgrades run a forward migration that creates indexes for enabled collections and existing content. The indexes stay current as content and searchable-field settings change. Use the search rebuild operation to repair or manually refresh an index. Search statistics and rebuild require the `search:manage` permission. SQLite search indexes keep their existing behavior.
 
 ## Seed reusable sections
 
