@@ -5,13 +5,23 @@ description: Use the agent-browser CLI to exercise web interfaces, inspect rende
 
 # Test interfaces with agent-browser
 
-Use the installed `agent-browser` CLI for rendered, user-facing verification. Load its version-matched instructions before relying on command syntax:
+For repository changes, follow the [canonical validation procedure](../../docs/agents/validation.md). Use the installed `agent-browser` CLI for rendered, user-facing verification. Load its version-matched instructions before relying on command syntax:
 
 ```bash
 agent-browser skills get core --full
 ```
 
 Use a specialized bundled guide when the target requires one. `agent-browser skills list` shows the available guides.
+
+## Choose authentication for the target
+
+For a local EmDash demo, use its development bypass when the demo supports it. This bypass is for local demo authentication only:
+
+```bash
+agent-browser open 'http://localhost:4321/_emdash/api/setup/dev-bypass?redirect=/_emdash/admin'
+```
+
+Use `auth/dev-bypass` when demo setup is already complete. For a generated multi-site host, use the fixture-backed authentication and capture procedure in the [local installation guide](../../infra/local-install/README.md#capture-authenticated-browser-evidence). Generated hosts do not use the generic demo bypass endpoints.
 
 ## Verification loop
 
@@ -22,14 +32,6 @@ Use a specialized bundled guide when the target requires one. `agent-browser ski
 5. Wait for the resulting state, then take a fresh snapshot. References can become stale after navigation or a substantial DOM update.
 6. Verify the observable result, console errors, and relevant network behavior.
 7. Capture screenshots when visual evidence helps establish the result.
-
-For EmDash admin testing, authenticate through the development bypass rather than attempting to automate passkeys:
-
-```bash
-agent-browser open 'http://localhost:4321/_emdash/api/setup/dev-bypass?redirect=/_emdash/admin'
-```
-
-Use `auth/dev-bypass` instead when setup is already complete.
 
 ## Interaction guidance
 

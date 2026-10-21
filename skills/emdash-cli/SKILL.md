@@ -5,6 +5,8 @@ description: Use the EmDash CLI to inspect and manage an EmDash instance from th
 
 # EmDash CLI
 
+For repository changes to this skill or its implementation, follow the [canonical validation procedure](../../docs/agents/validation.md).
+
 The EmDash CLI (`emdash`, with the short alias `em`) manages EmDash CMS instances. Commands fall into two categories:
 
 - **Local commands** work with project files or a configured database: `init`, `doctor`, `seed`, `migrate`, `export-seed`, and `secrets`.
@@ -64,7 +66,7 @@ npx emdash login --url https://example.com -H "X-API-Key: secret123"
 
 ### Database Setup
 
-For normal site startup, use the project's package script. The first request runs pending migrations and, before setup is completed, applies the bundled seed's schema and structure once; sample content comes from the setup wizard, `/_emdash/api/setup/dev-bypass`, or `emdash seed`. The Astro integration generates `emdash-env.d.ts` when the server starts.
+For normal site startup, use the project's package script. The first request runs pending migrations and, before setup is completed, applies the bundled seed's schema and structure once; sample content comes from the setup wizard, the local demo's `/_emdash/api/setup/dev-bypass` endpoint, or `emdash seed`. The demo bypass is not authentication guidance for generated multi-site hosts; use the [fixture-backed local installation workflow](../../infra/local-install/README.md#capture-authenticated-browser-evidence) for those hosts. The Astro integration generates `emdash-env.d.ts` when the server starts.
 
 ```bash
 # Start the site with its package script
