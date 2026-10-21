@@ -1,5 +1,5 @@
 import type { Kysely } from "kysely";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, expect, beforeEach, afterEach } from "vitest";
 
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import type { Database } from "../../../src/database/types.js";
@@ -8,6 +8,7 @@ import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { FTSManager } from "../../../src/search/fts-manager.js";
 import { getSuggestions, searchWithDb } from "../../../src/search/query.js";
 import { createPostFixture } from "../../utils/fixtures.js";
+import { siteIt as it } from "../../utils/site-context.js";
 import { setupTestDatabaseWithCollections, teardownTestDatabase } from "../../utils/test-db.js";
 
 describe("getSuggestions (Integration)", () => {

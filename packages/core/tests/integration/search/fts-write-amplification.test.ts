@@ -18,6 +18,7 @@ import type { Database } from "../../../src/database/types.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { FTSManager } from "../../../src/search/fts-manager.js";
 import { searchWithDb } from "../../../src/search/query.js";
+import { siteIt } from "../../utils/site-context.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 describe("FTS write amplification", () => {
@@ -104,7 +105,7 @@ describe("FTS write amplification", () => {
 		expect(await indexSegments()).toEqual(before);
 	});
 
-	it("still re-indexes when a searchable field changes", async () => {
+	siteIt("still re-indexes when a searchable field changes", async () => {
 		await repo.update("pages", entryId, {
 			data: { title: "Closing Night", content: null },
 		});
@@ -115,7 +116,7 @@ describe("FTS write amplification", () => {
 		expect(stale.items).toEqual([]);
 	});
 
-	it("still removes trashed entries from the index and restores them", async () => {
+	siteIt("still removes trashed entries from the index and restores them", async () => {
 		await sql`UPDATE ec_pages SET deleted_at = datetime('now') WHERE id = ${entryId}`.execute(db);
 		expect((await searchWithDb(db, "haunted", { collections: ["pages"] })).items).toEqual([]);
 

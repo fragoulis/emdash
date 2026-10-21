@@ -1149,11 +1149,12 @@ export class SchemaRegistry {
 				throw new SchemaError("Failed to update collection", "UPDATE_FAILED");
 			}
 
-			// Sync FTS state when the supports array changes (e.g. search toggled on/off)
-			if (input.supports !== undefined) {
+			const titleFieldChanged =
+				input.titleField !== undefined && input.titleField !== existing.titleField;
+			if (input.supports !== undefined || titleFieldChanged) {
 				const hadSearch = existing.supports.includes("search");
 				const hasSearch = parseSupports(row.supports).includes("search");
-				if (hadSearch !== hasSearch) {
+				if (hadSearch !== hasSearch || (hasSearch && titleFieldChanged)) {
 					await this.syncSearchState(slug, trx);
 				}
 			}
@@ -1687,7 +1688,7 @@ export class SchemaRegistry {
 		const ftsActive = config?.enabled === true;
 
 		if (wantsSearch && searchableFields.length > 0 && ftsActive) {
-			await ftsManager.rebuildIndex(
+			await ftsManager.rebuildIndexInstallationWide(
 				collectionSlug,
 				searchableFields,
 				config?.weights,

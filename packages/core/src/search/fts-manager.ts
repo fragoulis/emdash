@@ -8,9 +8,11 @@ import type { Kysely } from "kysely";
 import { sql } from "kysely";
 
 import { isSqlite, tableExists as dialectTableExists } from "../database/dialect-helpers.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
 import { isStoragelessFieldRow } from "../schema/types.js";
+import { PostgresSearchIndex } from "./postgres-index.js";
 import { SEARCH_TOKENIZERS } from "./types.js";
 import type { SearchConfig, SearchTokenizer } from "./types.js";
 
@@ -112,7 +114,10 @@ export class FTSManager {
 	 * Check if an FTS table exists for a collection
 	 */
 	async ftsTableExists(collectionSlug: string): Promise<boolean> {
-		const ftsTable = this.getFtsTableName(collectionSlug);
+		const ftsTable = isSqlite(this.db)
+			? this.getFtsTableName(collectionSlug)
+			: `_emdash_search_${collectionSlug}`;
+		validateIdentifier(collectionSlug, "collection slug");
 		return dialectTableExists(this.db, ftsTable);
 	}
 
@@ -132,7 +137,15 @@ export class FTSManager {
 		tokenize?: SearchTokenizer,
 	): Promise<void> {
 		const tokenizer = resolveSearchTokenizer(tokenize);
-		if (!isSqlite(this.db)) return;
+		if (!isSqlite(this.db)) {
+			const config = await this.getSearchConfig(collectionSlug);
+			await new PostgresSearchIndex(this.db).ensureCollectionIndex(
+				collectionSlug,
+				searchableFields,
+				config?.titleField,
+			);
+			return;
+		}
 		this.validateInputs(collectionSlug, searchableFields);
 		const ftsTable = this.getFtsTableName(collectionSlug);
 
@@ -318,7 +331,10 @@ export class FTSManager {
 	 * Drop the FTS table and triggers for a collection
 	 */
 	async dropFtsTable(collectionSlug: string): Promise<void> {
-		if (!isSqlite(this.db)) return;
+		if (!isSqlite(this.db)) {
+			await new PostgresSearchIndex(this.db).dropCollectionIndex(collectionSlug);
+			return;
+		}
 		this.validateInputs(collectionSlug);
 		const ftsTable = this.getFtsTableName(collectionSlug);
 
@@ -341,15 +357,54 @@ export class FTSManager {
 		tokenize?: SearchTokenizer,
 	): Promise<void> {
 		resolveSearchTokenizer(tokenize);
-		if (!isSqlite(this.db)) return;
-		// Drop existing table and triggers
-		await this.dropFtsTable(collectionSlug);
+		await this.rebuildIndexForScope(collectionSlug, searchableFields, weights, tokenize, {
+			kind: "site",
+			siteId: selectedSiteId(),
+		});
+	}
 
-		// Recreate table and triggers
-		await this.createFtsTable(collectionSlug, searchableFields, weights, tokenize);
+	async rebuildIndexInstallationWide(
+		collectionSlug: string,
+		searchableFields: string[],
+		weights?: Record<string, number>,
+		tokenize?: SearchTokenizer,
+	): Promise<void> {
+		await this.rebuildIndexForScope(collectionSlug, searchableFields, weights, tokenize, {
+			kind: "installation",
+		});
+	}
 
-		// Populate from existing content
-		await this.populateFromContent(collectionSlug, searchableFields);
+	private async rebuildIndexForScope(
+		collectionSlug: string,
+		searchableFields: string[],
+		weights: Record<string, number> | undefined,
+		tokenize: SearchTokenizer | undefined,
+		scope: { kind: "site"; siteId: string } | { kind: "installation" },
+	): Promise<void> {
+		resolveSearchTokenizer(tokenize);
+		if (!isSqlite(this.db)) {
+			const config = await this.getSearchConfig(collectionSlug);
+			const index = new PostgresSearchIndex(this.db);
+			await index.ensureCollectionIndex(collectionSlug, searchableFields, config?.titleField);
+			await index.rebuildCollection(collectionSlug, scope);
+			return;
+		}
+		if (scope.kind === "installation") {
+			await this.dropFtsTable(collectionSlug);
+			await this.createFtsTable(collectionSlug, searchableFields, weights, tokenize);
+			await this.populateFromContentForScope(collectionSlug, searchableFields, {
+				kind: "installation",
+			});
+			return;
+		}
+		const exists = await this.ftsTableExists(collectionSlug);
+		if (!exists) await this.createFtsTable(collectionSlug, searchableFields, weights, tokenize);
+		const ftsTable = this.getFtsTableName(collectionSlug);
+		const contentTable = this.getContentTableName(collectionSlug);
+		await sql`DELETE FROM ${sql.ref(ftsTable)} WHERE rowid IN (SELECT rowid FROM ${sql.ref(contentTable)} WHERE site_id = ${scope.siteId})`.execute(
+			this.db,
+		);
+		await this.populateFromContentForScope(collectionSlug, searchableFields, scope);
 	}
 
 	/**
@@ -359,6 +414,17 @@ export class FTSManager {
 	 * per isolate) converges instead of failing on the rowid constraint.
 	 */
 	async populateFromContent(collectionSlug: string, searchableFields: string[]): Promise<void> {
+		await this.populateFromContentForScope(collectionSlug, searchableFields, {
+			kind: "site",
+			siteId: selectedSiteId(),
+		});
+	}
+
+	private async populateFromContentForScope(
+		collectionSlug: string,
+		searchableFields: string[],
+		scope: { kind: "site"; siteId: string } | { kind: "installation" },
+	): Promise<void> {
 		if (!isSqlite(this.db)) return;
 		this.validateInputs(collectionSlug, searchableFields);
 		const ftsTable = this.getFtsTableName(collectionSlug);
@@ -373,13 +439,10 @@ export class FTSManager {
 			.join(", ");
 
 		// Insert all existing content into FTS table
-		await sql
-			.raw(`
-			INSERT OR REPLACE INTO "${ftsTable}"(rowid, id, locale, ${fieldList})
-			SELECT rowid, id, locale, ${valueList} FROM "${contentTable}"
+		await sql`INSERT OR REPLACE INTO ${sql.ref(ftsTable)}(rowid, id, locale, ${sql.raw(fieldList)})
+			SELECT rowid, id, locale, ${sql.raw(valueList)} FROM ${sql.ref(contentTable)}
 			WHERE deleted_at IS NULL
-		`)
-			.execute(this.db);
+			${scope.kind === "site" ? sql`AND site_id = ${scope.siteId}` : sql``}`.execute(this.db);
 	}
 
 	/**
@@ -395,13 +458,14 @@ export class FTSManager {
 		limit: number,
 	): Promise<number | null> {
 		if (!isSqlite(this.db)) return null;
+		const siteId = selectedSiteId();
 		this.validateInputs(collectionSlug, searchableFields);
 		const ftsTable = this.getFtsTableName(collectionSlug);
 		const contentTable = this.getContentTableName(collectionSlug);
 		const range = await sql<{ last: number | null }>`
 			SELECT MAX(rowid) AS last FROM (
 				SELECT rowid FROM ${sql.ref(contentTable)}
-				WHERE rowid > ${afterRowid}
+				WHERE rowid > ${afterRowid} AND site_id = ${siteId}
 				ORDER BY rowid
 				LIMIT ${limit}
 			)
@@ -417,7 +481,7 @@ export class FTSManager {
 		await sql`
 			INSERT OR REPLACE INTO ${sql.ref(ftsTable)}(rowid, id, locale, ${sql.raw(fieldList)})
 			SELECT rowid, id, locale, ${sql.raw(valueList)} FROM ${sql.ref(contentTable)}
-			WHERE deleted_at IS NULL AND rowid > ${afterRowid} AND rowid <= ${last}
+			WHERE deleted_at IS NULL AND site_id = ${siteId} AND rowid > ${afterRowid} AND rowid <= ${last}
 		`.execute(this.db);
 		return Number(last);
 	}
@@ -431,12 +495,26 @@ export class FTSManager {
 			.select(["search_config", "title_field"])
 			.where("slug", "=", collectionSlug)
 			.executeTakeFirst();
+		return result ? parseSearchConfig(result.search_config, result.title_field) : null;
+	}
 
-		if (!result?.search_config) {
-			return null;
-		}
-
-		return parseSearchConfig(result.search_config, result.title_field);
+	async getSearchConfigAndFields(collectionSlug: string): Promise<{
+		config: SearchConfig | null;
+		searchableFields: string[];
+	}> {
+		const rows = await this.db
+			.selectFrom("_emdash_collections as c")
+			.leftJoin("_emdash_fields as f", (join) =>
+				join.onRef("f.collection_id", "=", "c.id").on("f.searchable", "=", 1),
+			)
+			.select(["c.search_config", "c.title_field", "f.slug as field_slug"])
+			.where("c.slug", "=", collectionSlug)
+			.execute();
+		const first = rows[0];
+		return {
+			config: first ? parseSearchConfig(first.search_config, first.title_field) : null,
+			searchableFields: rows.flatMap((row) => (row.field_slug ? [row.field_slug] : [])),
+		};
 	}
 
 	/**
@@ -446,7 +524,23 @@ export class FTSManager {
 	async getSearchMetadata(
 		collectionSlugs?: string[],
 	): Promise<Map<string, CollectionSearchMetadata>> {
-		if (!isSqlite(this.db)) return new Map();
+		if (!isSqlite(this.db)) {
+			let query = this.db
+				.selectFrom("_emdash_collections as c")
+				.select([
+					"c.slug", "c.search_config", "c.title_field",
+					sql<string[]>`ARRAY(SELECT slug FROM _emdash_fields WHERE collection_id = c.id AND searchable = 1 ORDER BY slug)`.as("searchable_fields"),
+					sql<boolean>`EXISTS (SELECT 1 FROM _emdash_fields WHERE collection_id = c.id AND slug = 'title')`.as("has_title"),
+				])
+				.where("c.search_config", "is not", null);
+			if (collectionSlugs?.length) query = query.where("c.slug", "in", collectionSlugs);
+			const metadata = new Map<string, CollectionSearchMetadata>();
+			for (const row of await query.execute()) {
+				const config = row.search_config ? parseSearchConfig(row.search_config, row.title_field) : null;
+				if (config?.enabled) metadata.set(row.slug, { config, searchableFields: row.searchable_fields, hasTitle: row.has_title });
+			}
+			return metadata;
+		}
 
 		let query = this.db
 			.selectFrom("_emdash_collections as c")
@@ -587,9 +681,6 @@ export class FTSManager {
 		if (options?.tokenize !== undefined) {
 			resolveSearchTokenizer(options.tokenize);
 		}
-		if (!isSqlite(this.db)) {
-			throw new Error("Full-text search is only available with SQLite databases");
-		}
 		// Get searchable fields
 		const searchableFields = await this.getSearchableFields(collectionSlug);
 
@@ -605,7 +696,7 @@ export class FTSManager {
 		const tokenize = options?.tokenize ?? existing?.tokenize;
 
 		// Rebuild from scratch to ensure clean state (no duplicate rows)
-		await this.rebuildIndex(collectionSlug, searchableFields, weights, tokenize);
+		await this.rebuildIndexInstallationWide(collectionSlug, searchableFields, weights, tokenize);
 
 		// Update search config
 		await this.setSearchConfig(collectionSlug, {
@@ -621,7 +712,16 @@ export class FTSManager {
 	 * Drops the FTS table and triggers.
 	 */
 	async disableSearch(collectionSlug: string): Promise<void> {
-		if (!isSqlite(this.db)) return;
+		if (!isSqlite(this.db)) {
+			await this.dropFtsTable(collectionSlug);
+			const existing = await this.getSearchConfig(collectionSlug);
+			await this.setSearchConfig(collectionSlug, {
+				enabled: false,
+				weights: existing?.weights,
+				tokenize: existing?.tokenize,
+			});
+			return;
+		}
 		await this.dropFtsTable(collectionSlug);
 		const existing = await this.getSearchConfig(collectionSlug);
 		await this.setSearchConfig(collectionSlug, {
@@ -637,10 +737,16 @@ export class FTSManager {
 	async getIndexStats(
 		collectionSlug: string,
 	): Promise<{ indexed: number; lastRebuilt?: string } | null> {
-		if (!isSqlite(this.db)) return null;
+		const siteId = selectedSiteId();
+		if (!isSqlite(this.db)) {
+			return new PostgresSearchIndex(this.db).getCollectionStats(collectionSlug, {
+				kind: "site",
+				siteId,
+			});
+		}
 		this.validateInputs(collectionSlug);
 		const ftsTable = this.getFtsTableName(collectionSlug);
-		const ftsDocsizeTable = `${ftsTable}_docsize`;
+		const contentTable = this.getContentTableName(collectionSlug);
 
 		// Check if table exists
 		if (!(await this.ftsTableExists(collectionSlug))) {
@@ -649,7 +755,8 @@ export class FTSManager {
 
 		// Count indexed rows
 		const result = await sql<{ count: number }>`
-			SELECT COUNT(*) as count FROM "${sql.raw(ftsDocsizeTable)}"
+			SELECT COUNT(*) as count FROM ${sql.ref(ftsTable)} AS f
+			WHERE f.rowid IN (SELECT c.rowid FROM ${sql.ref(contentTable)} AS c WHERE c.site_id = ${siteId} AND c.deleted_at IS NULL)
 		`.execute(this.db);
 
 		return {
@@ -685,7 +792,12 @@ export class FTSManager {
 			}
 
 			console.warn(`FTS index for "${collectionSlug}" is missing. Rebuilding.`);
-			await this.rebuildIndex(collectionSlug, fields, config.weights, config.tokenize);
+			await this.rebuildIndexInstallationWide(
+				collectionSlug,
+				fields,
+				config.weights,
+				config.tokenize,
+			);
 			return true;
 		}
 
@@ -708,7 +820,12 @@ export class FTSManager {
 				`FTS index for "${collectionSlug}" has ${ftsRows} rows but content table has ${contentRows}. Rebuilding.`,
 			);
 			if (fields.length > 0) {
-				await this.rebuildIndex(collectionSlug, fields, config?.weights, config?.tokenize);
+				await this.rebuildIndexInstallationWide(
+					collectionSlug,
+					fields,
+					config?.weights,
+					config?.tokenize,
+				);
 			}
 			return true;
 		}

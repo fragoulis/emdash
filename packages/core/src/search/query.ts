@@ -7,6 +7,8 @@
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 
+import { isSqlite } from "../database/dialect-helpers.js";
+import { selectedSiteId } from "../database/repositories/site-settings.js";
 import { encodeCursor, decodeCursor, InvalidCursorError } from "../database/repositories/types.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
@@ -15,6 +17,8 @@ import { localeMatches } from "../i18n/query.js";
 import { getDb } from "../loader.js";
 import { FTSManager } from "./fts-manager.js";
 import type { CollectionSearchMetadata } from "./fts-manager.js";
+import { PostgresSearchIndex } from "./postgres-index.js";
+import { searchPostgresCollection, suggestPostgresCollection } from "./postgres-query.js";
 import type {
 	SearchOptions,
 	CollectionSearchOptions,
@@ -107,6 +111,7 @@ function isFts5SyntaxError(error: unknown): boolean {
  * ```
  */
 export async function search(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
+	selectedSiteId();
 	const db = await getDb();
 	return searchWithDb(db, query, options);
 }
@@ -127,6 +132,7 @@ export async function searchWithDb(
 	query: string,
 	options: SearchOptions = {},
 ): Promise<SearchResponse> {
+	const siteId = selectedSiteId();
 	const ftsManager = new FTSManager(db);
 	const limit = options.limit ?? 20;
 	const status = options.status ?? "published";
@@ -151,24 +157,20 @@ export async function searchWithDb(
 			continue;
 		}
 
-		const collectionResults = await searchSingleCollection(
-			db,
-			collection,
-			query,
-			{
-				status,
-				locale: options.locale,
-				limit: perCollectionLimit,
-				scope: options.scope,
-			},
-			collectionMetadata,
-		);
+		const searchOptions = { siteId, status, locale: options.locale, limit: perCollectionLimit, scope: options.scope };
+		const collectionResults = isSqlite(db)
+			? await searchSingleCollection(db, collection, query, searchOptions, collectionMetadata)
+			: await searchPostgresCollection(db, collection, query, searchOptions,
+				collectionMetadata.searchableFields, collectionMetadata.config.weights, collectionMetadata.config.titleField);
 
 		allResults.push(...collectionResults);
 	}
 
 	// Sort by score descending
-	allResults.sort((a, b) => b.score - a.score);
+	allResults.sort(
+		(a, b) =>
+			b.score - a.score || a.collection.localeCompare(b.collection) || a.id.localeCompare(b.id),
+	);
 
 	// Page the merged set by offset. A nextCursor is issued only when at least
 	// one result exists past this page.
@@ -201,6 +203,7 @@ export async function searchCollection(
 	query: string,
 	options: CollectionSearchOptions = {},
 ): Promise<SearchResponse> {
+	const siteId = selectedSiteId();
 	const limit = options.limit ?? 20;
 	const offset = options.cursor ? decodeSearchOffset(options.cursor) : 0;
 	if (!escapeQuery(query)) return { items: [] };
@@ -212,18 +215,10 @@ export async function searchCollection(
 	// Over-fetch the [offset, offset + limit) window plus one row to detect a
 	// further page, then slice. Keeps the FTS SQL (LIMIT-only) unchanged and
 	// the cursor contract identical to the cross-collection path.
-	const fetched = await searchSingleCollection(
-		db,
-		collection,
-		query,
-		{
-			status: options.status,
-			locale: options.locale,
-			limit: offset + limit + 1,
-			scope: options.scope,
-		},
-		metadata,
-	);
+	const searchOptions = { siteId, status: options.status ?? "published", locale: options.locale, limit: offset + limit + 1, scope: options.scope };
+	const fetched = isSqlite(db)
+		? await searchSingleCollection(db, collection, query, searchOptions, metadata)
+		: await searchPostgresCollection(db, collection, query, searchOptions, metadata.searchableFields, metadata.config.weights, metadata.config.titleField);
 
 	const items = fetched.slice(offset, offset + limit);
 	const hasMore = fetched.length > offset + limit;
@@ -239,7 +234,7 @@ async function searchSingleCollection(
 	db: Kysely<Database>,
 	collection: string,
 	query: string,
-	options: CollectionSearchOptions,
+	options: CollectionSearchOptions & { siteId: string },
 	metadata: CollectionSearchMetadata,
 ): Promise<SearchResult[]> {
 	// Validate before any raw SQL interpolation
@@ -334,6 +329,7 @@ async function searchSingleCollection(
 		WHERE "${sql.raw(ftsTable)}" MATCH ${matchQuery}
 		AND c.status = ${status}
 		AND c.deleted_at IS NULL
+		AND c.site_id = ${options.siteId}
 		${locale ? sql`AND ${localeMatches("c.locale", locale)}` : sql``}
 		ORDER BY score
 		LIMIT ${limit}
@@ -417,6 +413,7 @@ export async function getSuggestions(
 	query: string,
 	options: SuggestOptions = {},
 ): Promise<Suggestion[]> {
+	const siteId = selectedSiteId();
 	const limit = options.limit ?? 5;
 	const locale = options.locale ? resolveConfiguredLocale(options.locale) : undefined;
 
@@ -432,7 +429,7 @@ export async function getSuggestions(
 	for (const collection of collections) {
 		const collectionMetadata = metadata.get(collection);
 		if (!collectionMetadata) continue;
-		const { config, hasTitle } = collectionMetadata;
+		const { config, hasTitle, searchableFields } = collectionMetadata;
 
 		// Suggestions are title-based (Suggestion.title is required). A configured
 		// titleField supplies it -- a validated existing column -- so it
@@ -456,6 +453,20 @@ export async function getSuggestions(
 		const ftsTable = ftsManager.getFtsTableName(collection);
 		const contentTable = ftsManager.getContentTableName(collection);
 
+		if (!isSqlite(db)) {
+			suggestions.push(
+				...(await suggestPostgresCollection(
+					db,
+					collection,
+					query,
+					{ siteId, locale: options.locale, limit },
+					searchableFields,
+					config.titleField,
+				)),
+			);
+			continue;
+		}
+
 		let results;
 		try {
 			results = await sql<{
@@ -472,6 +483,7 @@ export async function getSuggestions(
 				WHERE "${sql.raw(ftsTable)}" MATCH ${prefixQuery}
 				AND c.status = 'published'
 				AND c.deleted_at IS NULL
+				AND c.site_id = ${siteId}
 				AND ${titleExpr} IS NOT NULL
 				${locale ? sql`AND ${localeMatches("c.locale", locale)}` : sql``}
 				ORDER BY bm25("${sql.raw(ftsTable)}")
@@ -505,14 +517,28 @@ export async function getSuggestions(
  * Get search statistics for all collections
  */
 export async function getSearchStats(db: Kysely<Database>): Promise<SearchStats> {
+	selectedSiteId();
 	const ftsManager = new FTSManager(db);
 	const collections = await getSearchableCollections(db);
 	const stats: SearchStats = { collections: {} };
 
 	for (const collection of collections) {
+		if (!isSqlite(db)) {
+			const collectionStats = await new PostgresSearchIndex(db).getCollectionStats(collection, {
+				kind: "site",
+				siteId: selectedSiteId(),
+			});
+			if (collectionStats) stats.collections[collection] = collectionStats;
+			continue;
+		}
 		const collectionStats = await ftsManager.getIndexStats(collection);
 		if (collectionStats) {
-			stats.collections[collection] = collectionStats;
+			const count = await sql<{ count: number }>`
+				SELECT COUNT(*) AS count FROM ${sql.ref(ftsManager.getFtsTableName(collection))} f
+				JOIN ${sql.ref(ftsManager.getContentTableName(collection))} c ON c.id = f.id
+				WHERE c.site_id = ${selectedSiteId()} AND c.deleted_at IS NULL
+			`.execute(db);
+			stats.collections[collection] = { ...collectionStats, indexed: count.rows[0]?.count ?? 0 };
 		}
 	}
 
