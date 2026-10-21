@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
 import { resolveConfiguredLocale } from "../i18n/config.js";
+import { postgresSearchIdentifier } from "./postgres-identifier.js";
 import {
 	DEFAULT_POSTGRES_TEXT_SEARCH_CONFIG,
 	resolvePostgresTextSearchConfig,
@@ -133,7 +134,7 @@ export async function searchPostgresCollection(
 	}>`
 		SELECT c.id, c.slug, c.locale, ${title ? sql`c.${sql.ref(title)}` : sql`NULL`} AS title,
 			${headline} AS snippet, (${score})::float8 AS score
-		FROM ${sql.ref(`_emdash_search_${collection}`)} i
+		FROM ${sql.ref(postgresSearchIdentifier(`_emdash_search_${collection}`))} i
 		JOIN ${sql.ref(`ec_${collection}`)} c ON c.id = i.content_id AND c.site_id = i.site_id
 		CROSS JOIN (
 			SELECT jsonb_object_agg(f.slug, f.type) AS types
@@ -187,7 +188,7 @@ export async function suggestPostgresCollection(
 	const tsquery = sql`to_tsquery(${config}, ${prefix})`;
 	const result = await sql<{ id: string; slug: string | null; title: string }>`
 		SELECT c.id, c.slug, c.${sql.ref(title)} AS title
-		FROM ${sql.ref(`_emdash_search_${collection}`)} i
+		FROM ${sql.ref(postgresSearchIdentifier(`_emdash_search_${collection}`))} i
 		JOIN ${sql.ref(`ec_${collection}`)} c ON c.id = i.content_id AND c.site_id = i.site_id
 		WHERE i.site_id = ${options.siteId} AND i.locale = c.locale
 			AND ${indexedMatch(

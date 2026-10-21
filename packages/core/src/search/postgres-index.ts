@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import { isPostgres } from "../database/dialect-helpers.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
+import { postgresSearchIdentifier } from "./postgres-identifier.js";
 import { resolvePostgresTextSearchConfig } from "./postgres-locale.js";
 
 export type SearchIndexScope = { kind: "site"; siteId: string } | { kind: "installation" };
@@ -30,7 +31,7 @@ export class PostgresSearchIndex {
 
 	private tableName(collection: string): string {
 		validateIdentifier(collection, "collection slug");
-		return `_emdash_search_${collection}`;
+		return postgresSearchIdentifier(`_emdash_search_${collection}`);
 	}
 
 	async ensureCollectionIndex(
@@ -55,17 +56,17 @@ export class PostgresSearchIndex {
 			.execute(this.db);
 		await sql
 			.raw(
-				`CREATE INDEX IF NOT EXISTS ${this.quote(`idx_${indexName}_search_vector`)} ON ${index} USING GIN (search_vector)`,
+				`CREATE INDEX IF NOT EXISTS ${this.quote(postgresSearchIdentifier(`idx__emdash_search_${collection}_search_vector`))} ON ${index} USING GIN (search_vector)`,
 			)
 			.execute(this.db);
 		await sql
 			.raw(
-				`CREATE INDEX IF NOT EXISTS ${this.quote(`idx_${indexName}_title_vector`)} ON ${index} USING GIN (title_vector)`,
+				`CREATE INDEX IF NOT EXISTS ${this.quote(postgresSearchIdentifier(`idx__emdash_search_${collection}_title_vector`))} ON ${index} USING GIN (title_vector)`,
 			)
 			.execute(this.db);
 		await sql
 			.raw(
-				`CREATE INDEX IF NOT EXISTS ${this.quote(`idx_${indexName}_site_locale_content`)} ON ${index} (site_id, locale, content_id)`,
+				`CREATE INDEX IF NOT EXISTS ${this.quote(postgresSearchIdentifier(`idx__emdash_search_${collection}_site_locale_content`))} ON ${index} (site_id, locale, content_id)`,
 			)
 			.execute(this.db);
 
@@ -88,8 +89,10 @@ export class PostgresSearchIndex {
 					`'${field}', to_tsvector(_emdash_search_config(NEW.locale), ${fieldExpressions[i]})::text`,
 			)
 			.join(", ");
-		const functionName = this.quote(`${indexName}_sync_fn`);
-		const triggerName = this.quote(`${indexName}_sync`);
+		const functionName = this.quote(
+			postgresSearchIdentifier(`_emdash_search_${collection}_sync_fn`),
+		);
+		const triggerName = this.quote(postgresSearchIdentifier(`_emdash_search_${collection}_sync`));
 		await sql
 			.raw(`CREATE OR REPLACE FUNCTION ${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
 		BEGIN
@@ -239,12 +242,14 @@ export class PostgresSearchIndex {
 		if (tables.some((table) => table.name === `ec_${collection}`)) {
 			await sql
 				.raw(
-					`DROP TRIGGER IF EXISTS ${this.quote(`${index}_sync`)} ON ${this.quote(`ec_${collection}`)}`,
+					`DROP TRIGGER IF EXISTS ${this.quote(postgresSearchIdentifier(`_emdash_search_${collection}_sync`))} ON ${this.quote(`ec_${collection}`)}`,
 				)
 				.execute(this.db);
 		}
 		await sql
-			.raw(`DROP FUNCTION IF EXISTS ${this.quote(`${index}_sync_fn`)}() CASCADE`)
+			.raw(
+				`DROP FUNCTION IF EXISTS ${this.quote(postgresSearchIdentifier(`_emdash_search_${collection}_sync_fn`))}() CASCADE`,
+			)
 			.execute(this.db);
 		await sql.raw(`DROP TABLE IF EXISTS ${this.quote(index)}`).execute(this.db);
 	}

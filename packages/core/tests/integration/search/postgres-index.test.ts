@@ -8,6 +8,7 @@ import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { FTSManager } from "../../../src/search/fts-manager.js";
 import { PostgresSearchIndex } from "../../../src/search/postgres-index.js";
+import { searchPostgresCollection } from "../../../src/search/postgres-query.js";
 import { createPostFixture } from "../../utils/fixtures.js";
 import {
 	hasPgTestDatabase,
@@ -113,6 +114,78 @@ describePg("PostgreSQL search index lifecycle", () => {
 			),
 		);
 	}
+
+	it("keeps long collection search indexes independent through rebuild, search, and disable", async () => {
+		const prefix = "a".repeat(48);
+		const first = `${prefix}x`;
+		const second = `${prefix}y`;
+		const registry = new SchemaRegistry(ctx.db);
+		const shortSlugs = ["long_a", "long_b"] as const;
+		for (const slug of shortSlugs) {
+			await registry.createCollection({ slug, label: slug, supports: ["search"] });
+			await registry.createField(slug, {
+				slug: "title",
+				label: "Title",
+				type: "string",
+			});
+		}
+		for (const [shortSlug, longSlug] of [
+			[shortSlugs[0], first],
+			[shortSlugs[1], second],
+		] as const) {
+			await sql`ALTER TABLE ${sql.ref(`ec_${shortSlug}`)} RENAME TO ${sql.ref(`ec_${longSlug}`)}`.execute(
+				ctx.db,
+			);
+			await ctx.db
+				.updateTable("_emdash_collections")
+				.set({ slug: longSlug })
+				.where("slug", "=", shortSlug)
+				.execute();
+		}
+		await ctx.db
+			.updateTable("_emdash_fields")
+			.set({ searchable: 1 })
+			.where("slug", "=", "title")
+			.execute();
+		const ids = new Map<string, string>();
+		for (const [slug, title] of [
+			[first, "amberalpha"],
+			[second, "violetbeta"],
+		] as const) {
+			const item = await runWithContext({ editMode: false, siteId: "site-a" }, () =>
+				content.create({ type: slug, slug: title, status: "published", data: { title } }),
+			);
+			ids.set(slug, item.id);
+			await fts.enableSearch(slug);
+		}
+		const results = await searchPostgresCollection(
+			ctx.db,
+			first,
+			"amberalpha",
+			{
+				siteId: "site-a",
+				status: "published",
+				limit: 10,
+			},
+			["title"],
+		);
+		expect(results.map((row) => row.id)).toEqual([ids.get(first)]);
+		await fts.disableSearch(first);
+		expect(await fts.ftsTableExists(first)).toBe(false);
+		expect(await fts.ftsTableExists(second)).toBe(true);
+		const remaining = await searchPostgresCollection(
+			ctx.db,
+			second,
+			"violetbeta",
+			{
+				siteId: "site-a",
+				status: "published",
+				limit: 10,
+			},
+			["title"],
+		);
+		expect(remaining.map((row) => row.id)).toEqual([ids.get(second)]);
+	});
 
 	it("maintains vectors on writes and keeps rebuild and statistics site-scoped", async () => {
 		const aItem = await add("site-a", "a-entry", "ΆΝΘΡΩΠΟΣ");
