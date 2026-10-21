@@ -2,7 +2,7 @@
 
 EmDash is published to npm and in active use. During development you work inside the monorepo -- packages use `workspace:*` links, so everything works without publishing.
 
-This guide covers setup, policy, and the rules around opening a PR. For code patterns (SQL, API routes, authorization, performance, Lingui, RTL, etc.), see [AGENTS.md](AGENTS.md).
+This guide covers setup, policy, and the rules around opening a PR. For implementation details, use the task-specific references linked from [AGENTS.md](AGENTS.md).
 
 ## Project processes
 
@@ -97,21 +97,7 @@ Core changes propagate to the demo automatically.
 
 ## Checks
 
-For Markdown-only changes, run `git diff --check` and check changed links and frontmatter. Skip all `pnpm` commands. For code or MDX changes, run the applicable checks before pushing:
-
-```bash
-pnpm typecheck   # TypeScript (packages)
-pnpm lint        # full type-aware lint
-pnpm format      # auto-format with oxfmt (tabs)
-pnpm test        # all packages
-pnpm test:e2e    # Playwright
-```
-
-`pnpm build` is required before the first typecheck in a fresh checkout. Scoped package typechecks such as `pnpm --filter @emdash-cms/plugin-cli typecheck` resolve internal workspace type declarations from `dist/`, which the build emits; this matches CI's build-then-typecheck order.
-
-`pnpm test:e2e` runs the fixture against the built packages in `dist/` and only builds what is missing, so run `pnpm build` after changing package source.
-
-Tests use real in-memory SQLite -- no mocking. Each test gets a fresh database. Typecheck and lint must pass.
+Follow the canonical [validation procedure](docs/agents/validation.md) for local checks, Markdown-only changes, and the distinction between focused local tests and broader CI coverage. Do not run the full test suite locally.
 
 ### Visual regression tests
 
@@ -191,8 +177,7 @@ If the body contains `![Settings screen after the change](./after.png)`, pass `-
 - Branch from `main`.
 - Fill out the PR template completely. **PRs with an empty or missing template will be closed automatically.** The template is loaded by the GitHub UI; if you create a PR via API/CLI, copy `.github/PULL_REQUEST_TEMPLATE.md` into the body.
 - For a design PR, use [the design template](.github/PULL_REQUEST_TEMPLATE/design.md), prefix the title with `design:`, and limit the change to `proposals/`. In the GitHub web interface, add `?template=design.md` to the new-PR URL to load the design template.
-- For code or MDX changes, `pnpm typecheck` and `pnpm lint` must pass before pushing. For Markdown-only changes, use the checks in [Checks](#checks).
-- Run relevant tests.
+- Follow the [canonical validation procedure](docs/agents/validation.md) for local checks. CI runs its change-selected test matrix.
 - Include screenshots for every UI change.
 - Commit messages describe _why_, not just _what_.
 
@@ -235,11 +220,12 @@ Wrap button labels, headings, descriptions, error messages, placeholders, and `a
 
 Translation PRs are the exception -- see [Translating EmDash](https://docs.emdashcms.com/contributing/translating/) for the full contributor guide.
 
-For RTL rules and the full Lingui pattern reference, see [AGENTS.md § Admin UI: Localization](AGENTS.md#admin-ui-localization-lingui).
+For RTL and Lingui implementation guidance, follow the admin task reference linked from [AGENTS.md](AGENTS.md).
 
 ## Getting Help
 
-- [AGENTS.md](AGENTS.md) -- architecture and code patterns
+- [AGENTS.md](AGENTS.md) -- safety boundaries and task-specific implementation references
+- [Validation](docs/agents/validation.md) -- local checks and CI coverage
 - [TRIAGE.md](TRIAGE.md) -- guidance for community triagers
 - [GOVERNANCE.md](GOVERNANCE.md) -- roles, decision-making, and team membership
 - [proposals/README.md](proposals/README.md) -- feature plans and RFCs

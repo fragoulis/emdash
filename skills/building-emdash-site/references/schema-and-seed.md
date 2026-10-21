@@ -527,7 +527,7 @@ The seed at `.emdash/seed.json`, `package.json#emdash.seed`, or `seed/seed.json`
 Sample content, bylines and taxonomy terms are applied only when you:
 
 - choose sample content in the setup wizard,
-- open `/_emdash/api/setup/dev-bypass` (add `?content=0` to skip content), or
+- use `/_emdash/api/setup/dev-bypass` on a local demo (add `?content=0` to skip content), or
 - run `npx emdash seed seed/seed.json` against a local SQLite database (`--database` defaults to `./data.db`).
 
 Existing data is never overwritten.

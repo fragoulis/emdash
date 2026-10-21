@@ -88,6 +88,4 @@ When asked for an audit only, report prioritized, concrete findings without edit
 
 ## Verify
 
-For Markdown-only changes, run `git diff --check` and inspect changed links and frontmatter. Skip all `pnpm` commands. Validate skill frontmatter and relative links when editing skills.
-
-For MDX, docs configuration, or shared source consumed by the docs build, run the narrowest applicable checks, such as `pnpm lint:quick` and `pnpm --dir docs build`. Use additional tests when code samples or generated reference material depend on executable behavior. If validation fails because declaration output is missing, run the root build and retry. Treat a remaining failure as introduced by the current work rather than establishing a pre-edit failure baseline.
+Follow the repository's [canonical validation procedure](../../docs/agents/validation.md). For Markdown-only changes, validate changed links and frontmatter and skip `pnpm` commands. Validate skill frontmatter and relative links when editing skills.
