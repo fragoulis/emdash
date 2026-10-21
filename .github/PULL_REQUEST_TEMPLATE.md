@@ -28,10 +28,7 @@ Closes #
 ## Checklist
 
 - [ ] I have read [CONTRIBUTING.md](https://github.com/emdash-cms/emdash/blob/main/CONTRIBUTING.md)
-- [ ] `pnpm typecheck` passes
-- [ ] `pnpm lint` passes
-- [ ] `pnpm test` passes (or targeted tests for my change)
-- [ ] `pnpm format` has been run
+- [ ] I followed the [canonical validation procedure](https://github.com/fragoulis/emdash/blob/main/docs/agents/validation.md), including focused tests and Markdown-only checks as applicable
 - [ ] I have added/updated tests for my changes (if applicable)
 - [ ] User-visible strings in the admin UI are [wrapped for translation](https://github.com/emdash-cms/emdash/blob/main/CONTRIBUTING.md#internationalization-i18n) (if applicable). Do not include `messages.po` changes except in translation PRs — a workflow extracts catalogs on merge to `main`.
 - [ ] I have added and reviewed the user-facing [changeset](https://github.com/emdash-cms/emdash/blob/main/.changeset/README.md) (if this PR changes a published package)
