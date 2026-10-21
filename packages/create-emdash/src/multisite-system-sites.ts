@@ -11,18 +11,57 @@ interface SiteRecord {
   readiness: { status: "ready" | "unavailable"; loadedVersion: string | null; latestVersion: string | null; pendingRestart: boolean };
 }
 
-interface SystemSitesProps { labels: Record<string, string>; }
+interface SystemSitesProps { labels: Record<string, string>; siteSlug?: string; }
 
 function BidiText({ children }: { children: React.ReactNode }) {
   return <bdi dir="auto">{children}</bdi>;
 }
 
-export function SystemSites({ labels }: SystemSitesProps) {
-  const slug = typeof window === "undefined" ? "" : decodeURIComponent(window.location.pathname.split("/")[2] || "");
+export function SystemSites({ labels, siteSlug = "" }: SystemSitesProps) {
+  const slug = siteSlug;
   const [sites, setSites] = React.useState<SiteRecord[]>([]);
   const [site, setSite] = React.useState<SiteRecord | null>(null);
   const [title, setTitle] = React.useState("");
+  const [newTitle, setNewTitle] = React.useState("");
+  const [newSlug, setNewSlug] = React.useState("");
+  const [draftLoaded, setDraftLoaded] = React.useState(false);
+  const [creating, setCreating] = React.useState(false);
+  const [createError, setCreateError] = React.useState("");
+  const [createSuccess, setCreateSuccess] = React.useState("");
+  const createAttempt = React.useRef<{ payload: string; key: string } | null>(null);
+  const submitting = React.useRef(false);
+  const draftStorageKey = "emdash:system-site-create:v1";
   const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(draftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (draft && draft.version === 1 && typeof draft.title === "string" && draft.title.length <= 120 && typeof draft.slug === "string" && draft.slug.length <= 63 && (draft.key === null || typeof draft.key === "string" && draft.key.length > 0 && draft.key.length <= 200)) {
+          setNewTitle(draft.title);
+          setNewSlug(draft.slug);
+          if (draft.key !== null) createAttempt.current = { payload: JSON.stringify({ title: draft.title, slug: draft.slug }), key: draft.key };
+        } else {
+          sessionStorage.removeItem(draftStorageKey);
+        }
+      }
+    } catch {
+      try { sessionStorage.removeItem(draftStorageKey); } catch {}
+    } finally {
+      setDraftLoaded(true);
+    }
+  }, []);
+
+  function persistCreateDraft(nextTitle: string, nextSlug: string, key: string | null) {
+    try {
+      sessionStorage.setItem(draftStorageKey, JSON.stringify({ version: 1, title: nextTitle, slug: nextSlug, key }));
+    } catch {}
+  }
+
+  function clearCreateDraft() {
+    try { sessionStorage.removeItem(draftStorageKey); } catch {}
+  }
   const [error, setError] = React.useState("");
   const [conflict, setConflict] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -85,12 +124,63 @@ export function SystemSites({ labels }: SystemSitesProps) {
     }
   }
 
+  async function createSite(event: React.FormEvent) {
+    event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setCreating(true);
+    setCreateError("");
+    setCreateSuccess("");
+    const payload = JSON.stringify({ title: newTitle, slug: newSlug });
+    if (!createAttempt.current || createAttempt.current.payload !== payload) {
+      createAttempt.current = { payload, key: crypto.randomUUID() };
+    }
+    persistCreateDraft(newTitle, newSlug, createAttempt.current.key);
+    try {
+      const response = await fetch("/_emdash/api/system/sites", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-EmDash-Request": "1",
+          "Idempotency-Key": createAttempt.current.key,
+        },
+        body: payload,
+      });
+      if (response.status === 409) {
+        setCreateError(labels.siteCreateConflict);
+        return;
+      }
+      if (!response.ok) throw new Error();
+      const result = await response.json();
+      const created = (result.data.site || result.data) as SiteRecord;
+      setSites((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setCreateSuccess(labels.siteCreateSuccess);
+      setNewTitle("");
+      setNewSlug("");
+      createAttempt.current = null;
+      clearCreateDraft();
+    } catch {
+      setCreateError(labels.siteCreateError);
+    } finally {
+      submitting.current = false;
+      setCreating(false);
+    }
+  }
+
   const statusText = (item: SiteRecord) => item.status === "active" ? labels.siteActive : labels.siteDisabled;
-  if (loading) return <p role="status"><BidiText>{labels.registryLoading}</BidiText></p>;
-  if (error && !site && !sites.length) return <section role="alert"><p><BidiText>{error}</BidiText></p><Button onClick={() => void load()}><BidiText>{labels.siteReloadLatest}</BidiText></Button></section>;
-  if (!slug) return <section>
+  if (loading && slug) return <p role="status"><BidiText>{labels.registryLoading}</BidiText></p>;
+  if (!slug) return <section className="space-y-5">
     <h2 className="text-lg font-semibold"><BidiText>{labels.registryTitle}</BidiText></h2>
-    {error && <p role="alert"><BidiText>{error}</BidiText></p>}
+    <form onSubmit={createSite} className="max-w-xl space-y-3 rounded-xl border border-kumo-line bg-kumo-base p-4">
+      <div><h3 className="font-semibold"><BidiText>{labels.siteCreateTitle}</BidiText></h3><p className="mt-1 text-sm text-kumo-subtle"><BidiText>{labels.siteCreateDescription}</BidiText></p></div>
+      <Input label={<BidiText>{labels.siteCreateTitleLabel}</BidiText>} value={newTitle} onChange={(event) => { const value = event.target.value; setNewTitle(value); createAttempt.current = null; persistCreateDraft(value, newSlug, null); setCreateError(""); setCreateSuccess(""); }} required disabled={creating || !draftLoaded} />
+      <Input label={<BidiText>{labels.siteCreateSlugLabel}</BidiText>} value={newSlug} onChange={(event) => { const value = event.target.value; setNewSlug(value); createAttempt.current = null; persistCreateDraft(newTitle, value, null); setCreateError(""); setCreateSuccess(""); }} required disabled={creating || !draftLoaded} dir="ltr" />
+      <Button type="submit" loading={creating} disabled={!draftLoaded || creating || !newTitle.trim() || !newSlug.trim()}><BidiText>{creating ? labels.siteCreating : labels.siteCreate}</BidiText></Button>
+      {createError && <p role="alert" className="break-words"><BidiText>{createError}</BidiText></p>}
+      {createSuccess && <p role="status"><BidiText>{createSuccess}</BidiText></p>}
+    </form>
+    {loading && <p role="status"><BidiText>{labels.registryLoading}</BidiText></p>}
+    {error && <div role="alert"><p><BidiText>{error}</BidiText></p><Button onClick={() => void load()}><BidiText>{labels.siteReloadLatest}</BidiText></Button></div>}
     {sites.length === 0 ? <p className="mt-4 text-kumo-subtle"><BidiText>{labels.registryEmpty}</BidiText></p> : <ul className="mt-4 grid gap-3 sm:grid-cols-2">
       {sites.map((item) => <li key={item.id} className="min-w-0 rounded-xl border border-kumo-line bg-kumo-base p-4">
         <LinkButton href={"/site/" + encodeURIComponent(item.slug)} variant="secondary" className="min-w-0 max-w-full whitespace-normal break-words text-start"><bdi className="max-w-full whitespace-normal break-words" dir="auto">{item.title || item.slug}</bdi></LinkButton>
