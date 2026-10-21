@@ -72,8 +72,8 @@ export async function startClerkFixture(origin: string) {
 	await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
 	const address = server.address();
 	if (!address || typeof address === "string") throw new Error("Expected a TCP address");
-	const now = Math.floor(Date.now() / 1000);
 	const jwt = (claims: Record<string, unknown> = {}) => {
+		const now = Math.floor(Date.now() / 1000);
 		const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "fixture" })).toString(
 			"base64url",
 		);
