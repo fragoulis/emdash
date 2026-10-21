@@ -380,7 +380,7 @@ server.listen(port, "127.0.0.1", async () => {
   console.log("[host] Ready: admin " + origin(adminHost) + "/admin");
   try {
     const result = await db.query(
-      "SELECT h.hostname, s.slug FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE s.active = 1 ORDER BY h.hostname",
+      "SELECT h.hostname, s.slug, s.presentation FROM _emdash_site_hosts h JOIN _emdash_sites s ON s.id = h.site_id WHERE s.active = 1 ORDER BY h.hostname",
     );
     const hosts = new Set(
       result.rows
