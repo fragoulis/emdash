@@ -6,6 +6,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
@@ -31,6 +32,7 @@ function request(
 	path: string,
 	headers: Record<string, string> = {},
 	method = "GET",
+	body?: string,
 ): Promise<HttpResult> {
 	return new Promise((done, fail) => {
 		const req = httpRequest(
@@ -42,17 +44,19 @@ function request(
 				headers: { Host: `${hostname}:${port}`, ...headers },
 			},
 			(res) => {
-				let body = "";
+				let responseBody = "";
 				res.setEncoding("utf8");
-				res.on("data", (chunk: string) => (body += chunk));
-				res.on("end", () => done({ status: res.statusCode ?? 0, body, headers: res.headers }));
+				res.on("data", (chunk: string) => (responseBody += chunk));
+				res.on("end", () =>
+					done({ status: res.statusCode ?? 0, body: responseBody, headers: res.headers }),
+				);
 			},
 		);
 		req.setTimeout(15_000, () => req.destroy(new Error("request timed out")));
 		req.on("error", (error) =>
 			fail(new Error(`${method} ${hostname}${path}: ${error.message}`, { cause: error })),
 		);
-		req.end();
+		req.end(body);
 	});
 }
 
@@ -155,6 +159,11 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		for (const post of seed.content.posts) delete post.data.featured_image;
 		writeFileSync(seedPath, JSON.stringify(seed));
 		linkScaffoldDependencies(project);
+		symlinkSync(
+			resolve(import.meta.dirname, "../../core/node_modules/@emdash-cms/registry-lexicons"),
+			resolve(project, "node_modules/@emdash-cms/registry-lexicons"),
+			"dir",
+		);
 		const port = await availablePort();
 		clerk = await startClerkFixture(`http://localhost:${port}`);
 		const databaseUrl = `postgres://postgres:${password}@127.0.0.1:${pgPort}/test`;
@@ -247,6 +256,10 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				{ encoding: "utf8" },
 			).trim();
 
+		writeFileSync(
+			resolve(project, "src/default/pages/café.astro"),
+			"<html><body>Unicode public route</body></html>",
+		);
 		build();
 		startHost();
 		await waitFor(async () => (await request(port, "localhost", "/admin")).status === 302);
@@ -359,8 +372,181 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				encoding: "utf8",
 				timeout: 30_000,
 			});
-		expect(addSite("foo")).toContain("Site foo registered");
-		expect(addSite("bar")).toContain("Site bar registered");
+		let fooCreationIdempotencyKey = "";
+		let fooPublicAtCreation = "";
+		const hostPidBeforeSiteCreation = host?.pid;
+		const createSiteHttp = (title: string, slug: string, key: string) =>
+			request(
+				port,
+				"localhost",
+				"/_emdash/api/system/sites",
+				{
+					...cookie,
+					Origin: `http://localhost:${port}`,
+					"X-EmDash-Request": "1",
+					"Idempotency-Key": key,
+				},
+				"POST",
+				JSON.stringify({ title, slug }),
+			);
+		{
+			const { chromium } = await import("../../../node_modules/@playwright/test/index.mjs");
+			const browser = await chromium.launch();
+			try {
+				const context = await browser.newContext({
+					locale: "en",
+					viewport: { width: 1440, height: 900 },
+				});
+				await context.addCookies([
+					{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+				]);
+				const page = await context.newPage();
+				await page.goto(`http://localhost:${port}/sites`);
+				await page.waitForFunction(() => {
+					const islands = [...document.querySelectorAll("astro-island")];
+					return islands.length > 0 && islands.every((island) => !island.hasAttribute("ssr"));
+				});
+				await page.getByLabel("Site title").fill("Acceptance Site");
+				await page.getByLabel("Site slug").fill("foo");
+				expect(await page.getByLabel("Site title").inputValue()).toBe("Acceptance Site");
+				expect(await page.getByLabel("Site slug").inputValue()).toBe("foo");
+				await page.waitForFunction(() => {
+					const button = [...document.querySelectorAll("button")].find((item) =>
+						item.textContent?.includes("Create site"),
+					);
+					return button && !button.disabled;
+				});
+				let interceptedCreation = false;
+				await page.route("**/_emdash/api/system/sites", async (route) => {
+					if (route.request().method() !== "POST" || interceptedCreation) return route.continue();
+					interceptedCreation = true;
+					const response = await route.fetch();
+					expect(response.status()).toBe(201);
+					await route.abort("connectionreset");
+				});
+				const createRequest = page.waitForRequest(
+					(observedRequest) =>
+						observedRequest.url().endsWith("/_emdash/api/system/sites") &&
+						observedRequest.method() === "POST",
+				);
+				await page.getByRole("button", { name: "Create site" }).click();
+				const postedCreate = await createRequest;
+				const idempotencyKey = postedCreate.headers()["idempotency-key"];
+				if (!idempotencyKey) throw new Error("Creation request did not include an idempotency key");
+				fooCreationIdempotencyKey = idempotencyKey;
+				await page.getByRole("alert").waitFor();
+				expect(await page.getByLabel("Site title").inputValue()).toBe("Acceptance Site");
+				expect(await page.getByLabel("Site slug").inputValue()).toBe("foo");
+				const createdRecord = query("SELECT id FROM _emdash_sites WHERE slug = 'foo'");
+				const postCountBeforeRetry = query("SELECT count(*) FROM ec_posts");
+				const auditCountBeforeRetry = query(
+					"SELECT count(*) FROM audit_logs WHERE resource_type = 'site' AND action = 'site_create'",
+				);
+				await page.reload();
+				await page.waitForFunction(() => {
+					const islands = [...document.querySelectorAll("astro-island")];
+					return islands.length > 0 && islands.every((island) => !island.hasAttribute("ssr"));
+				});
+				expect(await page.getByLabel("Site title").inputValue()).toBe("Acceptance Site");
+				expect(await page.getByLabel("Site slug").inputValue()).toBe("foo");
+				const retryRequest = page.waitForRequest(
+					(observedRequest) =>
+						observedRequest.url().endsWith("/_emdash/api/system/sites") &&
+						observedRequest.method() === "POST",
+				);
+				await page.getByRole("button", { name: "Create site" }).click();
+				const retriedCreate = await retryRequest;
+				expect(retriedCreate.headers()["idempotency-key"]).toBe(idempotencyKey);
+				await page
+					.getByRole("status")
+					.filter({ hasText: "Site created and ready to serve." })
+					.waitFor();
+				expect(
+					await page.evaluate(() => sessionStorage.getItem("emdash:system-site-create:v1")),
+				).toBeNull();
+				await page.unroute("**/_emdash/api/system/sites");
+				expect(query("SELECT id FROM _emdash_sites WHERE slug = 'foo'")).toBe(createdRecord);
+				expect(query("SELECT count(*) FROM ec_posts")).toBe(postCountBeforeRetry);
+				expect(
+					query(
+						"SELECT count(*) FROM audit_logs WHERE resource_type = 'site' AND action = 'site_create'",
+					),
+				).toBe(auditCountBeforeRetry);
+				const committedReplay = await request(
+					port,
+					"localhost",
+					"/_emdash/api/system/sites",
+					{
+						...cookie,
+						Origin: `http://localhost:${port}`,
+						"X-EmDash-Request": "1",
+						"Idempotency-Key": idempotencyKey,
+					},
+					"POST",
+					JSON.stringify({ title: "Acceptance Site", slug: "foo" }),
+				);
+				expect(committedReplay.status).toBe(201);
+				const conflictingReplay = await request(
+					port,
+					"localhost",
+					"/_emdash/api/system/sites",
+					{
+						...cookie,
+						Origin: `http://localhost:${port}`,
+						"X-EmDash-Request": "1",
+						"Idempotency-Key": idempotencyKey,
+					},
+					"POST",
+					JSON.stringify({ title: "Changed input", slug: "other-slug" }),
+				);
+				expect(conflictingReplay.status).toBe(409);
+				expect(query("SELECT count(*) FROM _emdash_sites WHERE slug = 'other-slug'")).toBe("0");
+				await page.getByRole("link", { name: "Acceptance Site" }).waitFor();
+				expect(await page.locator("main").innerText()).toContain("Ready");
+				expect(await page.locator("main input").count()).toBe(2);
+				expect(host?.pid).toBe(hostPidBeforeSiteCreation);
+				if (process.env.EMDASH_CAPTURE_SETUP)
+					await page.screenshot({ path: "/tmp/emdash-12-created-site-en.png", fullPage: true });
+				await page.getByLabel("Site title").fill("Retained after error");
+				await page.getByLabel("Site slug").fill("foo");
+				await page.getByRole("button", { name: "Create site" }).click();
+				await page.getByRole("alert").waitFor();
+				expect(await page.getByLabel("Site title").inputValue()).toBe("Retained after error");
+				expect(await page.getByLabel("Site slug").inputValue()).toBe("foo");
+				const publicFoo = await request(port, "foo.localhost", "/");
+				expect(publicFoo.status).toBe(200);
+				expect(publicFoo.body).toContain("A Weekend with a Side Project");
+				fooPublicAtCreation = publicFoo.body;
+				await context.close();
+
+				const arabicContext = await browser.newContext({
+					locale: "ar",
+					viewport: { width: 1440, height: 900 },
+				});
+				await arabicContext.addCookies([
+					{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+				]);
+				const arabicPage = await arabicContext.newPage();
+				await arabicPage.goto(`http://localhost:${port}/sites`);
+				await arabicPage.getByRole("link", { name: "Acceptance Site" }).waitFor();
+				expect(await arabicPage.locator("html").getAttribute("dir")).toBe("rtl");
+				if (process.env.EMDASH_CAPTURE_SETUP)
+					await arabicPage.screenshot({
+						path: "/tmp/emdash-12-created-site-ar.png",
+						fullPage: true,
+					});
+				await arabicContext.close();
+			} finally {
+				await browser.close();
+			}
+		}
+		expect(addSite("bar")).toContain("Site bar registered and seeded");
+		expect(addSite("bar")).toContain("Site bar registered and seeded");
+		expect(host?.pid).toBe(hostPidBeforeSiteCreation);
+		expect((await request(port, "foo.localhost", "/")).body).toBe(fooPublicAtCreation);
+		const publicBar = await request(port, "bar.localhost", "/");
+		expect(publicBar.status).toBe(200);
+		expect(publicBar.body).toContain("A Weekend with a Side Project");
 		const registeredBeforeBuild = await request(
 			port,
 			"localhost",
@@ -372,38 +558,13 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect(registeredData.map((site: { slug: string }) => site.slug)).toEqual(["bar", "foo"]);
 		expect(
 			registeredData.every(
-				(site: { readiness: { status: string } }) => site.readiness.status === "unavailable",
+				(site: { readiness: { status: string }; presentation: string }) =>
+					site.readiness.status === "ready" && site.presentation === "default",
 			),
 		).toBe(true);
-		const unavailablePublic = await request(port, "foo.localhost", "/");
-		expect(unavailablePublic.status).toBe(503);
-		expect(unavailablePublic.body).toBe("");
-		{
-			const { chromium } = await import("../../../node_modules/@playwright/test/index.mjs");
-			const browser = await chromium.launch();
-			try {
-				const context = await browser.newContext({ locale: "en" });
-				await context.addCookies([
-					{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
-				]);
-				const page = await context.newPage();
-				await page.goto(`http://localhost:${port}/sites`);
-				await page.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
-				expect(await page.locator("main").innerText()).toContain("Unavailable");
-				expect(await page.locator("main").innerText()).toContain(
-					"Check the installed site build and host logs",
-				);
-				if (process.env.EMDASH_CAPTURE_SETUP) {
-					await page.screenshot({
-						path: "/tmp/emdash-56-sites-unavailable-en.png",
-						fullPage: true,
-					});
-				}
-				await context.close();
-			} finally {
-				await browser.close();
-			}
-		}
+		const immediatelyServed = await request(port, "foo.localhost", "/");
+		expect(immediatelyServed.status).toBe(200);
+		expect(immediatelyServed.body).toContain("A Weekend with a Side Project");
 		const collectionsBefore = query("SELECT count(*) FROM _emdash_collections");
 		const fieldsBefore = query("SELECT count(*) FROM _emdash_fields");
 		const fooPosts = query(
@@ -447,47 +608,38 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		);
 		expect(query("SELECT string_agg(slug, ',' ORDER BY slug) FROM _emdash_sites")).toBe("bar,foo");
 		const beforeRetry = query("SELECT count(*) FROM ec_posts");
-		const fooHome = resolve(project, "src/foo/pages/index.astro");
-		const fooPresentation = `${readFileSync(fooHome, "utf8")}\n<p>Foo presentation marker</p>\n`;
-		writeFileSync(fooHome, fooPresentation);
-		writeFileSync(
-			resolve(project, "src/foo/pages/café.astro"),
-			"<html><body>Unicode public route</body></html>",
+		const fooId = query("SELECT id FROM _emdash_sites WHERE slug = 'foo'");
+		const fooPresentation = query("SELECT presentation FROM _emdash_sites WHERE slug = 'foo'");
+		expect((await createSiteHttp("Acceptance Site", "foo", fooCreationIdempotencyKey)).status).toBe(
+			201,
 		);
-		expect(addSite("foo")).toContain("Site foo registered");
-		expect(readFileSync(fooHome, "utf8")).toBe(fooPresentation);
+		expect(query("SELECT id FROM _emdash_sites WHERE slug = 'foo'")).toBe(fooId);
+		expect(query("SELECT presentation FROM _emdash_sites WHERE slug = 'foo'")).toBe(
+			fooPresentation,
+		);
 		expect(query("SELECT count(*) FROM ec_posts")).toBe(beforeRetry);
 		expect(query("SELECT count(*) FROM _emdash_collections")).toBe(collectionsBefore);
 		expect(query("SELECT count(*) FROM _emdash_fields")).toBe(fieldsBefore);
-		mkdirSync(resolve(project, "src/occupied"));
-		expect(() => addSite("occupied")).toThrow(
-			"conflicts with an existing hostname or presentation",
+		expect((await createSiteHttp("Occupied", "occupied", "occupied-create-http-01")).status).toBe(
+			201,
 		);
-		expect(query("SELECT count(*) FROM _emdash_sites WHERE slug = 'occupied'")).toBe("0");
-		rmSync(resolve(project, "src/occupied"), { recursive: true, force: true });
+		expect(query("SELECT presentation FROM _emdash_sites WHERE slug = 'occupied'")).toBe("default");
 		query(
 			"INSERT INTO _emdash_site_hosts (hostname, site_id) SELECT 'taken.localhost', id FROM _emdash_sites WHERE slug = 'foo'",
 		);
-		expect(() => addSite("taken")).toThrow("conflicts with an existing hostname or presentation");
+		expect((await createSiteHttp("Taken", "taken", "taken-create-http-001")).status).toBe(409);
 		expect(query("SELECT count(*) FROM _emdash_sites WHERE slug = 'taken'")).toBe("0");
 		query("DELETE FROM _emdash_site_hosts WHERE hostname = 'taken.localhost'");
-		expect(() => addSite("default")).toThrow("unique lowercase slug");
+		expect((await createSiteHttp("Default", "default", "default-create-http-01")).status).toBe(400);
 		expect(query("SELECT count(*) FROM _emdash_sites WHERE slug = 'default'")).toBe("0");
 		build();
 		host.kill();
 		await new Promise<void>((done) => host?.once("exit", () => done()));
 		startHost();
 		await waitFor(async () => (await request(port, "foo.localhost", "/")).status === 200);
-		await waitFor(async () =>
-			hostOutput.includes(`[host] Public site: http://bar.localhost:${port}`),
-		);
-		expect(hostOutput).toContain(`[host] Public site: http://foo.localhost:${port}`);
-		expect(hostOutput).not.toContain("Public site: http://default.localhost");
-		expect(query("SELECT count(*) FROM _emdash_sites")).toBe("2");
+		await waitFor(async () => (await request(port, "bar.localhost", "/")).status === 200);
+		expect(query("SELECT count(*) FROM _emdash_sites")).toBe("3");
 		expect((await request(port, "foo.localhost", "/readiness-check")).status).toBe(404);
-		const initialFooVersion = JSON.parse(
-			readFileSync(resolve(project, "dist/sites/foo/version.json"), "utf8"),
-		).version;
 		for (let visit = 0; visit < 2; visit++) {
 			const fooCategory = await request(port, "foo.localhost", "/category/development");
 			const barCategory = await request(port, "bar.localhost", "/category/development");
@@ -498,31 +650,78 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			expect(barCategory.body).toContain("Bar development");
 			expect(barCategory.body).not.toContain("Foo development");
 		}
+		cpSync(resolve(project, "src/default"), resolve(project, "src/legacy"), { recursive: true });
 		writeFileSync(
-			resolve(project, "src/foo/pages/readiness-check.astro"),
-			"<html><body>New foo presentation version</body></html>",
+			resolve(project, "src/legacy/pages/readiness-check.astro"),
+			"<html><body>Legacy presentation fixture</body></html>",
 		);
+		query("UPDATE _emdash_sites SET presentation = 'legacy' WHERE slug = 'bar'");
 		await buildAsync();
-		expect((await requestHost("foo.localhost", "/")).status).toBe(200);
+		expect((await requestHost("bar.localhost", "/")).status).toBe(503);
+		host.kill();
+		await new Promise<void>((done) => host?.once("exit", () => done()));
+		startHost();
+		await waitFor(
+			async () => (await requestHost("bar.localhost", "/readiness-check")).status === 200,
+		);
+		expect((await requestHost("bar.localhost", "/readiness-check")).body).toContain(
+			"Legacy presentation fixture",
+		);
 		expect((await requestHost("foo.localhost", "/readiness-check")).status).toBe(404);
 		expect((await requestHost("localhost", "/admin", cookie)).status).toBe(302);
-		clerkRequestsAtProbe = clerk.state.requests;
-		const latestFooVersion = JSON.parse(
-			readFileSync(resolve(project, "dist/sites/foo/version.json"), "utf8"),
+		const loadedLegacyVersion = JSON.parse(
+			readFileSync(resolve(project, "dist/sites/legacy/version.json"), "utf8"),
 		).version;
+		writeFileSync(
+			resolve(project, "src/legacy/pages/readiness-check.astro"),
+			"<html><body>Updated legacy presentation fixture</body></html>",
+		);
+		await buildAsync();
+		const pendingLegacyVersion = JSON.parse(
+			readFileSync(resolve(project, "dist/sites/legacy/version.json"), "utf8"),
+		).version;
+		expect(pendingLegacyVersion).not.toBe(loadedLegacyVersion);
+		expect((await requestHost("bar.localhost", "/readiness-check")).body).toContain(
+			"Legacy presentation fixture",
+		);
+		const pendingReadiness = await requestHost(
+			"localhost",
+			"/_emdash/api/system/sites/bar",
+			cookie,
+		);
+		expect(JSON.parse(pendingReadiness.body).data.readiness).toMatchObject({
+			status: "ready",
+			loadedVersion: loadedLegacyVersion,
+			latestVersion: pendingLegacyVersion,
+			pendingRestart: true,
+		});
+		host.kill();
+		await new Promise<void>((done) => host?.once("exit", () => done()));
+		startHost();
+		await waitFor(
+			async () => (await requestHost("bar.localhost", "/readiness-check")).status === 200,
+		);
+		expect((await requestHost("bar.localhost", "/readiness-check")).body).toContain(
+			"Updated legacy presentation fixture",
+		);
+		await waitFor(async () =>
+			hostOutput.includes(`[host] Public site: http://bar.localhost:${port}`),
+		);
+		expect(hostOutput).toContain(`[host] Public site: http://foo.localhost:${port}`);
+		expect(hostOutput).not.toContain("Public site: http://default.localhost");
+		clerkRequestsAtProbe = clerk.state.requests;
 		const readinessResponse = await requestHost(
 			"localhost",
-			"/_emdash/api/system/sites/foo",
+			"/_emdash/api/system/sites/bar",
 			cookie,
 		);
 		expect(readinessResponse.status).toBe(200);
 		expect(JSON.parse(readinessResponse.body).data.readiness).toMatchObject({
 			status: "ready",
-			loadedVersion: initialFooVersion,
-			latestVersion: latestFooVersion,
-			pendingRestart: true,
+			loadedVersion: pendingLegacyVersion,
+			latestVersion: pendingLegacyVersion,
+			pendingRestart: false,
 		});
-		expect(initialFooVersion).not.toBe(latestFooVersion);
 		const callsBeforePublic = clerk.state.requests;
 		for (const path of [
 			"/%5femdash/api/setup/status",
@@ -585,6 +784,21 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect(arabicSites.body).toContain('dir="rtl"');
 
 		clerk.state.superAdmin = false;
+		const unauthorizedCreate = await request(
+			port,
+			"localhost",
+			"/_emdash/api/system/sites",
+			{
+				...cookie,
+				Origin: `http://localhost:${port}`,
+				"X-EmDash-Request": "1",
+				"Idempotency-Key": "unauthorized-create",
+			},
+			"POST",
+			JSON.stringify({ title: "Unauthorized", slug: "unauthorized" }),
+		);
+		expect(unauthorizedCreate.status).toBe(403);
+		expect(query("SELECT count(*) FROM _emdash_sites WHERE slug = 'unauthorized'")).toBe("0");
 		expect((await request(port, "localhost", "/_emdash/api/system/sites", cookie)).status).toBe(
 			403,
 		);
@@ -632,7 +846,7 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
 			await adminPage.getByRole("button", { name: "Sign out" }).waitFor();
 			expect(await adminPage.locator("html").getAttribute("dir")).toBe("rtl");
-			await adminPage.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
+			await adminPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).waitFor();
 			await adminPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
 			const rtlLayout = await adminPage.evaluate(() => {
 				const rtl = document.documentElement.dir === "rtl";
@@ -696,13 +910,15 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				misaligned: [],
 				proseDirections: {
 					description: "ltr",
-					pendingRestart: "ltr",
+					pendingRestart: undefined,
 					disabledExplanation: "ltr",
 				},
 			});
-			await adminPage.getByRole("main").getByRole("link", { name: "foo" }).click();
+			await adminPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).click();
 			await adminPage.getByRole("heading", { name: "foo" }).waitFor();
-			await adminPage.locator("main input").waitFor();
+			await adminPage.waitForFunction(
+				() => document.querySelectorAll("main form input").length === 1,
+			);
 			const managementAlignment = await adminPage.evaluate(() => {
 				const selectors = [
 					"main > p",
@@ -764,13 +980,10 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			const firstEditor = await editContext.newPage();
 			const secondEditor = await editContext.newPage();
 			await firstEditor.goto(`http://localhost:${port}/sites`);
-			await firstEditor.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
+			await firstEditor.getByRole("main").getByRole("link", { name: "Acceptance Site" }).waitFor();
 			await firstEditor.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
 			expect(await firstEditor.locator("main").innerText()).toContain("Disabled");
 			expect(await firstEditor.locator("main").innerText()).toContain("foo.localhost");
-			expect(await firstEditor.locator("main").innerText()).toContain(
-				"A restart is needed to load the latest presentation version.",
-			);
 			if (process.env.EMDASH_CAPTURE_SETUP) {
 				await firstEditor.screenshot({ path: "/tmp/emdash-56-sites-en.png", fullPage: true });
 			}
@@ -779,8 +992,8 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			await firstEditor.getByLabel("Title").waitFor();
 			expect(await firstEditor.locator("main").innerText()).toContain("Disabled");
 			await firstEditor.goto(`http://localhost:${port}/sites`);
-			await firstEditor.getByRole("main").getByRole("link", { name: "foo" }).waitFor();
-			await firstEditor.getByRole("main").getByRole("link", { name: "foo" }).click();
+			await firstEditor.getByRole("main").getByRole("link", { name: "Acceptance Site" }).waitFor();
+			await firstEditor.getByRole("main").getByRole("link", { name: "Acceptance Site" }).click();
 			await firstEditor.getByLabel("Title").waitFor();
 			if (process.env.EMDASH_CAPTURE_SETUP) {
 				await firstEditor.screenshot({
@@ -848,40 +1061,25 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect((await request(port, "localhost", "/admin", cookie)).status).toBe(503);
 		clerk.state.available = true;
 		expect((await request(port, "foo.localhost", "/")).status).toBe(200);
-		const siteDataBeforeRecovery = query(
+		const siteDataBeforeRetry = query(
 			"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo')",
 		);
-		rmSync(resolve(project, "src/foo"), { recursive: true, force: true });
-		addSite("foo");
-		expect(existsSync(resolve(project, "src/foo/pages/index.astro"))).toBe(true);
+		expect((await createSiteHttp("Acceptance Site", "foo", fooCreationIdempotencyKey)).status).toBe(
+			201,
+		);
 		expect(
 			query(
 				"SELECT count(*) FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo')",
 			),
-		).toBe(siteDataBeforeRecovery);
+		).toBe(siteDataBeforeRetry);
 		expect(
 			query(
 				"SELECT title FROM ec_posts WHERE site_id = (SELECT id FROM _emdash_sites WHERE slug = 'foo') AND slug = 'a-weekend-with-a-side-project'",
 			),
 		).toBe("Foo only marker");
-		if (host && host.exitCode === null) {
-			host.kill();
-			await new Promise<void>((done) => host?.once("exit", () => done()));
-		}
-		startHost();
-		await waitFor(
-			async () => (await request(port, "foo.localhost", "/readiness-check")).status === 200,
-		);
-		const afterRestart = await requestHost("localhost", "/_emdash/api/system/sites/foo", cookie);
-		expect(afterRestart.status).toBe(200);
-		expect(JSON.parse(afterRestart.body).data.readiness).toMatchObject({
-			status: "ready",
-			loadedVersion: latestFooVersion,
-			latestVersion: latestFooVersion,
-			pendingRestart: false,
-		});
-		expect((await request(port, "foo.localhost", "/readiness-check")).body).toContain(
-			"New foo presentation version",
+		expect((await request(port, "foo.localhost", "/")).body).toContain("Foo only marker");
+		expect((await request(port, "bar.localhost", "/readiness-check")).body).toContain(
+			"Updated legacy presentation fixture",
 		);
 		completed = true;
 		if (keep) writeFileSync(resolve(workspace, "postgres-container"), container);
