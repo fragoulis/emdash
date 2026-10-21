@@ -9,16 +9,19 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 	if (!isPostgres(db)) return;
 	await sql`CREATE OR REPLACE FUNCTION _emdash_search_config(locale text) RETURNS regconfig
 		LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-			SELECT CASE lower(split_part(replace(coalesce(locale, ''), '_', '-'), '-', 1))
-				WHEN 'el' THEN 'greek'::regconfig
-				WHEN 'en' THEN 'english'::regconfig
-				WHEN 'fr' THEN 'french'::regconfig
-				WHEN 'de' THEN 'german'::regconfig
-				WHEN 'it' THEN 'italian'::regconfig
-				WHEN 'es' THEN 'spanish'::regconfig
-				WHEN 'pt' THEN 'portuguese'::regconfig
-				WHEN 'ru' THEN 'russian'::regconfig
-				ELSE 'simple'::regconfig END
+			SELECT CASE
+				WHEN lower(replace(regexp_replace(coalesce(locale, ''), '^[[:space:]]+|[[:space:]]+$', '', 'g'), '_', '-')) !~ '^[a-z]{2,3}(-[a-z0-9]{2,8})*$' THEN 'simple'::regconfig
+				ELSE CASE lower(split_part(replace(regexp_replace(coalesce(locale, ''), '^[[:space:]]+|[[:space:]]+$', '', 'g'), '_', '-'), '-', 1))
+					WHEN 'el' THEN 'greek'::regconfig
+					WHEN 'en' THEN 'english'::regconfig
+					WHEN 'fr' THEN 'french'::regconfig
+					WHEN 'de' THEN 'german'::regconfig
+					WHEN 'it' THEN 'italian'::regconfig
+					WHEN 'es' THEN 'spanish'::regconfig
+					WHEN 'pt' THEN 'portuguese'::regconfig
+					WHEN 'ru' THEN 'russian'::regconfig
+					ELSE 'simple'::regconfig END
+				END
 		$$`.execute(db);
 	await sql`CREATE OR REPLACE FUNCTION _emdash_search_portable_text(value jsonb) RETURNS text
 		LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
