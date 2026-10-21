@@ -356,6 +356,14 @@ import Base from "../layouts/Base.astro";
 
 On an Astro i18n site, `LiveSearch` uses `Astro.currentLocale`. Pass `locale={null}` only when the page intentionally searches every locale.
 
+Search uses SQLite FTS5 on SQLite and native full-text search on PostgreSQL 16 or later. PostgreSQL selects a text-search configuration from each content entry's locale: Greek (`el` and regional tags), English, French, German, Italian, Spanish, Portuguese, or Russian. Other or invalid locale tags use PostgreSQL's `simple` configuration. Greek stemming matches inflected forms; PostgreSQL's Greek configuration also folds case and accents. SQLite keeps its configured FTS5 tokenizer behavior.
+
+Both backends index configured searchable fields, including text extracted from Portable Text. Search applies configured field weights, including the higher title weight. PostgreSQL search treats the query as plain text with all terms required; it does not interpret SQLite FTS5 operators. PostgreSQL suggestions use Unicode word-prefix matching. SQLite keeps its FTS5 query and suggestion behavior. PostgreSQL snippets strip source HTML, escape content, and wrap matched text in generated `<mark>` tags.
+
+Search configuration belongs to the shared collection schema. Search results and suggestions use the selected site's content and locale. Search, suggestions, statistics, and rebuild operations require trusted selected-site context; requests without it fail closed. Statistics report the selected site's indexed content, and rebuild refreshes that site's index. Suggestions include published entries only; anonymous search also returns published entries only.
+
+PostgreSQL upgrades run a forward migration that creates indexes for enabled collections and existing content. The indexes stay current as content changes. Use the search rebuild operation to refresh an index after changing searchable fields. Search statistics and rebuild require the `search:manage` permission. SQLite search indexes keep their existing behavior.
+
 ## Seed reusable sections
 
 Sections give editors reusable Portable Text starting points. Add them when the design includes a repeated content pattern such as a call to action:
