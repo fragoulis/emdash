@@ -252,7 +252,8 @@ describePg("PostgreSQL search index lifecycle", () => {
 					updateDone = true;
 				});
 			const deadline = Date.now() + 10_000;
-			while (!updateDone && Date.now() < deadline) {
+			while (Date.now() < deadline) {
+				if (updateDone) break;
 				const waiting = await sql<{ waiting: boolean }>`SELECT EXISTS (
 					SELECT 1 FROM pg_stat_activity
 					WHERE application_name = 'ticket64-rebuild-race-update' AND wait_event_type = 'Lock'
