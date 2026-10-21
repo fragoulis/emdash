@@ -1,11 +1,12 @@
+import { createHash } from "node:crypto";
 import {
-	cpSync,
 	existsSync,
-	mkdtempSync,
+	mkdirSync,
+	openSync,
 	readFileSync,
-	renameSync,
-	rmSync,
-	statSync,
+	closeSync,
+	fsyncSync,
+	writeSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
@@ -15,6 +16,7 @@ import { parseEnv } from "node:util";
 import * as p from "@clack/prompts";
 
 const SLUG = /^[a-z][a-z0-9-]*$/;
+const SITE_DOMAIN = /^[a-z0-9.-]+$/;
 
 export async function createSite(args: string[], projectDir = process.cwd()): Promise<void> {
 	if (args.length > 1 || args.some((arg) => arg.startsWith("-"))) {
@@ -34,29 +36,30 @@ export async function createSite(args: string[], projectDir = process.cwd()): Pr
 
 	const config = resolve(projectDir, "astro.config.mjs");
 	const host = resolve(projectDir, "host.mjs");
-	const build = resolve(projectDir, "build.mjs");
-	const source = resolve(projectDir, "src/default");
-	const destination = resolve(projectDir, "src", slug);
 	const seedPath = resolve(projectDir, "seed/seed.json");
 	const packagePath = resolve(projectDir, "package.json");
 	if (
-		![config, host, build, source, seedPath, packagePath].every(existsSync) ||
-		!statSync(source).isDirectory() ||
+		![config, host, seedPath, packagePath].every(existsSync) ||
 		!readFileSync(config, "utf8").includes("EMDASH_BUILD_SITE") ||
 		!readFileSync(host, "utf8").includes("_emdash_site_hosts")
 	) {
 		throw new Error("Run this command from a generated multi-site installation");
 	}
 	const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
-	if (pkg.emdash?.seed !== "seed/seed.json") {
+	if (pkg.emdash?.seed !== "seed/seed.json")
 		throw new Error("Installation has no supported starter seed");
-	}
 	const require = createRequire(packagePath);
 	let dependency: (name: string) => string;
 	let kyselyPath: string;
 	try {
 		dependency = (name) => pathToFileURL(require.resolve(name)).href;
-		for (const name of ["pg", "ulidx", "emdash/seed", "emdash/request-context"]) dependency(name);
+		for (const name of [
+			"pg",
+			"emdash/seed",
+			"emdash/internal/multisite/registry",
+			"emdash/storage/local",
+		])
+			dependency(name);
 		kyselyPath = pathToFileURL(
 			createRequire(require.resolve("emdash/seed")).resolve("kysely"),
 		).href;
@@ -74,7 +77,20 @@ export async function createSite(args: string[], projectDir = process.cwd()): Pr
 		connectionTimeoutMillis: 5000,
 		max: 2,
 	});
-	const hostname = `${slug}.localhost`;
+	const defaultHost =
+		process.env.EMDASH_DEFAULT_HOST || localEnv.EMDASH_DEFAULT_HOST || "default.localhost";
+	const siteDomain =
+		process.env.EMDASH_SITE_DOMAIN ||
+		localEnv.EMDASH_SITE_DOMAIN ||
+		defaultHost.split(".").slice(1).join(".");
+	if (!SITE_DOMAIN.test(siteDomain)) throw new Error("Set a valid EMDASH_SITE_DOMAIN");
+	const adminOrigin =
+		process.env.EMDASH_ADMIN_ORIGIN ||
+		localEnv.EMDASH_ADMIN_ORIGIN ||
+		`http://localhost:${process.env.PORT || localEnv.PORT || "4321"}`;
+	const adminUrl = new URL(adminOrigin);
+	const hostname = `${slug}.${siteDomain}`;
+	let db: { destroy(): Promise<void> } | undefined;
 	try {
 		let connection;
 		try {
@@ -89,13 +105,13 @@ export async function createSite(args: string[], projectDir = process.cwd()): Pr
 					"SELECT value FROM options WHERE name = 'emdash:setup_complete'",
 				);
 			} catch {
-				throw new Error("Complete initial setup before adding another site");
+				throw new Error("Complete initial setup before adding a site");
 			}
 			if (setup.rows[0]?.value !== "true" && setup.rows[0]?.value !== true) {
-				throw new Error("Complete initial setup before adding another site");
+				throw new Error("Complete initial setup before adding a site");
 			}
 			const migration = await connection.query(
-				"SELECT name FROM _emdash_migrations WHERE name = '099_site_menus'",
+				"SELECT name FROM _emdash_migrations WHERE name = '103_site_creation_requests'",
 			);
 			if (!migration.rowCount)
 				throw new Error("Update the installation database before adding a site");
@@ -107,93 +123,73 @@ export async function createSite(args: string[], projectDir = process.cwd()): Pr
 		if (!Array.isArray(seed.collections) || !Array.isArray(seed.taxonomies)) {
 			throw new Error("The starter seed is missing shared collection or taxonomy definitions");
 		}
-		const { Kysely, PostgresDialect, sql } = await import(kyselyPath);
-		const { ulid } = await import(dependency("ulidx"));
-		const { applySeed } = await import(dependency("emdash/seed"));
-		const { runWithContext } = await import(dependency("emdash/request-context"));
-		const db = new Kysely({ dialect: new PostgresDialect({ pool }) });
-		await db.transaction().execute(async (trx: typeof db) => {
-			await sql`SELECT pg_advisory_xact_lock(hashtext(${slug}))`.execute(trx);
-			const sites = await sql`SELECT id, slug FROM _emdash_sites WHERE slug = ${slug}`.execute(trx);
-			const hosts =
-				await sql`SELECT site_id FROM _emdash_site_hosts WHERE hostname = ${hostname}`.execute(trx);
-			const site = sites.rows[0];
-			if (site && (hosts.rows[0]?.site_id !== site.id || !site.id.startsWith("site-"))) {
-				throw new Error(`Site "${slug}" has a conflicting hostname registration`);
-			}
-			if (!site && (hosts.rows.length || existsSync(destination))) {
-				throw new Error(`Site "${slug}" conflicts with an existing hostname or presentation`);
-			}
-			if (site) return;
-
-			for (const collection of seed.collections) {
-				const rows = await sql`SELECT c.slug, f.slug AS field FROM _emdash_collections c
-						LEFT JOIN _emdash_fields f ON f.collection_id = c.id WHERE c.slug = ${collection.slug}`.execute(
-					trx,
-				);
-				if (
-					!rows.rows.length ||
-					collection.fields.some(
-						(field: { slug: string }) =>
-							!rows.rows.some((row: { field: string }) => row.field === field.slug),
-					)
-				) {
-					throw new Error(`Shared collection "${collection.slug}" is missing starter fields`);
-				}
-			}
-			for (const taxonomy of seed.taxonomies) {
-				const def =
-					await sql`SELECT name FROM _emdash_taxonomy_defs WHERE name = ${taxonomy.name} LIMIT 1`.execute(
-						trx,
-					);
-				if (!def.rows.length) throw new Error(`Shared taxonomy "${taxonomy.name}" is missing`);
-			}
-			const siteId = `site-${ulid()}`;
-			await sql`INSERT INTO _emdash_sites (id, slug, active) VALUES (${siteId}, ${slug}, 1)`.execute(
-				trx,
-			);
-			await sql`INSERT INTO _emdash_site_hosts (hostname, site_id) VALUES (${hostname}, ${siteId})`.execute(
-				trx,
-			);
-			await runWithContext({ editMode: false, siteId }, async () => {
-				for (const taxonomy of seed.taxonomies) {
-					for (const term of taxonomy.terms ?? []) {
-						const id = ulid();
-						await sql`INSERT INTO taxonomies (id, name, slug, label, locale, translation_group, site_id)
-								VALUES (${id}, ${taxonomy.name}, ${term.slug}, ${term.label}, 'en', ${id}, ${siteId})`.execute(
-							trx,
-						);
-					}
-				}
-				await applySeed(
-					trx,
-					{
-						version: seed.version,
-						settings: { ...seed.settings, title: slug, url: `http://${hostname}:4321` },
-						bylines: seed.bylines,
-						content: seed.content,
-						menus: seed.menus,
-					},
-					{ includeContent: true, skipMediaDownload: true, onConflict: "error" },
-				);
-			});
-		});
-		if (!existsSync(destination)) {
-			const staging = mkdtempSync(resolve(projectDir, "src", `.site-${slug}-`));
+		const { Kysely, PostgresDialect } = await import(kyselyPath);
+		const { createRegisteredSite } = await import(dependency("emdash/internal/multisite/registry"));
+		const { LocalStorage } = await import(dependency("emdash/storage/local"));
+		db = new Kysely({ dialect: new PostgresDialect({ pool }) });
+		const title = slug;
+		const siteUrl = `${adminUrl.protocol}//${hostname}${adminUrl.port ? `:${adminUrl.port}` : ""}`;
+		const payloadHash = createHash("sha256")
+			.update(JSON.stringify({ title, slug, hostname, siteUrl, seed }))
+			.digest("hex");
+		const operationDirectory = resolve(projectDir, ".emdash/site-operations");
+		mkdirSync(operationDirectory, { recursive: true, mode: 0o700 });
+		const operationPath = resolve(operationDirectory, `${slug}.json`);
+		const operation = { payloadHash, requestKey: payloadHash };
+		try {
+			const fd = openSync(operationPath, "wx", 0o600);
 			try {
-				cpSync(source, staging, { recursive: true, errorOnExist: true, force: false });
-				if (existsSync(destination)) throw new Error(`Presentation for "${slug}" already exists`);
-				renameSync(staging, destination);
+				writeSync(fd, JSON.stringify(operation));
+				fsyncSync(fd);
 			} finally {
-				rmSync(staging, { recursive: true, force: true });
+				closeSync(fd);
+			}
+		} catch (error) {
+			if (!isAlreadyExistsError(error)) throw error;
+			let prior: typeof operation;
+			try {
+				prior = JSON.parse(readFileSync(operationPath, "utf8"));
+			} catch (parseError) {
+				throw new Error(
+					`The saved creation operation for "${slug}" is incomplete; do not remove it until database state is checked`,
+					{ cause: parseError },
+				);
+			}
+			if (prior.payloadHash !== payloadHash || prior.requestKey !== payloadHash) {
+				throw new Error(
+					`Site "${slug}" already has a saved creation operation with different input`,
+					{ cause: error },
+				);
 			}
 		}
+		const actorScope = `cli:${createHash("sha256").update(resolve(projectDir)).digest("hex")}`;
+		const storage = new LocalStorage({
+			directory: resolve(projectDir, "uploads"),
+			baseUrl: "/_emdash/api/media/file",
+		});
+		const site = await createRegisteredSite(db, {
+			title,
+			slug,
+			hostname,
+			siteUrl,
+			actorId: null,
+			actorScope,
+			actorSource: "cli",
+			requestKey: payloadHash,
+			seed,
+			storage,
+		});
 		console.log(
-			`Site ${slug} registered. Run npm run build, then restart npm run start. Open http://${hostname}:4321`,
+			`Site ${site.slug} registered and seeded. Open ${site.domains.map((domain: string) => `${adminUrl.protocol}//${domain}${adminUrl.port ? `:${adminUrl.port}` : ""}`).join(", ")}`,
 		);
 	} finally {
-		await pool.end();
+		if (db) await db.destroy();
+		else await pool.end();
 	}
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+	return error instanceof Error && "code" in error && error.code === "EEXIST";
 }
 
 function validateSlug(slug: string): string | null {
