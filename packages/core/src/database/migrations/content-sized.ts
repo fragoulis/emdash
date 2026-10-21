@@ -1,6 +1,7 @@
 import { sql, type Kysely, type RawBuilder } from "kysely";
 
-import { isMissingTableError } from "../../utils/db-errors.js";
+import { isMissingColumnError, isMissingTableError } from "../../utils/db-errors.js";
+import { isPostgres } from "../dialect-helpers.js";
 import type { Database } from "../types.js";
 import { validateIdentifier } from "../validate.js";
 
@@ -47,6 +48,42 @@ const DATETIME_COLLECTIONS = sql`
  */
 const READ_ONLY_REVISIONS_PER_ROW = 16;
 
+async function countPostgresSearchIndexRows(db: Kysely<Database>, cap: number): Promise<number> {
+	if (!isPostgres(db)) return 0;
+	let collections: { slug: string; search_config: string | null }[];
+	try {
+		collections = await db
+			.selectFrom("_emdash_collections")
+			.select(["slug", "search_config"])
+			.execute();
+	} catch (error) {
+		if (isMissingTableError(error) || isMissingColumnError(error, "search_config")) return 0;
+		throw error;
+	}
+	let rows = 0;
+	for (const collection of collections) {
+		let enabled = false;
+		try {
+			const parsed: unknown = JSON.parse(collection.search_config ?? "null");
+			enabled =
+				typeof parsed === "object" &&
+				parsed !== null &&
+				"enabled" in parsed &&
+				parsed.enabled === true;
+		} catch {
+			continue;
+		}
+		if (!enabled || rows >= cap) continue;
+		validateIdentifier(collection.slug, "collection slug");
+		rows += await countCapped(
+			db,
+			sql`SELECT 1 FROM ${sql.ref(`ec_${collection.slug}`)}`,
+			cap - rows,
+		);
+	}
+	return rows;
+}
+
 async function countDatetimeNormalizationRows(db: Kysely<Database>, cap: number): Promise<number> {
 	let slugs: string[];
 	try {
@@ -79,4 +116,5 @@ async function countDatetimeNormalizationRows(db: Kysely<Database>, cap: number)
 /** Keyed by migration name, since a published migration's module must not change. */
 export const CONTENT_SIZED_MIGRATIONS: ReadonlyMap<string, ContentSizedMigration> = new Map([
 	["079_datetime_normalization", { countRows: countDatetimeNormalizationRows }],
+	["104_postgres_search_index", { countRows: countPostgresSearchIndexRows }],
 ]);

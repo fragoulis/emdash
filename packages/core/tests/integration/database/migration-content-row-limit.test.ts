@@ -48,6 +48,17 @@ describeEachDialect("content row limit for runtime migrations", (dialect) => {
 			}).migrateTo("078_menu_item_translation_groups");
 			if (error) throw error;
 
+			await ctx.db.schema.alterTable("_emdash_collections").addColumn("site_id", "text").execute();
+			await ctx.db.schema
+				.createTable("_emdash_sites")
+				.addColumn("id", "text", (column) => column.primaryKey())
+				.addColumn("slug", "text", (column) => column.notNull().unique())
+				.addColumn("active", "integer", (column) => column.notNull().defaultTo(1))
+				.execute();
+			await ctx.db
+				.insertInto("_emdash_sites")
+				.values({ id: "site-default", slug: "default", active: 1 })
+				.execute();
 			const registry = new SchemaRegistry(ctx.db);
 			for (const slug of ["posts", "pages"]) {
 				await registry.createCollection({
@@ -58,8 +69,8 @@ describeEachDialect("content row limit for runtime migrations", (dialect) => {
 				});
 				await sql`
 					INSERT INTO ${sql.ref(`ec_${slug}`)} (
-						id, slug, status, created_at, updated_at, version, locale, translation_group
-					) VALUES (${slug}, ${slug}, 'draft', ${NAIVE}, ${NAIVE}, 1, 'en', ${slug})
+						id, slug, status, created_at, updated_at, version, locale, translation_group, site_id
+					) VALUES (${slug}, ${slug}, 'draft', ${NAIVE}, ${NAIVE}, 1, 'en', ${slug}, 'site-default')
 				`.execute(ctx.db);
 			}
 			await ctx.db
@@ -88,7 +99,7 @@ describeEachDialect("content row limit for runtime migrations", (dialect) => {
 
 			await expect(result).rejects.toBeInstanceOf(MigrationRowLimitError);
 			await expect(result).rejects.toMatchObject({
-				migrations: ["079_datetime_normalization"],
+				migrations: ["079_datetime_normalization", "104_postgres_search_index"],
 				rowLimit: 2,
 			});
 			const status = await getExactMigrationStatus(ctx.db, {
