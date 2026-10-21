@@ -419,6 +419,124 @@ describe("generated host", () => {
 			);
 			expect(retry.status).toBe(201);
 			expect(JSON.parse(retry.body).data.id).toBe(JSON.parse(created.body).data.id);
+			const disconnectedKey = "site-create-disconnect-0001";
+			const disconnectedPayload = JSON.stringify({
+				title: "Disconnected response",
+				slug: "disconnected",
+			});
+			let committedResponse!: Promise<{ status: number; body: string }>;
+			let confirmCommitted!: (response: { status: number; body: string }) => void;
+			let responseConfirmed = false;
+			committedResponse = new Promise((settleResponse) => (confirmCommitted = settleResponse));
+			const disconnectProxy = createServer((incoming, outgoing) => {
+				const upstream = httpRequest(
+					{
+						hostname: "127.0.0.1",
+						port: hostPort,
+						path: incoming.url,
+						method: incoming.method,
+						headers: { ...incoming.headers, host: `localhost:${hostPort}` },
+					},
+					(response) => {
+						let body = "";
+						response.setEncoding("utf8");
+						response.on("data", (chunk: string) => (body += chunk));
+						response.on("end", () => {
+							if (!responseConfirmed) {
+								responseConfirmed = true;
+								confirmCommitted({ status: response.statusCode ?? 0, body });
+							}
+							outgoing.destroy();
+						});
+					},
+				);
+				upstream.on("error", (error) => outgoing.destroy(error));
+				incoming.pipe(upstream);
+			});
+			await new Promise<void>((listenDone) => disconnectProxy.listen(0, "127.0.0.1", listenDone));
+			const disconnectAddress = disconnectProxy.address();
+			if (!disconnectAddress || typeof disconnectAddress === "string")
+				throw new Error("Expected a disconnect proxy address");
+			try {
+				await expect(
+					get(
+						disconnectAddress.port,
+						"localhost",
+						"/_emdash/api/system/sites",
+						{
+							...apiCookie,
+							"X-EmDash-Request": "1",
+							"Content-Type": "application/json",
+							"Idempotency-Key": disconnectedKey,
+						},
+						"POST",
+						disconnectedPayload,
+					),
+				).rejects.toThrow();
+				const lostResponse = await committedResponse;
+				expect(lostResponse.status).toBe(201);
+				const disconnectedSiteId = JSON.parse(lostResponse.body).data.id;
+				const countsBeforeRetry = execFileSync(
+					"docker",
+					[
+						"exec",
+						container,
+						"psql",
+						"-U",
+						"postgres",
+						"-d",
+						"test",
+						"-t",
+						"-A",
+						"-c",
+						`SELECT (SELECT count(*) FROM ec_posts WHERE site_id = '${disconnectedSiteId}') || ':' || (SELECT count(*) FROM audit_logs WHERE resource_id = '${disconnectedSiteId}' AND action = 'site_create')`,
+					],
+					{ encoding: "utf8" },
+				).trim();
+				const uncertainRetry = await get(
+					hostPort,
+					"localhost",
+					"/_emdash/api/system/sites",
+					{
+						...apiCookie,
+						"X-EmDash-Request": "1",
+						"Content-Type": "application/json",
+						"Idempotency-Key": disconnectedKey,
+					},
+					"POST",
+					disconnectedPayload,
+				);
+				expect(uncertainRetry.status).toBe(201);
+				expect(JSON.parse(uncertainRetry.body).data.id).toBe(disconnectedSiteId);
+				const countsAfterRetry = execFileSync(
+					"docker",
+					[
+						"exec",
+						container,
+						"psql",
+						"-U",
+						"postgres",
+						"-d",
+						"test",
+						"-t",
+						"-A",
+						"-c",
+						`SELECT (SELECT count(*) FROM ec_posts WHERE site_id = '${disconnectedSiteId}') || ':' || (SELECT count(*) FROM audit_logs WHERE resource_id = '${disconnectedSiteId}' AND action = 'site_create')`,
+					],
+					{ encoding: "utf8" },
+				).trim();
+				expect(countsAfterRetry).toBe(countsBeforeRetry);
+			} finally {
+				await new Promise<void>((closeDone, reject) => {
+					disconnectProxy.close((error) => {
+						if (error) {
+							reject(error);
+							return;
+						}
+						closeDone();
+					});
+				});
+			}
 			const independentClaim = await get(
 				hostPort,
 				"localhost",
@@ -497,7 +615,7 @@ describe("generated host", () => {
 			const listed = await get(hostPort, "localhost", "/_emdash/api/system/sites", apiCookie);
 			expect(listed.status).toBe(200);
 			expect(JSON.parse(listed.body).data.items.map((site: { slug: string }) => site.slug)).toEqual(
-				["foo", "new-example", "race-site", "rollback-site", "unbuilt"],
+				["disconnected", "foo", "new-example", "race-site", "rollback-site", "unbuilt"],
 			);
 			const detail = await get(
 				hostPort,
