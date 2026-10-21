@@ -62,7 +62,8 @@ case "${1:-}" in
     ;;
   check)
     cd "$root"
-    pnpm --filter create-emdash exec vitest run tests/multisite-setup.test.ts
+    pnpm --filter create-emdash exec vitest run tests/multisite-setup.test.ts tests/clerk-fixture.test.ts
+    node --test scripts/browser-fixture.test.mjs
     ;;
   *)
     echo 'Usage: infra/local-install/run.sh {setup|start|check|reset}' >&2

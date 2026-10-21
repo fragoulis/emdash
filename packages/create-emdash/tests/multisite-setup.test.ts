@@ -1,24 +1,11 @@
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import {
-	cpSync,
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	symlinkSync,
-	writeFileSync,
-} from "node:fs";
-import { createServer, request as httpRequest } from "node:http";
+import { execFileSync, type ChildProcess } from "node:child_process";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 
-import { main } from "../src/cli.js";
-import { startClerkFixture } from "./clerk-fixture.js";
-import { linkScaffoldDependencies } from "./scaffold-dependencies.js";
-
-const template = resolve(import.meta.dirname, "../../../templates/blog");
+import { createGeneratedHost, stopProcess } from "./generated-host-fixture.js";
 
 type HttpResult = {
 	status: number;
@@ -60,15 +47,6 @@ function request(
 	});
 }
 
-async function availablePort(): Promise<number> {
-	const server = createServer();
-	await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
-	const address = server.address();
-	if (!address || typeof address === "string") throw new Error("Expected a TCP address");
-	await new Promise<void>((done) => server.close(() => done()));
-	return address.port;
-}
-
 async function waitFor(check: () => Promise<boolean>): Promise<void> {
 	for (let i = 0; i < 150; i++) {
 		try {
@@ -82,157 +60,19 @@ async function waitFor(check: () => Promise<boolean>): Promise<void> {
 }
 
 it("initializes with no sites, then serves explicit sites behind verified super-admin access", async () => {
-	const workdir = resolve(template, "../.astro");
-	mkdirSync(workdir, { recursive: true });
 	const keep = process.env.EMDASH_KEEP_INSTALL === "1";
-	const workspace = keep
-		? resolve(workdir, "local-install")
-		: mkdtempSync(resolve(workdir, "step3-install-"));
-	if (keep && existsSync(resolve(workspace, "site")))
-		throw new Error("Reset the existing local installation first");
-	mkdirSync(workspace, { recursive: true });
-	const project = resolve(workspace, "site");
+	const fixture = await createGeneratedHost({
+		workspace: keep
+			? resolve(import.meta.dirname, "../../../templates/.astro/local-install")
+			: undefined,
+	});
+	const { project, port, env, clerk, query, build, build: buildAsync } = fixture;
 	let completed = false;
-	let host: ChildProcess | undefined;
-	let clerk: Awaited<ReturnType<typeof startClerkFixture>> | undefined;
-	const password = crypto.randomUUID();
-	const container = execFileSync(
-		"docker",
-		[
-			"run",
-			"-d",
-			"--rm",
-			"-p",
-			"127.0.0.1::5432",
-			"-e",
-			`POSTGRES_PASSWORD=${password}`,
-			"-e",
-			"POSTGRES_DB=test",
-			"postgres:16-alpine",
-		],
-		{ encoding: "utf8" },
-	).trim();
-	const originalCwd = process.cwd();
-	const originalArgv = process.argv;
+	let host!: ChildProcess;
+	const startHost = () => {
+		host = fixture.startHost();
+	};
 	try {
-		const mapping = execFileSync("docker", ["port", container, "5432"], { encoding: "utf8" });
-		const pgPort = Number(mapping.match(/127\.0\.0\.1:(\d+)/)?.[1]);
-		if (!pgPort) throw new Error("Missing PostgreSQL port");
-		for (let attempt = 0; attempt < 100; attempt++) {
-			try {
-				execFileSync(
-					"docker",
-					["exec", container, "psql", "-U", "postgres", "-d", "test", "-c", "SELECT 1"],
-					{ stdio: "ignore" },
-				);
-				break;
-			} catch {
-				await new Promise((done) => setTimeout(done, 100));
-			}
-		}
-		const localTemplate = async (_source: string, options: { dir: string }) => {
-			cpSync(template, options.dir, {
-				recursive: true,
-				filter: (source) =>
-					!source.split("/").some((part) => ["dist", "node_modules", ".astro"].includes(part)),
-			});
-		};
-		vi.spyOn(console, "clear").mockImplementation(() => {});
-		process.chdir(workspace);
-		process.argv = [
-			process.execPath,
-			"create-emdash",
-			"site",
-			"--platform",
-			"node",
-			"--template",
-			"blog",
-			"--pm",
-			"pnpm",
-			"--no-install",
-			"--yes",
-		];
-		await main(localTemplate);
-		process.chdir(originalCwd);
-		const seedPath = resolve(project, "seed/seed.json");
-		const seed = JSON.parse(readFileSync(seedPath, "utf8"));
-		for (const post of seed.content.posts) delete post.data.featured_image;
-		writeFileSync(seedPath, JSON.stringify(seed));
-		linkScaffoldDependencies(project);
-		symlinkSync(
-			resolve(import.meta.dirname, "../../core/node_modules/@emdash-cms/registry-lexicons"),
-			resolve(project, "node_modules/@emdash-cms/registry-lexicons"),
-			"dir",
-		);
-		const port = await availablePort();
-		clerk = await startClerkFixture(`http://localhost:${port}`);
-		const databaseUrl = `postgres://postgres:${password}@127.0.0.1:${pgPort}/test`;
-		const encryptionKey = readFileSync(resolve(project, ".env"), "utf8").match(
-			/^EMDASH_ENCRYPTION_KEY=(.+)$/m,
-		)?.[1];
-		if (!encryptionKey) throw new Error("Scaffold did not create an encryption key");
-		writeFileSync(
-			resolve(project, ".env"),
-			`${readFileSync(resolve(project, ".env"), "utf8")}\nDATABASE_URL=${databaseUrl}\n`,
-		);
-		const env = {
-			...process.env,
-			DATABASE_URL: databaseUrl,
-			EMDASH_ENCRYPTION_KEY: encryptionKey,
-			NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerk.publishableKey,
-			CLERK_SECRET_KEY: "sk_test_fixture",
-			CLERK_BOOTSTRAP_USER_ID: "user_configured_bootstrap_not_admin",
-			CLERK_JWT_KEY: clerk.publicKey,
-			EMDASH_CLERK_API_URL: clerk.url,
-			PORT: String(port),
-		};
-		const build = () =>
-			execFileSync(process.execPath, [resolve(project, "build.mjs")], {
-				cwd: project,
-				env,
-				timeout: 180_000,
-				stdio: "pipe",
-			});
-		const buildAsync = () =>
-			new Promise<void>((resolveBuild, rejectBuild) => {
-				const child = spawn(process.execPath, [resolve(project, "build.mjs")], {
-					cwd: project,
-					env,
-					stdio: "pipe",
-				});
-				let output = "";
-				const timeout = setTimeout(() => child.kill("SIGTERM"), 180_000);
-				child.stdout?.setEncoding("utf8").on("data", (chunk) => (output += chunk));
-				child.stderr?.setEncoding("utf8").on("data", (chunk) => (output += chunk));
-				child.once("error", (error) => {
-					clearTimeout(timeout);
-					rejectBuild(error);
-				});
-				child.once("exit", (code, signal) => {
-					clearTimeout(timeout);
-					if (code === 0) resolveBuild();
-					else
-						rejectBuild(
-							new Error(`Generated presentation build failed (${signal ?? code}): ${output}`),
-						);
-				});
-			});
-		let hostOutput = "";
-		let hostErrorOutput = "";
-		const startHost = () => {
-			hostOutput = "";
-			hostErrorOutput = "";
-			host = spawn(process.execPath, [resolve(project, "host.mjs")], {
-				cwd: project,
-				env,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-			host.stdout?.setEncoding("utf8").on("data", (chunk) => (hostOutput += chunk));
-			host.stderr?.setEncoding("utf8").on("data", (chunk) => {
-				hostErrorOutput += chunk;
-				console.error("[fixture host]", String(chunk));
-			});
-		};
 		let clerkRequestsAtProbe = 0;
 		const requestHost = async (
 			hostname: string,
@@ -243,24 +83,17 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				return await request(port, hostname, path, headers);
 			} catch (error) {
 				throw new Error(
-					`${String(error)}\\nHost exit code: ${host?.exitCode}\\nClerk fixture requests: ${clerkRequestsAtProbe} -> ${clerk?.state.requests ?? "unavailable"}\\nHost stdout:\\n${hostOutput}\\nHost stderr:\\n${hostErrorOutput}`,
+					`${String(error)}\\nHost exit code: ${host?.exitCode}\\nClerk fixture requests: ${clerkRequestsAtProbe} -> ${clerk?.state.requests ?? "unavailable"}\\nHost stdout:\\n${fixture.hostOutput}\\nHost stderr:\\n${fixture.hostErrorOutput}`,
 					{ cause: error },
 				);
 			}
 		};
 		const cookie = { Cookie: `__session=${clerk.jwt()}` };
-		const query = (sql: string) =>
-			execFileSync(
-				"docker",
-				["exec", container, "psql", "-U", "postgres", "-d", "test", "-t", "-A", "-c", sql],
-				{ encoding: "utf8" },
-			).trim();
-
 		writeFileSync(
 			resolve(project, "src/default/pages/café.astro"),
 			"<html><body>Unicode public route</body></html>",
 		);
-		build();
+		await build();
 		startHost();
 		await waitFor(async () => (await request(port, "localhost", "/admin")).status === 302);
 		expect((await request(port, "localhost", "/admin", cookie)).headers.location).toBe("/sites");
@@ -332,8 +165,8 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			}
 		}
 		expect(query("SELECT value FROM options WHERE name = 'emdash:setup_complete'")).toBe("true");
-		expect(hostOutput).toContain(`[host] Ready: admin http://localhost:${port}/admin`);
-		expect(hostOutput).not.toContain("Public site: http://default.localhost");
+		expect(fixture.hostOutput).toContain(`[host] Ready: admin http://localhost:${port}/admin`);
+		expect(fixture.hostOutput).not.toContain("Public site: http://default.localhost");
 		expect((await request(port, "default.localhost", "/")).status).toBe(421);
 		host.kill();
 		await new Promise<void>((done) => host?.once("exit", () => done()));
@@ -632,9 +465,8 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		query("DELETE FROM _emdash_site_hosts WHERE hostname = 'taken.localhost'");
 		expect((await createSiteHttp("Default", "default", "default-create-http-01")).status).toBe(400);
 		expect(query("SELECT count(*) FROM _emdash_sites WHERE slug = 'default'")).toBe("0");
-		build();
-		host.kill();
-		await new Promise<void>((done) => host?.once("exit", () => done()));
+		await build();
+		await stopProcess(host);
 		startHost();
 		await waitFor(async () => (await request(port, "foo.localhost", "/")).status === 200);
 		await waitFor(async () => (await request(port, "bar.localhost", "/")).status === 200);
@@ -705,10 +537,10 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			"Updated legacy presentation fixture",
 		);
 		await waitFor(async () =>
-			hostOutput.includes(`[host] Public site: http://bar.localhost:${port}`),
+			fixture.hostOutput.includes(`[host] Public site: http://bar.localhost:${port}`),
 		);
-		expect(hostOutput).toContain(`[host] Public site: http://foo.localhost:${port}`);
-		expect(hostOutput).not.toContain("Public site: http://default.localhost");
+		expect(fixture.hostOutput).toContain(`[host] Public site: http://foo.localhost:${port}`);
+		expect(fixture.hostOutput).not.toContain("Public site: http://default.localhost");
 		clerkRequestsAtProbe = clerk.state.requests;
 		const readinessResponse = await requestHost(
 			"localhost",
@@ -1082,16 +914,7 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			"Updated legacy presentation fixture",
 		);
 		completed = true;
-		if (keep) writeFileSync(resolve(workspace, "postgres-container"), container);
 	} finally {
-		process.chdir(originalCwd);
-		process.argv = originalArgv;
-		vi.restoreAllMocks();
-		host?.kill();
-		await clerk?.close();
-		if (!keep || !completed) {
-			execFileSync("docker", ["rm", "-f", container], { stdio: "ignore" });
-			rmSync(workspace, { recursive: true, force: true });
-		}
+		await fixture.close(keep && completed);
 	}
 }, 360_000);
