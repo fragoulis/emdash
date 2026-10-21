@@ -6,11 +6,11 @@
 
 import type { APIRoute } from "astro";
 
-import { requirePerm } from "#api/authorize.js";
+import { requirePerm, requireSelectedSite } from "#api/authorize.js";
 import { apiError, apiSuccess, handleError } from "#api/error.js";
 import { isParseError, parseBody } from "#api/parse.js";
 import { searchRebuildBody } from "#api/schemas.js";
-import { FTSManager } from "#search/index.js";
+import { FTSManager, getSearchStats } from "#search/index.js";
 
 export const prerender = false;
 
@@ -29,6 +29,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	const denied = requirePerm(user, "search:manage");
 	if (denied) return denied;
+
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	const body = await parseBody(request, searchRebuildBody);
 	if (isParseError(body)) return body;
@@ -64,12 +67,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			config.tokenize,
 		);
 
-		// Get stats after rebuild
-		const stats = await ftsManager.getIndexStats(body.collection);
+		const stats = await getSearchStats(emdash.db);
 
 		return apiSuccess({
 			collection: body.collection,
-			indexed: stats?.indexed ?? 0,
+			indexed: stats.collections[body.collection]?.indexed ?? 0,
 		});
 	} catch (error) {
 		return handleError(error, "Failed to rebuild index", "REBUILD_ERROR");

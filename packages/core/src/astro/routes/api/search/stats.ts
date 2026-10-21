@@ -6,7 +6,7 @@
 
 import type { APIRoute } from "astro";
 
-import { requirePerm } from "#api/authorize.js";
+import { requirePerm, requireSelectedSite } from "#api/authorize.js";
 import { apiError, apiSuccess, handleError } from "#api/error.js";
 import { getSearchStats } from "#search/index.js";
 
@@ -20,6 +20,9 @@ export const GET: APIRoute = async ({ locals }) => {
 
 	const denied = requirePerm(user, "search:manage");
 	if (denied) return denied;
+
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	if (!emdash?.db) {
 		return apiError("NOT_CONFIGURED", "EmDash not configured", 500);

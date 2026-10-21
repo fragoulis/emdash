@@ -1,11 +1,12 @@
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect } from "vitest";
 
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import type { Database } from "../../../src/database/types.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { FTSManager } from "../../../src/search/fts-manager.js";
 import { searchWithDb } from "../../../src/search/query.js";
+import { siteIt } from "../../utils/site-context.js";
 import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
 
 describe("FTS repair", () => {
@@ -59,7 +60,7 @@ describe("FTS repair", () => {
 		await teardownTestDatabase(db);
 	});
 
-	it("recreates a missing FTS table when search remains enabled", async () => {
+	siteIt("recreates a missing FTS table when search remains enabled", async () => {
 		expect(await ftsManager.ftsTableExists("game")).toBe(true);
 
 		await ftsManager.dropFtsTable("game");
@@ -84,7 +85,7 @@ describe("FTS repair", () => {
 		expect(repaired.items[0]?.slug).toBe("trail-of-cthulhu");
 	});
 
-	it("keeps the FTS index in sync after soft delete", async () => {
+	siteIt("keeps the FTS index in sync after soft delete", async () => {
 		await expect(repo.delete("game", gameId)).resolves.toBe(true);
 		await expect(ftsManager.verifyAndRepairAll()).resolves.toBe(0);
 	});

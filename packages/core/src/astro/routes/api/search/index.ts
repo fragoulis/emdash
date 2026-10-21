@@ -7,6 +7,7 @@
 import { hasPermission } from "@emdash-cms/auth";
 import type { APIRoute } from "astro";
 
+import { requireSelectedSite } from "#api/authorize.js";
 import { apiError, apiSuccess, handleError } from "#api/error.js";
 import { isParseError, parseQuery } from "#api/parse.js";
 import { searchQuery } from "#api/schemas.js";
@@ -29,6 +30,9 @@ export const GET: APIRoute = async ({ url, locals }) => {
 	if (!emdash?.db) {
 		return apiError("NOT_CONFIGURED", "EmDash not configured", 500);
 	}
+
+	const missingSite = requireSelectedSite();
+	if (missingSite) return missingSite;
 
 	const query = parseQuery(url, searchQuery);
 	if (isParseError(query)) return query;
