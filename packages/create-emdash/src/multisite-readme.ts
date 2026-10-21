@@ -23,14 +23,7 @@ Keep the host running for its first initialization. From the installation direct
 npm create emdash@latest site foo
 \`\`\`
 
-The command creates the \`foo.localhost\` site, seeds its content and settings, and writes its presentation under \`src/foo/\`. Build the presentation and restart the host:
-
-\`\`\`sh
-npm run build
-npm run start
-\`\`\`
-
-Open \`http://foo.localhost:4321\`. Repeat the site command with another explicit slug, such as \`bar\`, to add another site. The generated \`src/default/\` directory supplies shared admin and starter presentation files. It does not register a public site.
+The command registers \`foo.localhost\` and seeds the site's starter content and settings. New sites use the already loaded default presentation, so they are available without a build or host restart. Repeat the command with another slug, such as \`bar\`, to add another site. The generated \`src/default/\` directory supplies the shared presentation and admin files. It does not register a public site.
 
 ## Admin access
 
