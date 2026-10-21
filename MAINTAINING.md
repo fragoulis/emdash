@@ -44,7 +44,8 @@ Before approving, verify the parts relevant to the change:
 - backwards compatibility, data, security, localization, accessibility, and performance constraints are addressed;
 - the tests exercise observable behavior and the reported bug when applicable;
 - user-facing package changes have a useful changeset;
-- required screenshots or other runtime evidence are present; and
+- required screenshots or other runtime evidence are present;
+- UI changes meet the [product consistency review standard](CODING_STANDARDS.md#review-ui-against-the-existing-product); and
 - automated findings have been resolved, rebutted with evidence, or consciously accepted.
 
 An accepted design reduces implementation review, but it does not make review mechanical. If implementation exposes a flaw in the design, amend the proposal explicitly instead of changing the design implicitly through code review.
