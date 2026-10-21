@@ -1,14 +1,22 @@
-import { sql } from "kysely";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { sql } from "kysely";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+import { setDefaultDnsResolver } from "../../../src/import/ssrf.js";
 import {
+	createRegisteredSite,
 	getRegisteredSite,
 	listRegisteredSites,
 	updateRegisteredSiteTitle,
 } from "../../../src/multisite/registry.js";
+import { LocalStorage } from "../../../src/storage/local.js";
 import {
 	describeEachDialect,
 	setupForDialect,
+	setupForDialectWithCollections,
 	teardownForDialect,
 	type DialectName,
 	type DialectTestContext,
@@ -194,6 +202,95 @@ describeEachDialect("multisite registry service", (dialect: DialectName) => {
 		);
 	});
 });
+
+it.skipIf(!process.env.EMDASH_TEST_PG)(
+	"removes only attempted media after a late site-creation rollback and retains it on retry",
+	async () => {
+		const context = await setupForDialectWithCollections("postgres");
+		const directory = mkdtempSync(join(tmpdir(), "emdash-site-media-"));
+		const storage = new LocalStorage({ directory, baseUrl: "http://storage.test" });
+		const oldFetch = globalThis.fetch;
+		const oldResolver = setDefaultDnsResolver(async () => ["93.184.216.34"]);
+		const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+		const fetchMock = vi.fn(
+			async () => new Response(png, { status: 200, headers: { "content-type": "image/png" } }),
+		);
+		const storedKeys = (directoryPath: string, prefix = ""): string[] =>
+			readdirSync(directoryPath).flatMap((name) => {
+				const path = join(directoryPath, name);
+				const key = prefix ? `${prefix}/${name}` : name;
+				return statSync(path).isDirectory() ? storedKeys(path, key) : [key];
+			});
+		globalThis.fetch = fetchMock as typeof fetch;
+		const seed = {
+			version: "1",
+			content: {
+				post: [
+					{
+						id: "starter-post",
+						slug: "starter-post",
+						data: {
+							title: "Starter",
+							content: [
+								{
+									_type: "image",
+									_key: "starter-image",
+									asset: { $media: { url: "https://assets.example.test/starter.png" } },
+								},
+							],
+						},
+					},
+				],
+			},
+		};
+		const input = {
+			title: "Media test",
+			slug: "media-test",
+			hostname: "media-test.example.test",
+			siteUrl: "https://media-test.example.test",
+			actorId: "operator",
+			actorScope: "media-test",
+			actorSource: "cli" as const,
+			requestKey: "media-create-request-0001",
+			seed,
+			storage,
+		};
+		try {
+			await storage.upload({ key: "existing/keep.png", body: png, contentType: "image/png" });
+			await sql`CREATE FUNCTION reject_media_site_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action = 'site_create' THEN RAISE EXCEPTION 'audit unavailable'; END IF; RETURN NEW; END; $$`.execute(
+				context.db,
+			);
+			await sql`CREATE TRIGGER reject_media_site_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_media_site_audit()`.execute(
+				context.db,
+			);
+			await expect(createRegisteredSite(context.db, input)).rejects.toThrow();
+			expect(storedKeys(directory)).toEqual(["existing/keep.png"]);
+			await sql`DROP TRIGGER reject_media_site_audit ON audit_logs; DROP FUNCTION reject_media_site_audit()`.execute(
+				context.db,
+			);
+			const site = await createRegisteredSite(context.db, input);
+			const files = storedKeys(directory);
+			expect(files).toHaveLength(2);
+			expect(files).toContain("existing/keep.png");
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			await createRegisteredSite(context.db, input);
+			expect(storedKeys(directory)).toHaveLength(2);
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			const mediaRows = await context.db
+				.selectFrom("media")
+				.select(["storage_key", "site_id"])
+				.where("site_id", "=", site.id)
+				.execute();
+			expect(mediaRows).toHaveLength(1);
+			expect(files).toContain(mediaRows[0]?.storage_key);
+		} finally {
+			globalThis.fetch = oldFetch;
+			setDefaultDnsResolver(oldResolver);
+			await teardownForDialect(context);
+			rmSync(directory, { recursive: true, force: true });
+		}
+	},
+);
 
 it("loads the emitted registry module from the package build", async () => {
 	const built = await import("emdash/internal/multisite/registry");

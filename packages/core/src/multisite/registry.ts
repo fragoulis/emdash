@@ -76,6 +76,10 @@ export async function listRegisteredSites(db: Kysely<Database>): Promise<Registe
 	});
 }
 
+function siteCreationFailure(message: string, errors: unknown[]): AggregateError {
+	return new AggregateError(errors, message, { cause: errors[0] });
+}
+
 export async function getRegisteredSite(
 	db: Kysely<Database>,
 	id: string,
@@ -111,130 +115,185 @@ export async function createRegisteredSite(
 		slug: input.slug,
 		hostname: input.hostname,
 	});
-	return db.transaction().execute(async (trx) => {
-		await sql`SELECT pg_advisory_xact_lock(hashtext(${input.actorScope + ":" + input.requestKey}))`.execute(
-			trx,
-		);
-		const prior = await trx
-			.selectFrom("_emdash_site_creation_requests")
-			.select(["payload_hash", "site_id"])
-			.where("actor_scope", "=", input.actorScope)
-			.where("request_key", "=", input.requestKey)
-			.executeTakeFirst();
-		if (prior) {
-			if (prior.payload_hash !== payloadHash)
-				throw new Error("Idempotency key was already used for a different site request");
-			const site = await getRegisteredSite(trx, prior.site_id);
-			if (!site) throw new Error("Site creation request points to a missing site");
-			return site;
-		}
-		await sql`SELECT pg_advisory_xact_lock(hashtext(${input.slug}))`.execute(trx);
-		const current = await trx
-			.selectFrom("_emdash_sites")
-			.select(["id", "presentation"])
-			.where("slug", "=", input.slug)
-			.executeTakeFirst();
-		if (current) throw new Error("Site slug is already registered");
-		const hostConflict = await trx
-			.selectFrom("_emdash_site_hosts")
-			.select("hostname")
-			.where("hostname", "=", input.hostname)
-			.executeTakeFirst();
-		if (hostConflict) throw new Error("Site hostname is already registered");
-		for (const collection of input.seed.collections ?? []) {
-			const fields = await sql<{
-				slug: string;
-				field: string | null;
-			}>`SELECT c.slug, f.slug AS field FROM _emdash_collections c LEFT JOIN _emdash_fields f ON f.collection_id = c.id WHERE c.slug = ${collection.slug}`.execute(
+	const attemptedKeys = new Set<string>();
+	let attemptSiteId: string | null = null;
+	const trackedStorage = new Proxy(input.storage, {
+		get(target, property, receiver) {
+			if (property === "upload") {
+				return (options: Parameters<Storage["upload"]>[0]) => {
+					attemptedKeys.add(options.key);
+					return target.upload(options);
+				};
+			}
+			const value: unknown = Reflect.get(target, property, receiver);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	try {
+		return await db.transaction().execute(async (trx) => {
+			await sql`SELECT pg_advisory_xact_lock(hashtext(${input.actorScope + ":" + input.requestKey}))`.execute(
 				trx,
 			);
-			if (
-				!fields.rows.length ||
-				collection.fields.some((field) => !fields.rows.some((row) => row.field === field.slug))
-			) {
-				throw new Error(`Shared collection "${collection.slug}" is missing starter fields`);
-			}
-		}
-		for (const taxonomy of input.seed.taxonomies ?? []) {
-			const definition = await trx
-				.selectFrom("_emdash_taxonomy_defs")
-				.select("name")
-				.where("name", "=", taxonomy.name)
+			const prior = await trx
+				.selectFrom("_emdash_site_creation_requests")
+				.select(["payload_hash", "site_id"])
+				.where("actor_scope", "=", input.actorScope)
+				.where("request_key", "=", input.requestKey)
 				.executeTakeFirst();
-			if (!definition) throw new Error(`Shared taxonomy "${taxonomy.name}" is missing`);
+			if (prior) {
+				if (prior.payload_hash !== payloadHash)
+					throw new Error("Idempotency key was already used for a different site request");
+				const site = await getRegisteredSite(trx, prior.site_id);
+				if (!site) throw new Error("Site creation request points to a missing site");
+				return site;
+			}
+			await sql`SELECT pg_advisory_xact_lock(hashtext(${input.slug}))`.execute(trx);
+			const current = await trx
+				.selectFrom("_emdash_sites")
+				.select(["id", "presentation"])
+				.where("slug", "=", input.slug)
+				.executeTakeFirst();
+			if (current) throw new Error("Site slug is already registered");
+			const hostConflict = await trx
+				.selectFrom("_emdash_site_hosts")
+				.select("hostname")
+				.where("hostname", "=", input.hostname)
+				.executeTakeFirst();
+			if (hostConflict) throw new Error("Site hostname is already registered");
+			for (const collection of input.seed.collections ?? []) {
+				const fields = await sql<{
+					slug: string;
+					field: string | null;
+				}>`SELECT c.slug, f.slug AS field FROM _emdash_collections c LEFT JOIN _emdash_fields f ON f.collection_id = c.id WHERE c.slug = ${collection.slug}`.execute(
+					trx,
+				);
+				if (
+					!fields.rows.length ||
+					collection.fields.some((field) => !fields.rows.some((row) => row.field === field.slug))
+				) {
+					throw new Error(`Shared collection "${collection.slug}" is missing starter fields`);
+				}
+			}
+			for (const taxonomy of input.seed.taxonomies ?? []) {
+				const definition = await trx
+					.selectFrom("_emdash_taxonomy_defs")
+					.select("name")
+					.where("name", "=", taxonomy.name)
+					.executeTakeFirst();
+				if (!definition) throw new Error(`Shared taxonomy "${taxonomy.name}" is missing`);
+			}
+			const siteId = `site-${ulid()}`;
+			attemptSiteId = siteId;
+			await trx
+				.insertInto("_emdash_sites")
+				.values({ id: siteId, slug: input.slug, active: 1, presentation: "default" })
+				.execute();
+			await trx
+				.insertInto("_emdash_site_hosts")
+				.values({ hostname: input.hostname, site_id: siteId })
+				.execute();
+			const seed: SeedFile = {
+				version: input.seed.version,
+				...(input.seed.defaultLocale ? { defaultLocale: input.seed.defaultLocale } : {}),
+				settings: { ...input.seed.settings, title: input.title, url: input.siteUrl },
+				bylines: input.seed.bylines,
+				content: input.seed.content,
+				menus: input.seed.menus,
+			};
+			for (const taxonomy of input.seed.taxonomies ?? []) {
+				for (const term of taxonomy.terms ?? []) {
+					const id = ulid();
+					await trx
+						.insertInto("taxonomies")
+						.values({
+							id,
+							name: taxonomy.name,
+							slug: term.slug,
+							label: term.label,
+							locale: "en",
+							translation_group: id,
+							site_id: siteId,
+							parent_id: null,
+							data: null,
+						})
+						.execute();
+				}
+			}
+			await runWithContext({ editMode: false, siteId }, () =>
+				applySeed(trx, seed, {
+					includeContent: true,
+					storage: trackedStorage,
+					failOnMediaError: true,
+					onConflict: "error",
+				}),
+			);
+			await trx
+				.insertInto("_emdash_site_creation_requests")
+				.values({
+					actor_scope: input.actorScope,
+					actor_id: input.actorId,
+					request_key: input.requestKey,
+					payload_hash: payloadHash,
+					site_id: siteId,
+					created_at: new Date().toISOString(),
+				})
+				.execute();
+			await trx
+				.insertInto("audit_logs")
+				.values({
+					id: crypto.randomUUID(),
+					actor_id: input.actorId,
+					actor_ip: null,
+					action: "site_create",
+					resource_type: "site",
+					resource_id: siteId,
+					details: JSON.stringify({ slug: input.slug, source: input.actorSource }),
+					status: "success",
+				})
+				.execute();
+			const site = await getRegisteredSite(trx, siteId);
+			if (!site) throw new Error("Created site could not be read");
+			return site;
+		});
+	} catch (creationError) {
+		if (attemptedKeys.size === 0) throw creationError;
+		let committed: boolean;
+		try {
+			const record = await db.transaction().execute(async (trx) => {
+				await sql`SELECT pg_advisory_xact_lock(hashtext(${input.actorScope + ":" + input.requestKey}))`.execute(
+					trx,
+				);
+				return trx
+					.selectFrom("_emdash_site_creation_requests")
+					.select("site_id")
+					.where("actor_scope", "=", input.actorScope)
+					.where("request_key", "=", input.requestKey)
+					.executeTakeFirst();
+			});
+			committed = record?.site_id === attemptSiteId;
+		} catch (verificationError) {
+			throw siteCreationFailure(
+				"Site creation outcome could not be verified; uploaded media was retained",
+				[creationError, verificationError],
+			);
 		}
-		const siteId = `site-${ulid()}`;
-		await trx
-			.insertInto("_emdash_sites")
-			.values({ id: siteId, slug: input.slug, active: 1, presentation: "default" })
-			.execute();
-		await trx
-			.insertInto("_emdash_site_hosts")
-			.values({ hostname: input.hostname, site_id: siteId })
-			.execute();
-		const seed: SeedFile = {
-			version: input.seed.version,
-			...(input.seed.defaultLocale ? { defaultLocale: input.seed.defaultLocale } : {}),
-			settings: { ...input.seed.settings, title: input.title, url: input.siteUrl },
-			bylines: input.seed.bylines,
-			content: input.seed.content,
-			menus: input.seed.menus,
-		};
-		for (const taxonomy of input.seed.taxonomies ?? []) {
-			for (const term of taxonomy.terms ?? []) {
-				const id = ulid();
-				await trx
-					.insertInto("taxonomies")
-					.values({
-						id,
-						name: taxonomy.name,
-						slug: term.slug,
-						label: term.label,
-						locale: "en",
-						translation_group: id,
-						site_id: siteId,
-						parent_id: null,
-						data: null,
-					})
-					.execute();
+		if (committed) throw creationError;
+		const cleanupErrors: unknown[] = [];
+		for (const key of attemptedKeys) {
+			try {
+				await input.storage.delete(key);
+			} catch (error) {
+				cleanupErrors.push(error);
 			}
 		}
-		await runWithContext({ editMode: false, siteId }, () =>
-			applySeed(trx, seed, {
-				includeContent: true,
-				storage: input.storage,
-				failOnMediaError: true,
-				onConflict: "error",
-			}),
-		);
-		await trx
-			.insertInto("_emdash_site_creation_requests")
-			.values({
-				actor_scope: input.actorScope,
-				actor_id: input.actorId,
-				request_key: input.requestKey,
-				payload_hash: payloadHash,
-				site_id: siteId,
-				created_at: new Date().toISOString(),
-			})
-			.execute();
-		await trx
-			.insertInto("audit_logs")
-			.values({
-				id: crypto.randomUUID(),
-				actor_id: input.actorId,
-				actor_ip: null,
-				action: "site_create",
-				resource_type: "site",
-				resource_id: siteId,
-				details: JSON.stringify({ slug: input.slug, source: input.actorSource }),
-				status: "success",
-			})
-			.execute();
-		const site = await getRegisteredSite(trx, siteId);
-		if (!site) throw new Error("Created site could not be read");
-		return site;
-	});
+		if (cleanupErrors.length) {
+			throw siteCreationFailure("Site creation rolled back, but uploaded media cleanup failed", [
+				creationError,
+				...cleanupErrors,
+			]);
+		}
+		throw creationError;
+	}
 }
 
 export async function updateRegisteredSiteTitle(
