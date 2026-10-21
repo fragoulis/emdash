@@ -1,455 +1,81 @@
-This file provides guidance to agentic coding tools working in this repository.
+# Agent guidance
 
-# What this repo is
+## Repository identity
 
-This is a fork `emdash/emdash` repo with my own customizations.
+This is the `emdash/emdash` fork with local customizations.
 
-Existing database rows still need forward-only backfills; the deployment has no existing Astro sites or users to move. When changing site ownership, request routing, settings, or central admin access, read [the multi-site hosting spec](docs/technical-specs/multi-site-hosting.md) and the relevant GitHub issue. The spec records the agreed target design, not a claim that all of it is implemented.
+Track specs and tickets in GitHub Issues on `fragoulis/emdash`. See [issue-tracker guidance](docs/agents/issue-tracker.md). Use `GLOSSARY.md` for shared terms and `CONTEXT-MAP.md` for package contexts when present.
 
-# Issue tracker
+`CLAUDE.md` points here. `.agents/skills` and `.claude/skills` point to `skills/`. Do not sync these symlinks.
 
-Track specs and tickets in GitHub Issues on `fragoulis/emdash`. See `docs/agents/issue-tracker.md`.
+## External actions
 
-# Domain docs
+Follow [AI_POLICY.md](AI_POLICY.md) for external actions and project communication.
 
-Use `GLOSSARY.md` for shared terms and `CONTEXT-MAP.md` for package contexts when it exists. See `docs/agents/domain.md`.
+Do not open design PRs or comment on issues, Discussions, or design PRs. On implementation PRs, post only a specifically requested code review or a reply to code review. Follow policy requirements for agent-written comments posted from a human account.
 
-For human-facing contributor info (setup, repo layout, PR policy, i18n), see [CONTRIBUTING.md](CONTRIBUTING.md). This file focuses on the patterns and gotchas an agent needs to write correct code.
+## Compatibility and migrations
 
-Follow [AI_POLICY.md](AI_POLICY.md) for external actions and project communication. In particular, do not open design PRs, and do not comment on issues, Discussions, or design PRs. On implementation PRs, post only a specifically requested code review or a reply to code review, and sign agent-written comments posted from a human account as the policy requires.
+EmDash is published and in active use on 1.x. Prefer additive changes. Breaking changes require an explicit decision, a major version bump, and a changeset that clearly calls out the break. When compatibility is unclear, stop and ask for a human decision.
 
-# Skills
+Migrations are forward-only. Never make existing content inaccessible. Published migrations are immutable; add a new migration for corrections.
 
-`CLAUDE.md` is a symlink to this file. `.agents/skills` and `.claude/skills` are symlinks to `skills/`. Don't try to sync between them.
+Before changing site ownership, request routing, settings, or central admin access, read [the multi-site hosting spec](docs/technical-specs/multi-site-hosting.md) and the relevant issue. The spec records the agreed target design, not a claim that all of it is implemented.
 
-When writing, revising, or reviewing documentation, load the `writing-emdash-docs` skill. Use it for public docs, READMEs, contributor guidance, technical specifications, release notes and changesets, and skill instructions.
+## Site identity
 
-# Rules
+Site IDs have no implicit default. In a forward-only migration, backfill old site-owned rows to `site-default`, then require non-null `site_id` without a database or schema default.
 
-**Backwards compatibility matters.** EmDash is published, in active use, and on 1.x. Prefer additive changes (new fields, new routes, new options with defaults). Breaking changes need an explicit decision, a major version bump, and a changeset that calls the break out clearly. Database migrations are forward-only -- never write one that leaves existing content inaccessible. When the compatibility decision is unclear, propose a Discussion instead of choosing a breaking design.
+New writes must supply the selected site ID explicitly. An unscoped write fails. When working on site ownership, correct old defaults only through new migrations and schema changes; never alter published migrations.
 
-**Site IDs have no implicit default.** For site-owned records, backfill old rows to `site-default` in a forward-only migration, then require a non-null `site_id` without a database or schema default. New writes must supply the selected site ID explicitly; an unscoped write fails. Some existing migrations and schema definitions still install a `site-default` column default. Correct those defaults through new migrations and schema changes when working on site ownership; published migrations remain immutable. See [the multi-site hosting spec](docs/technical-specs/multi-site-hosting.md).
+## Scope and safety
 
-**Regression evidence for bugs.** A fix must demonstrate that it changes the reported behavior. Add a regression test when it can protect meaningful behavior; otherwise report the reproduction and verification. See [Testing](#testing).
+Keep work within the requested scope. Do not make drive-by refactors, bulk lint/type cleanups, or unrelated UI fixes. Report systemic and unrelated issues separately unless the operator authorizes the work.
 
-**Localize everything user-facing.** All admin UI strings, aria labels, and toast messages go through Lingui. All admin layout uses RTL-safe logical Tailwind classes. See [Localization](#admin-ui-localization-lingui) and [RTL](#admin-ui-rtl-safe-tailwind).
+A bug fix must show that it changes the reported behavior. Add a regression test when it protects stable, meaningful behavior; otherwise record reproduction and verification.
 
-**Scope discipline.** No drive-by refactors, no bulk lint/type cleanups, no "while I'm here" edits in unrelated files. Report systemic issues separately instead of expanding the current change. See [CONTRIBUTING.md § Contribution Policy](CONTRIBUTING.md#contribution-policy).
+Protect logged-out route performance. Anonymous page query counts are the product's performance envelope. Any increase needs strong justification, including cold-start or first-request-only queries.
 
-**Protect the logged-out hot path.** Any change that increases the query count of a logged-out route needs explicit justification -- and that includes cold-start or first-request-only queries, not just steady state. See [Performance](#performance-caching-and-query-patterns).
+Keep credentials in local secret configuration only. Never put credentials or bootstrap IDs in generated files, logs, tests, or PRs.
 
-**Comments are for code readers, not reviewers.** Write a comment only when the code can't be made clearer, or to give a non-obvious "why". Never justification, narrative, or issue/PR references. See [Comments](#comments).
+## Choose task references
 
-## Workflow
+Read the matching implementation reference **before edits**:
 
-For local multi-site installation work, read [infra/local-install/README.md](infra/local-install/README.md). Use its persistent installation to inspect site-facing behavior and its isolated check to verify generation and site isolation. The old shared-host proof is gone.
+- Core, API, database, schema, migration, or runtime work: [core implementation](docs/agents/core.md).
+- Admin UI, localization, accessibility, or RTL work: [admin implementation](docs/agents/admin.md).
+- Site-building, themes, schema, queries, or seeds: matching skill in `skills/`, usually `building-emdash-site`.
+- Plugin authoring: `creating-plugins` skill.
+- Public docs, contributor docs, specifications, release notes, or changesets: `writing-emdash-docs` skill.
+- Agent instructions or skills: `writing-for-agents` skill.
+- Other task types and generated-host work: [task routing](docs/agents/task-routing.md).
 
-For requested generated-host browser reproduction, use `pnpm browser:fixture` as documented in [the local installation guide](infra/local-install/README.md#capture-authenticated-browser-evidence). The disposable browser command and fixture-backed tests need no live Clerk credentials.
+For judgment about meaningful tests, comments, compatibility, scope, and performance, read [review standards](docs/agents/review-standards.md). This document does not replace task-specific implementation requirements.
 
-For multi-site scaffold, host, or Clerk work that uses a live Clerk account in a fresh worktree, complete this prerequisite before editing or testing:
+## Validation
 
-1. Copy the operator's existing local `.env` with `install -m 600 /path/to/existing/.env .env`.
-2. Require nonempty `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_BOOTSTRAP_USER_ID`. The bootstrap ID identifies the existing development Clerk super admin. Check presence without printing values.
-3. If a value or the source file is missing, ask the operator to supply it in the local `.env` and stop until it is available. Keep `.env` untracked. Never place credentials or the bootstrap ID in a generated scaffold, logs, tests, or a PR. CI uses local Clerk verification fixtures.
+Use [canonical validation](docs/agents/validation.md) for local checks and CI coverage. Choose tests relevant to changed behavior. Never run a full test suite locally. Do not run checks before editing to establish a baseline or label failures pre-existing.
 
-Follow [the canonical validation procedure](docs/agents/validation.md) for local checks, focused tests, Markdown-only changes, and CI coverage. Do not run checks before editing to establish a baseline or dismiss failures as pre-existing. See [.changeset/README.md](.changeset/README.md) for changeset requirements.
+Do not change a test only to make it pass. Understand the failure, preserve fail-closed boundaries, and correct production context or test fixtures.
 
-Open the PR from the current working branch with all its existing commits, even if one seems unrelated. Ask the operator before changing the branch or excluding commits from the PR.
+For Markdown-only changes, use the Markdown procedure; do not run `pnpm` commands. Do not edit generated changelogs. Read [.changeset/README.md](.changeset/README.md) before adding a changeset.
 
-A changeset is user-facing documentation that lands verbatim in a package CHANGELOG. Review its usefulness to someone upgrading, not only its presence and frontmatter. Follow [.changeset/README.md](.changeset/README.md) for the canonical writing and review standard, including proportional detail and migration guidance for default or breaking changes.
+## Multi-site local workflow
 
-When opening an implementation PR with `gh`/the API, copy `.github/PULL_REQUEST_TEMPLATE.md` into the body and fill every section. When helping prepare a design PR for a human to open, use `.github/PULL_REQUEST_TEMPLATE/design.md` instead. The GitHub UI injects a template automatically but the CLI does not, and PRs missing one are auto-closed. Check the AI assistance disclosure box and name the model. Tick checklist items only for what you actually verified; for test-only/docs/CI PRs, note why changeset, i18n, screenshots, or design links are not applicable.
+For multi-site installation work, follow [the local installation guide](infra/local-install/README.md). Use its persistent installation to inspect site-facing behavior and isolated check to verify generation and site isolation.
 
-Issues that refer to the interface must include a screenshot that shows the reported state. PRs that change the UI must include before-and-after screenshots of every screen they affect; for a new screen, the after state is enough. Keep the behavior described in text and give every image useful alt text.
+For requested generated-host browser reproduction, use the fixture-backed procedure in that guide. Generated hosts do not use the demo dev-bypass endpoints. Fixture-backed browser commands need no live Clerk credentials.
 
-Lay out screenshots as [CONTRIBUTING.md § Interface screenshots](CONTRIBUTING.md#interface-screenshots) shows: each pair side by side in a two-column table, cropped to the changed area, at the same viewport and with the same content, and extra states such as Arabic in a collapsed `<details>` block.
+For multi-site scaffold, host, or Clerk work using a live Clerk account in a fresh worktree, first copy the operator's existing `.env` with mode 600. Require nonempty `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `CLERK_BOOTSTRAP_USER_ID`; the bootstrap ID identifies the existing development Clerk super admin. Check presence without printing values.
 
-Agents can attach local images with GitHub CLI 2.99.0 or later. The `--attach` flag is repeatable on `gh issue create|edit|comment` and `gh pr create|edit|comment`. For example:
+If a required value or source file is missing, ask the operator to supply it and stop until available. Keep `.env` untracked. CI uses local Clerk verification fixtures.
 
-```bash
-gh issue create --body-file /tmp/emdash-issue.md \
-	--attach './interface-error.png#The settings screen showing the validation error'
+## Changes and delivery
 
-gh pr create --body-file /tmp/emdash-pr.md \
-	--attach './before.png#Settings screen before the change' \
-	--attach './after.png#Settings screen after the change'
-```
+Open PRs from the current working branch with all existing commits. Ask the operator before changing branches or excluding commits.
 
-To place an image at a specific point in the body, add `![descriptive alt text](./after.png)` to the body file and pass `--attach ./after.png`; `gh` replaces the local path with the uploaded asset URL. An attachment that is not referenced in the body is appended. CLI `--attach` uploads require repository write access. See [CONTRIBUTING.md § Interface screenshots](CONTRIBUTING.md#interface-screenshots).
+When opening an implementation PR with `gh` or the API, copy `.github/PULL_REQUEST_TEMPLATE.md` into the body and complete every section. The GitHub UI adds the template automatically. Check the AI disclosure box and name the model. Only tick checks actually verified.
 
-## Architecture
+Issues that refer to the interface must include a screenshot of the reported state. PRs that change UI must include before-and-after screenshots of every affected screen; for a new screen, the after state is enough. Use descriptive alt text and follow [CONTRIBUTING.md § Interface screenshots](CONTRIBUTING.md#interface-screenshots) for layout, cropping, and extra states.
 
-EmDash is an Astro-native CMS that deploys to Cloudflare Workers or Node.js. The database is SQLite, libSQL, or PostgreSQL on Node.js, and D1 or PostgreSQL via Hyperdrive on Workers. Media storage is an R2 binding on Workers, and S3-compatible storage or the local filesystem on Node.js.
-
-- **Schema in the database.** `_emdash_collections` and `_emdash_fields` are the source of truth. Each collection gets a real SQL table (`ec_posts`, `ec_products`) with typed columns -- not EAV.
-- **Middleware chain:** runtime init -> setup check -> auth -> request context (ALS). Auth middleware checks authentication only; routes check authorization.
-- **Handler layer** (`packages/core/src/api/handlers/*.ts`) holds business logic and returns `ApiResult<T>` (`{ success: true, data } | { success: false, error: { code, message, details? } }`). Route files are thin wrappers.
-- **Storage abstraction:** `Storage` interface with `upload/download/delete/exists/list/getSignedUploadUrl/getPublicUrl`. `LocalStorage` for a local directory, `S3Storage` for S3-compatible services (including R2's S3 API), `R2Storage` (in `@emdash-cms/cloudflare`) for R2 bindings. Access via `emdash.storage` from locals.
-
-Key files:
-
-| File                                              | Purpose                                               |
-| ------------------------------------------------- | ----------------------------------------------------- |
-| `packages/core/src/emdash-runtime.ts`             | Central runtime; orchestrates DB, plugins, storage    |
-| `packages/core/src/schema/registry.ts`            | Manages `ec_*` table creation/modification            |
-| `packages/core/src/database/migrations/runner.ts` | StaticMigrationProvider; register new migrations here |
-| `packages/core/src/plugins/manager.ts`            | Loads and orchestrates plugins                        |
-
-# Code Patterns
-
-## Database: Never Interpolate Into SQL
-
-Kysely is the query builder.
-
-- **Never** use `sql.raw()` with string interpolation or template literals containing variables.
-- For **values**, use Kysely's `sql` tagged template -- interpolated values are automatically parameterized.
-- For **identifiers** (table/column names), use `sql.ref()`.
-- If you must use `sql.raw()` for dynamic identifiers, validate with `validateIdentifier()` from `database/validate.ts` first (asserts `/^[a-z][a-z0-9_]*$/`).
-- The `json_extract(data, '$.${field}')` pattern is particularly dangerous -- always validate `field`.
-
-```typescript
-// WRONG -- SQL injection
-const query = `SELECT * FROM ${table} WHERE name = '${name}'`;
-await sql.raw(query).execute(db);
-
-// RIGHT -- parameterized value, safe identifier
-await sql`SELECT * FROM ${sql.ref(table)} WHERE name = ${name}`.execute(db);
-
-// RIGHT -- validated identifier in raw SQL
-validateIdentifier(field);
-return sql.raw(`json_extract(data, '$.${field}')`);
-```
-
-## API Routes
-
-Routes live in `packages/core/src/astro/routes/api/`. Conventions:
-
-- Every route file starts with `export const prerender = false;`.
-- Named exports: `export const GET: APIRoute`, etc. Destructure from the Astro context.
-- Access runtime via `const { emdash } = locals;`, user via `locals.user`.
-- File structure mirrors URLs: `content/[collection]/index.ts` for list/create, `[id].ts` for get/update/delete, sub-actions as siblings.
-- **Never** add GET handlers for state-changing operations.
-
-Use the shared utilities -- don't roll your own:
-
-| Need            | Use                                                                                      |
-| --------------- | ---------------------------------------------------------------------------------------- |
-| Error response  | `apiError(code, message, status)` from `#api/error.js`                                   |
-| Catch block     | `handleError(error, message, code)` -- never expose `error.message` to clients           |
-| Body validation | `parseBody(request, zodSchema)` from `#api/parse.js` -- never `as` cast `request.json()` |
-| Unwrap handler  | `unwrapResult(result)` -- maps error codes to HTTP statuses automatically                |
-| Init check      | `if (!emdash) return apiError("NOT_CONFIGURED", "EmDash is not initialized", 500);`      |
-
-The error helper is `mapErrorStatus`, not `mapErrorToStatus`.
-
-### Authorization
-
-Every state-changing route must check authorization. Authorization is permission-based, not role-based -- the `Permissions` map in `packages/auth/src/rbac.ts` is authoritative. Never invent permission strings in route files; add them to `rbac.ts` with a sensible minimum role.
-
-```typescript
-import { requirePerm, requireOwnerPerm } from "#api/authorize.js";
-
-// Any-actor capability (settings, schema)
-const denied = requirePerm(user, "schema:manage");
-if (denied) return denied;
-
-// Ownership-aware (authors edit their own; editors edit anyone's)
-const denied = requireOwnerPerm(user, post.authorId, "content:edit_own", "content:edit_any");
-if (denied) return denied;
-```
-
-Both helpers return `null` on success or a `Response` (401/403) to return directly.
-
-### CSRF
-
-All state-changing endpoints require the `X-EmDash-Request: 1` header, enforced by auth middleware. The admin UI and visual editing client send it automatically.
-
-### Pagination
-
-List endpoints return `{ items, nextCursor? }` -- never a bare array. Use `encodeCursor(orderValue, id)` / `decodeCursor(cursor)`. Default limit 50, max 100, always clamp. The repository-level shape is `FindManyResult<T>`.
-
-### URL/Redirect handling
-
-When accepting redirect URLs from query params or bodies: require leading `/`, reject `//`, HTML-escape before interpolation, prefer `Response.redirect()` over `<meta http-equiv="refresh">`.
-
-## Handler Layer
-
-Handlers in `api/handlers/*.ts` are standalone async functions, not class methods.
-
-- First parameter is always `db: Kysely<Database>`, followed by route-specific params.
-- Return `ApiResult<T>`.
-- Wrap the body in try/catch. Errors return `{ success: false, error: { code, message } }`.
-- Error codes are `SCREAMING_SNAKE_CASE` (`NOT_FOUND`, `VALIDATION_ERROR`, `CONTENT_CREATE_ERROR`).
-
-## Migrations
-
-Migrations live in `packages/core/src/database/migrations/`.
-
-- **Naming:** `NNN_descriptive_name.ts`, zero-padded.
-- **Exports:** `up(db: Kysely<unknown>)` and `down(db: Kysely<unknown>)`.
-- **System tables:** Kysely schema builder.
-- **Dynamic content tables (`ec_*`):** `sql` tagged templates with `sql.ref()` for identifiers.
-- **Column types:** SQLite -- `text`, `integer`, `real`, `blob`. Booleans are `integer` defaulting to 0. Timestamps are `text` with ``defaultTo(sql`(datetime('now'))`)``. IDs are `text` primary keys (ULIDs from `ulidx`).
-- **Registration:** Migrations are statically imported in `runner.ts` and added to `StaticMigrationProvider`. Not auto-discovered (Workers bundler compatibility). When adding: create the file, add a static import in `runner.ts`, add it to `getMigrations()`.
-- **Multi-table migrations:** When altering all content tables, query `_emdash_collections` and loop. See `013_scheduled_publishing.ts`.
-
-Published migrations are immutable. Never edit or reorder one that has shipped; add the next monotonically increasing, zero-padded migration as a correction. Write `up` so it can restart after any completed statement, especially on D1 where a lost response can leave an ambiguous outcome.
-
-Preserve expand/deploy/contract compatibility: old application code must tolerate the expanded schema during a rolling deploy, and new code must tolerate incomplete backfills. When a migration changes existing `ec_*` tables, update `SchemaRegistry` so newly created tables receive the same shape. Use parameterized Kysely SQL, validated identifiers, bounded batches, portable dialect behavior, and the repository's index conventions.
-
-Test representative upgrades from existing data, retry after partial completion, test every supported dialect, and test with realistically large data shapes. Add a user-facing changeset for each affected published package.
-
-## Indexes
-
-Every content table gets indexes on: `status`, `slug`, `created_at`, `deleted_at`, `(deleted_at, scheduled_at)` (partial, `WHERE scheduled_at IS NOT NULL`), `live_revision_id`, `draft_revision_id`, `author_id`, `primary_byline_id`, `updated_at`, `locale`, `translation_group`. Foreign key columns always get an index.
-
-Naming: `idx_{table}_{column}` for single-column, `idx_{table}_{purpose}` for multi-column.
-
-## Content Tables
-
-Managed by `SchemaRegistry` in `schema/registry.ts`:
-
-- **Names:** `ec_{collection_slug}`. System tables: `_emdash_{name}`.
-- **Slugs:** `/^[a-z][a-z0-9_]*$/`, max 63 chars, checked against `RESERVED_COLLECTION_SLUGS` / `RESERVED_FIELD_SLUGS`.
-- **Standard columns:** `id`, `slug`, `status`, `author_id`, `created_at`, `updated_at`, `published_at`, `scheduled_at`, `deleted_at`, `version`, `live_revision_id`, `draft_revision_id`. Field columns added via `ALTER TABLE`.
-- **Field type -> column mapping:** `FIELD_TYPE_TO_COLUMN` in `schema/types.ts`. Most string-shaped types -> TEXT; number -> REAL; integer/boolean -> INTEGER; portableText/json/multiSelect -> JSON.
-- **Orphan discovery:** `discoverOrphanedTables()` finds `ec_*` tables without a matching `_emdash_collections` row.
-
-## Content Localization
-
-Content tables use a row-per-locale model (migration `019_i18n.ts`):
-
-- Every `ec_*` table has `locale` (defaults to `'en'`) and `translation_group` (ULID shared across translations).
-- Slug uniqueness is `UNIQUE(slug, locale)`, not global.
-- Any new query against a content table must filter by `locale` -- forgetting this is a correctness bug.
-- Fetch all translations via `GET /_emdash/api/content/{collection}/{id}/translations`.
-
-When adding content-table features, ask: per-locale (display fields) or per-translation-group (anything identifying "the same thing" across languages)?
-
-## Performance: Caching and Query Patterns
-
-On D1, EmDash can use the Sessions API (`session: "auto"`; the default is `"disabled"`). With sessions on, anonymous reads go to the nearest replica; writes and authenticated reads route to the primary. Every round-trip matters.
-
-**The logged-out hot path only ratchets down.** Anonymous page renders are what visitors actually hit; their query count is the product's performance envelope. Any change that adds a query to a logged-out route needs a _really_ good reason -- including queries that only run on cold start or first request. Before accepting a new round-trip, look for a way to piggyback on an existing query, batch, defer with `after()`, or cache.
-
-**Wrap query helpers in `requestCached`.** Per-request cache (`src/request-cache.ts`) dedupes identical calls within a render. If a helper takes stable args (slug, key, id) and may be called from multiple components, wrap it. The cache key must include every argument that changes the result. The promise is cached, so concurrent callers share the in-flight query.
-
-```typescript
-export function getSiteSetting(key: string) {
-	return requestCached(`siteSetting:${key}`, async () => {
-		const db = await getDb();
-		return ...;
-	});
-}
-```
-
-**Module-scope singletons must live on `globalThis`.** Vite duplicates modules across SSR chunks; a plain `let cache = null` becomes two variables. Use a `Symbol.for` key on `globalThis`. See `packages/core/src/settings/index.ts` (versioned) and `packages/core/src/request-context.ts` / `request-cache.ts` (per-request).
-
-**Prefer the batch query to a "has any" probe.** Don't add a `SELECT id FROM foo LIMIT 1` to skip work on empty sites -- on live sites you pay the extra query every request for no gain. Handle missing tables with `isMissingTableError`. The exception is a probe folded into a query the request already runs (an uncorrelated scalar subquery in an existing select list): that adds zero round trips, so it's fine when an empty table lets the request skip follow-up queries entirely.
-
-**Defer bookkeeping with `after(fn)`.** Maintenance writes don't need to block TTFB. `after()` uses workerd's `waitUntil` when available, fire-and-forgets on Node. Wrap your function body in try/catch with a module-specific log prefix.
-
-```typescript
-import { after } from "emdash";
-
-after(async () => {
-	try {
-		await recoverStaleLocks();
-	} catch (error) {
-		console.error("[cron] recovery failed:", error);
-	}
-});
-```
-
-**One query beats two.** Use `LEFT JOIN` for parent+children. Batch with `WHERE id IN (...)`, chunked at `SQL_BATCH_SIZE` (from `utils/chunks.ts`) for D1's bind-parameter limit.
-
-**Query-count snapshots.** `pnpm query-counts` (see `scripts/query-counts.mjs`) records per-route query counts in `scripts/query-counts.snapshot.{sqlite,d1}.json`. CI auto-updates on PRs -- review the diff. Prefer fewer round trips; justify increases against the behavior they enable. An increase on a logged-out route is presumed wrong: the snapshot diff makes it visible, it does not make it acceptable.
-
-# Admin UI
-
-The admin (`packages/admin`) is a React SPA mounted under `/_emdash/admin/*`.
-
-## Kumo Components
-
-Built on [Kumo](https://github.com/cloudflare/kumo) (Cloudflare's design system). Never roll your own buttons, inputs, dialogs, etc. -- use Kumo so shared styling, dark-mode behavior, accessibility, and RTL support stay consistent.
-
-Look up docs from the CLI:
-
-```bash
-npx @cloudflare/kumo doc Button   # specific component
-npx @cloudflare/kumo ls           # list all
-```
-
-Common imports: `Button`, `LinkButton`, `Dialog`, `Input`, `InputArea`, `Select`, `Checkbox`, `Switch`, `Loader`, `Badge`, `Toast`/`Toasty`, `Popover`, `Dropdown`, `Tooltip`, `Label`, `CommandPalette`.
-
-### Buttons and links
-
-| Need                                      | Component                        |
-| ----------------------------------------- | -------------------------------- |
-| In-place action                           | `Button`                         |
-| External link styled as a button          | `LinkButton href="..." external` |
-| Internal router-aware link as a button    | `RouterLinkButton to="..."`      |
-| Non-button element needing button classes | `buttonVariants(...)`            |
-
-`RouterLinkButton` wraps TanStack Router's `<Link>` with Kumo button classes. Never write `<Link><Button>...</Button></Link>` (invalid `<a><button>` HTML). Never hand-roll button styling on an `<a>`.
-
-### Styling rules
-
-- Use semantic tokens (`bg-kumo-brand`, `text-kumo-subtle`). Never raw Tailwind colors.
-- Never use `dark:` prefixes. Kumo's tokens use CSS `light-dark()`.
-- Never duplicate component styles. If you're writing `bg-kumo-brand text-white rounded-md px-3 py-2` on a `<button>`, use Kumo's `Button` instead.
-
-### Dialogs and errors
-
-- `ConfirmDialog` (in `components/`) for confirm/cancel modals. Pass `mutation.error` directly -- don't manage error state manually.
-- `DialogError` + `getMutationError()` for inline errors in form dialogs.
-- Admin API client functions use `throwResponseError()` from `lib/api/client.ts` to surface server messages -- never `throw new Error("Failed to X")` and lose the body.
-
-## Admin UI: Localization (Lingui)
-
-Every user-facing string goes through Lingui. No hard-coded English in JSX, attributes, or strings that end up in the DOM.
-
-- Catalogs: `packages/admin/src/locales/{locale}/messages.po`. English is source.
-- Enabled locales: `packages/admin/src/locales/locales.ts`.
-- **Don't include `messages.po` changes in non-translation PRs.** A workflow runs `pnpm locale:extract` on merge to `main`. Including extracted catalog updates in feature PRs creates merge churn -- revert before opening.
-- Set `EMDASH_PSEUDO_LOCALE=1` in dev to render pseudo-localized text and spot untranslated leaks.
-
-```typescript
-import { useLingui } from "@lingui/react/macro";
-import { Trans } from "@lingui/react/macro";
-
-function DeleteButton() {
-	const { t } = useLingui();
-	return <button aria-label={t`Delete post`}>{t`Delete`}</button>;
-}
-
-// JSX with nested components
-<Trans>Published by <strong>{authorName}</strong> on {formattedDate}</Trans>
-
-// Pluralization
-import { plural } from "@lingui/core/macro";
-const label = plural(count, { one: "# item", other: "# items" });
-
-// Module-scope constants: msg`` descriptors, resolved with t() in the component
-import { msg } from "@lingui/core/macro";
-import type { MessageDescriptor } from "@lingui/core";
-
-const transforms: { id: string; label: MessageDescriptor }[] = [
-	{ id: "paragraph", label: msg`Paragraph` },
-];
-// ...inside component: t(transforms[0].label)
-```
-
-Common mistakes:
-
-- Bare string literals in JSX, unwrapped aria/title/placeholder/alt attributes.
-- Concatenating translated pieces (`` t`Hello ` + name``) -- breaks word order. Use `` t`Hello ${name}` `` or `<Trans>`.
-- Calling `t` at module scope -- locale isn't bound. Use `msg` + `t(descriptor)` inside a component.
-
-Server-side error messages are English-only for now. Keep error codes stable (`SCREAMING_SNAKE_CASE`); the admin maps codes to localized messages client-side.
-
-## Admin UI: RTL-safe Tailwind
-
-The admin supports RTL locales. Use logical Tailwind classes, never physical:
-
-| Use                           | Not                           |
-| ----------------------------- | ----------------------------- |
-| `ms-*` / `me-*`               | `ml-*` / `mr-*`               |
-| `ps-*` / `pe-*`               | `pl-*` / `pr-*`               |
-| `start-*` / `end-*`           | `left-*` / `right-*`          |
-| `text-start` / `text-end`     | `text-left` / `text-right`    |
-| `border-s` / `border-e`       | `border-l` / `border-r`       |
-| `rounded-s-*` / `rounded-e-*` | `rounded-l-*` / `rounded-r-*` |
-| `float-start` / `float-end`   | `float-left` / `float-right`  |
-
-For directional icons (chevrons, arrows), flip them with `rtl:-scale-x-100` or use a bidi-aware icon.
-
-`LocaleDirectionProvider` syncs `document.documentElement.dir`/`lang` automatically.
-
-**Test new admin UI in Arabic** before declaring done. Broken directionality is the most common i18n regression.
-
-# Conventions
-
-## Comments
-
-Comments are evergreen and addressed to a future reader of the code -- not to whoever reviews the PR. Most comments agents write should not exist. A comment earns its place only when:
-
-- the code is unclear and genuinely can't be made clearer (first try making it clearer), or
-- there's a non-obvious reason for something the reader would otherwise get wrong (an ordering constraint, a footgun, an invariant).
-
-Comments are **not**:
-
-- PR descriptions or summaries of the change
-- messages to the reviewer
-- justification for a decision ("intentionally", "for safety", "we accept", "unlike X")
-- narrative about what you tried and rejected
-- restatements of what the code plainly does
-
-Never reference issues, PRs, or review threads in comments -- they're stale narrative the moment the change merges; that context belongs in the commit message and PR description. Never number comments.
-
-Tool directives are exempt from all of the above: `eslint-disable`, `oxlint-disable`, `@ts-expect-error`, `@ts-ignore`, `prettier-ignore`, `v8 ignore`, and similar are machine instructions, not prose, and the short reason attached to one (`// oxlint-disable-next-line no-await-in-loop -- sequential on purpose`) states why the rule doesn't apply at that site. Keep the reason; don't flag it as justification.
-
-## Imports
-
-- **Internal imports** use `.js` extensions (ESM): `import { X } from "../foo.js"`.
-- **Type-only imports** use `import type` (`verbatimModuleSyntax` is on).
-- **Package imports** have no extension: `import { sql } from "kysely"`.
-- **Virtual modules** need a `// @ts-ignore`: `// @ts-ignore - virtual module` above `import virtualConfig from "virtual:emdash/config"`.
-- **Barrel files** separate `export type { ... }` from value exports.
-
-## Environment
-
-- Use `import.meta.env.DEV` / `import.meta.env.PROD` (Vite/Astro standard). Never `process.env.NODE_ENV`.
-- Dev-only endpoints must check `import.meta.env.DEV` and return 403 otherwise -- it's a compile-time constant, unspoofable at runtime.
-- Public build-time config pattern: `import.meta.env.EMDASH_X || import.meta.env.X || ""`.
-- **Secrets read `process.env` only, never `import.meta.env`** -- Vite statically inlines `import.meta.env`, which bakes build-machine secrets into the bundle and shadows runtime values set on the deployment platform. See `packages/core/src/config/secrets.ts`.
-
-## Cloudflare Env
-
-Import `env` directly from `"cloudflare:workers"` -- a virtual module that resolves to the right bindings for the current environment (Worker or local dev).
-
-Don't manually type the `Env` object. In a Worker context, run `pnpm wrangler types` to generate `worker-configuration.d.ts` (includes wrangler.jsonc bindings and `.env` secrets). Reference it in `tsconfig.json`'s `include`.
-
-Local-dev secrets go in `.env` (read by Wrangler and the Cloudflare Vite plugin since Aug 2025), not `.dev.vars`. Note Wrangler loads either `.dev.vars` or `.env` but never both -- if a `.dev.vars` file exists it wins and `.env` is ignored entirely. Production secrets are set with `wrangler secret put`.
-
-In libraries used in a Worker but not themselves Workers, install `@cloudflare/workers-types` and reference it in `tsconfig.compilerOptions.types`.
-
-# Testing
-
-- **Framework:** Vitest for package tests and Playwright for browser tests. Package tests usually live in that package's `tests/` or `test/` directory; core tests live in `packages/core/tests/`, and browser tests live in `e2e/tests/`.
-- **No mocks for the DB.** Node's built-in SQLite driver by default. PostgreSQL parity tests via a real `pg` connection with per-test schema isolation (set `EMDASH_TEST_PG` to a connection string for a role with `CREATEDB` to opt in).
-- **Utilities:** `tests/utils/test-db.ts` exposes `setupTestDatabase()`, `setupTestDatabaseWithCollections()`, `teardownTestDatabase()` for SQLite and `setupTestPostgresDatabase()` etc. for Postgres. Dialect-agnostic: `setupForDialect`, `setupForDialectWithCollections`, `teardownForDialect`, plus `describeEachDialect(name, fn)`. Use the dialect wrapper for query-builder code -- regressions tend to be dialect-specific.
-- **Core structure:** `packages/core/tests/unit/`, `packages/core/tests/integration/`, and `packages/core/tests/workerd/`. Test files mirror source structure. Each database test gets a fresh DB.
-
-For a bug fix, add an automated regression test when the failure is deterministic and the test can exercise a stable behavior boundary. Write it first when practical and confirm that it fails for the reported reason. If the only possible test would be brittle, disproportionate, environment-specific, or a restatement of the implementation, do not add it merely to satisfy a TDD rule; report the reproduction and verification instead. Inconvenient setup alone is not a reason to skip a useful test.
-
-**A test must be able to fail on a real regression.** If it can't, it's not a test -- delete it. The common offenders:
-
-- **Config-pin tests**: asserting a config literal, constant, or schema shape back at itself. It re-states the source file and fails only when someone makes an intentional change.
-- **Tautological tests**: asserting the implementation detail you just wrote straight back -- add a CSS class to a component, then test the component has that class; call a function with arguments, then assert it was called with those arguments. This re-states the diff, not the behavior. Test what the change does for the user (the element is hidden, the query is filtered), not that the code you wrote is the code you wrote.
-- **Mocking the unit under test**, or a mock that returns the very value the assertion checks. The test then verifies the mock, not the code.
-- **Tests that only exercise third-party code**: Kysely, Zod, and Lingui have their own test suites. Test your behavior, not theirs.
-
-**Never change a test just to make it pass.** Understand why it's failing first -- the test may be the only thing that's right. If you can't work out why, stop and say so. When a test fails because a request or resumed operation lacks site context, trace how the trusted site ID reaches each step. Keep the production boundary fail-closed; fix context propagation or the test fixture rather than removing the context or substituting an installation-wide ID. Leave the change uncommitted if the correct site identity is not yet available.
-
-# Toolchain
-
-- **pnpm** -- package manager
-- **tsdown** -- TypeScript builds (ESM + DTS)
-- **vitest** -- testing
-- **oxfmt** -- formatting (tabs, configured in `.prettierrc`). All source files use tabs.
-
-TypeScript: target ES2023, module `preserve`, strict mode with `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax`.
-
-# Dev Bypass for Browser Testing
-
-Passkey auth can't be automated in browser tests. Two dev-only endpoints (`import.meta.env.DEV` only, 403 in prod):
-
-- `GET /_emdash/api/setup/dev-bypass?redirect=/_emdash/admin` -- runs migrations, creates a dev admin user (`dev@emdash.local`), establishes a session, redirects.
-- `GET /_emdash/api/auth/dev-bypass?redirect=/_emdash/admin` -- assumes setup is complete, just creates a session.
-
-In agent-browser:
-
-```typescript
-await page.goto("http://localhost:4321/_emdash/api/setup/dev-bypass?redirect=/_emdash/admin");
-```
+Do not open design PRs. When preparing a design PR for a human, use `.github/PULL_REQUEST_TEMPLATE/design.md`. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for contributor processes and [validation](docs/agents/validation.md) for checks.
