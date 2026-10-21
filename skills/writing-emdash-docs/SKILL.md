@@ -11,7 +11,7 @@ Produce documentation that helps a specific reader complete a task or understand
 
 Load only the context needed for the artifact:
 
-1. Read `AGENTS.md` for repository-wide rules.
+1. Follow [repository-wide guidance](../../AGENTS.md) and its task references.
 2. For public documentation, read `docs/src/content/docs/contributing/docs-style-guide.mdx` completely.
 3. Read [references/docs-practice.md](references/docs-practice.md) when creating or restructuring a page, changing a task path, reviewing accessibility or information architecture, or writing substantial examples.
 4. Read [references/anti-slop.md](references/anti-slop.md) for prose-heavy revisions, de-slopping, or humanization. A small factual correction does not require loading it.

@@ -42,11 +42,13 @@ pnpm dev    # http://localhost:4321
 
 Open the admin at `http://localhost:4321/_emdash/admin`. The setup wizard runs on first launch.
 
-In dev, skip passkey auth with the dev bypass:
+For a local demo that supports it, skip passkey auth with the demo development bypass:
 
 ```
 http://localhost:4321/_emdash/api/setup/dev-bypass?redirect=/_emdash/admin
 ```
+
+This endpoint applies to local demos only. For a generated multi-site host, use the fixture-backed authentication procedure in the [local installation guide](infra/local-install/README.md#capture-authenticated-browser-evidence).
 
 Demo sites apply their `seed/seed.json` automatically on the first request when the database is empty -- there's no separate seed command.
 
@@ -220,11 +222,13 @@ Wrap button labels, headings, descriptions, error messages, placeholders, and `a
 
 Translation PRs are the exception -- see [Translating EmDash](https://docs.emdashcms.com/contributing/translating/) for the full contributor guide.
 
-For RTL and Lingui implementation guidance, follow the admin task reference linked from [AGENTS.md](AGENTS.md).
+For admin components, Lingui, accessibility, and RTL implementation guidance, follow [the admin task reference](docs/agents/admin.md).
 
 ## Getting Help
 
-- [AGENTS.md](AGENTS.md) -- safety boundaries and task-specific implementation references
+- [AGENTS.md](AGENTS.md) -- safety boundaries and task routing
+- [Core implementation](docs/agents/core.md) -- API, database, schema, migration, and runtime patterns
+- [Admin implementation](docs/agents/admin.md) -- UI, localization, accessibility, and RTL patterns
 - [Validation](docs/agents/validation.md) -- local checks and CI coverage
 - [TRIAGE.md](TRIAGE.md) -- guidance for community triagers
 - [GOVERNANCE.md](GOVERNANCE.md) -- roles, decision-making, and team membership
