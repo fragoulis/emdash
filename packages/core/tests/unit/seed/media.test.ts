@@ -223,7 +223,7 @@ describe("$media seed resolution", () => {
 	});
 
 	it("rejects a failed media reference when strict seed application is requested", async () => {
-		mockFetch.mockRejectedValueOnce(new Error("network unavailable"));
+		mockFetch.mockResolvedValueOnce(createMockResponse(MOCK_PNG, "image/png", false, 404));
 		const seed: SeedFile = {
 			version: "1",
 			content: {

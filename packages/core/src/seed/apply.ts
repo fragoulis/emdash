@@ -2358,6 +2358,7 @@ async function resolveMedia(
 
 	// Storage is required for $media resolution
 	if (!ctx.storage) {
+		if (ctx.failOnMediaError) throw new Error(`No storage configured for seed media: ${url}`);
 		console.warn(`Skipping $media reference (no storage configured): ${url}`);
 		result.media.skipped++;
 		return null;
@@ -2378,6 +2379,8 @@ async function resolveMedia(
 		});
 
 		if (!response.ok) {
+			if (ctx.failOnMediaError)
+				throw new Error(`Seed media download failed with status ${response.status}: ${url}`);
 			console.warn(`  ⚠️ Failed to download ${url}: ${response.status}`);
 			result.media.skipped++;
 			return null;
