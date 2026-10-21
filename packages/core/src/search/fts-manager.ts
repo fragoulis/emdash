@@ -11,6 +11,7 @@ import { isSqlite, tableExists as dialectTableExists } from "../database/dialect
 import { selectedSiteId } from "../database/repositories/site-settings.js";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
+import { postgresSearchIdentifier } from "./postgres-identifier.js";
 import { PostgresSearchIndex } from "./postgres-index.js";
 import { SEARCH_TOKENIZERS } from "./types.js";
 import type { SearchConfig, SearchTokenizer } from "./types.js";
@@ -74,7 +75,7 @@ export class FTSManager {
 	async ftsTableExists(collectionSlug: string): Promise<boolean> {
 		const ftsTable = isSqlite(this.db)
 			? this.getFtsTableName(collectionSlug)
-			: `_emdash_search_${collectionSlug}`;
+			: postgresSearchIdentifier(`_emdash_search_${collectionSlug}`);
 		validateIdentifier(collectionSlug, "collection slug");
 		return dialectTableExists(this.db, ftsTable);
 	}
