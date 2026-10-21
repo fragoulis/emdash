@@ -12,6 +12,9 @@ import { SystemSites } from "${componentImport.replace("ClerkSignOut", "SystemSi
 export const prerender = false;
 const locale = resolveLocale(Astro.request);
 const labels = translateCentralAdminLabels(await loadMessages(locale));
+const siteSlug = Astro.url.pathname.startsWith("/site/")
+  ? decodeURIComponent(Astro.url.pathname.slice("/site/".length))
+  : "";
 Astro.response.headers.set("Cache-Control", "private, no-store");
 ---
 <!doctype html>
@@ -37,7 +40,7 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
       <p class="text-sm font-semibold text-kumo-brand">{labels.systemAdministration}</p>
       <h1 class="mt-2 text-2xl font-semibold">{Astro.url.pathname.startsWith("/site/") ? <bdi dir="auto">{decodeURIComponent(Astro.url.pathname.slice("/site/".length))}</bdi> : labels.sites}</h1>
       <p class="mt-3 text-kumo-subtle"><bdi dir="auto">{labels.sitesDescription}</bdi></p>
-      <div class="mt-6"><SystemSites client:load labels={labels} /></div>
+      <div class="mt-6"><SystemSites client:load labels={labels} siteSlug={siteSlug} /></div>
     </main>
   </body>
 </html>
