@@ -14,13 +14,13 @@ Routes live in `packages/core/src/astro/routes/api/`; each starts with `export c
 
 Use shared utilities, not local variants:
 
-| Need | Use |
-| --- | --- |
-| Error response | `apiError(code, message, status)` from `#api/error.js` |
-| Catch block | `handleError(error, message, code)`; never expose internal error messages |
-| Body validation | `parseBody(request, zodSchema)` from `#api/parse.js`; do not cast `request.json()` |
-| Handler result | `unwrapResult(result)` to map error codes to HTTP status |
-| Initialization | `if (!emdash) return apiError("NOT_CONFIGURED", "EmDash is not initialized", 500);` |
+| Need            | Use                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------- |
+| Error response  | `apiError(code, message, status)` from `#api/error.js`                              |
+| Catch block     | `handleError(error, message, code)`; never expose internal error messages           |
+| Body validation | `parseBody(request, zodSchema)` from `#api/parse.js`; do not cast `request.json()`  |
+| Handler result  | `unwrapResult(result)` to map error codes to HTTP status                            |
+| Initialization  | `if (!emdash) return apiError("NOT_CONFIGURED", "EmDash is not initialized", 500);` |
 
 The error mapper is `mapErrorStatus`, not `mapErrorToStatus`. Never add a GET handler for a state-changing operation. Every state-changing route checks authorization. Authorization is permission-based, and `packages/auth/src/rbac.ts` is authoritative. Use `requirePerm` or `requireOwnerPerm`; define new permission strings in `rbac.ts` with a minimum role. State-changing requests require `X-EmDash-Request: 1`, enforced by auth middleware.
 
@@ -46,7 +46,7 @@ Prefer one joined or batched query over multiple round trips. Chunk `IN` paramet
 
 Migrations live in `packages/core/src/database/migrations/`, named `NNN_description.ts`, with `up(db: Kysely<unknown>)` and `down(db: Kysely<unknown>)`. Register each migration with a static import and in `StaticMigrationProvider` in `runner.ts`. Use Kysely schema builder for system tables and parameterized SQL with validated identifiers for `ec_*` tables. On SQLite use `text`, `integer`, `real`, and `blob`; booleans are integer, timestamps are text, and IDs are text ULIDs.
 
-Published migrations are immutable. Add a monotonically increasing migration for corrections. Migrations must be retry-safe after any completed statement, especially on D1, where a lost response can leave an ambiguous outcome. Preserve expand/deploy/contract compatibility: old code tolerates expanded schema; new code tolerates incomplete backfills. When changing existing content tables, update `SchemaRegistry` so new tables match. Use portable dialect behavior, bounded batches, and index conventions.
+Published migrations are immutable. The [migration guard and enforcement inventory](enforcement.md) describe the base-present protection and its limits. Add a monotonically increasing migration for corrections. Migrations must be retry-safe after any completed statement, especially on D1, where a lost response can leave an ambiguous outcome. Preserve expand/deploy/contract compatibility: old code tolerates expanded schema; new code tolerates incomplete backfills. When changing existing content tables, update `SchemaRegistry` so new tables match. Use portable dialect behavior, bounded batches, and index conventions.
 
 Test representative existing data, retries after partial completion, every supported dialect, and realistic data sizes. Add a changeset for each affected published package.
 

@@ -27,7 +27,9 @@ function DeleteButton() {
 	return <Button aria-label={t`Delete post`}>{t`Delete`}</Button>;
 }
 
-<Trans>Published by <strong>{authorName}</strong></Trans>
+<Trans>
+	Published by <strong>{authorName}</strong>
+</Trans>;
 ```
 
 Use `plural` for count-dependent text. Use `msg` descriptors for module-scope labels, then resolve them with `t(descriptor)` inside the component. Do not call `t()` at module scope. Do not concatenate translated fragments; use interpolation or `Trans` so translators can reorder text.

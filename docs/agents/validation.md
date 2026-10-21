@@ -25,7 +25,7 @@ Run `git diff --check`. Inspect changed links, anchors, frontmatter, and the ful
 
 ## Code and MDX changes
 
-Before opening a PR, code and MDX changes must be formatted and pass the applicable local checks above. Add a user-facing changeset when a published package changes. Do not include extracted `messages.po` updates in non-translation changes.
+Before opening a PR, code and MDX changes must be formatted and pass the applicable local checks above. For migration changes, also run the focused immutability tests and local base-present guard from [the enforcement inventory](enforcement.md). CI runs that guard for pull requests, pushes, and merge groups using each event's explicit base commit. It protects numbered migration modules present in that base, not all migration history. Add a user-facing changeset when a published package changes. Do not include extracted `messages.po` updates in non-translation changes.
 
 For visible UI changes, capture screenshots of the rendered result. Include before-and-after screenshots when the result alone does not show the change clearly. Test all new admin UI in Arabic.
 
