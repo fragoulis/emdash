@@ -4,11 +4,27 @@ import { sql } from "kysely";
 import type { Database } from "../database/types.js";
 import { validateIdentifier } from "../database/validate.js";
 import { resolveConfiguredLocale } from "../i18n/config.js";
+import {
+	DEFAULT_POSTGRES_TEXT_SEARCH_CONFIG,
+	resolvePostgresTextSearchConfig,
+	type PostgresTextSearchConfig,
+} from "./postgres-locale.js";
 import type { SearchResult, Suggestion } from "./types.js";
 
 const START = "\uE000";
 const END = "\uE001";
 const WHITESPACE_PATTERN = /\s+/;
+const SEARCH_CONFIGS: PostgresTextSearchConfig[] = [
+	"greek",
+	"english",
+	"french",
+	"german",
+	"italian",
+	"spanish",
+	"portuguese",
+	"russian",
+	DEFAULT_POSTGRES_TEXT_SEARCH_CONFIG,
+];
 
 function escapeHtml(value: string): string {
 	return value.replace(
@@ -36,6 +52,23 @@ function rowConfig() {
 	return sql`_emdash_search_config(c.locale)`;
 }
 
+function indexedMatch(
+	query: (config: PostgresTextSearchConfig) => ReturnType<typeof sql>,
+	locale?: string,
+) {
+	if (locale) {
+		const config = resolvePostgresTextSearchConfig(locale);
+		return sql`i.search_vector @@ ${query(config)}`;
+	}
+	return sql`(${sql.join(
+		SEARCH_CONFIGS.map(
+			(config) =>
+				sql`(_emdash_search_config(c.locale)::text = ${config} AND i.search_vector @@ ${query(config)})`,
+		),
+		sql` OR `,
+	)})`;
+}
+
 export async function searchPostgresCollection(
 	db: Kysely<Database>,
 	collection: string,
@@ -59,10 +92,21 @@ export async function searchPostgresCollection(
 	const phrase = words.join(" ");
 	const config = rowConfig();
 	const queryExpr = sql`plainto_tsquery(${config}, ${phrase})`;
-	const indexedMatch = sql`i.search_vector @@ ${queryExpr}`;
+	const match = indexedMatch(
+		(textConfig) => sql`plainto_tsquery(${textConfig}::text::regconfig, ${phrase})`,
+		options.locale ? resolveConfiguredLocale(options.locale) : undefined,
+	);
 	const scopedMatch =
 		options.scope === "title" && title
-			? sql`AND (i.field_vectors ->> ${title})::tsvector @@ ${queryExpr}`
+			? options.locale
+				? sql`AND (i.field_vectors ->> ${title})::tsvector @@ plainto_tsquery(${resolvePostgresTextSearchConfig(resolveConfiguredLocale(options.locale))}::text::regconfig, ${phrase})`
+				: sql`AND (${sql.join(
+						SEARCH_CONFIGS.map(
+							(textConfig) =>
+								sql`(_emdash_search_config(c.locale)::text = ${textConfig} AND (i.field_vectors ->> ${title})::tsvector @@ plainto_tsquery(${textConfig}::text::regconfig, ${phrase}))`,
+						),
+						sql` OR `,
+					)})`
 			: sql``;
 	const rankedFields = options.scope === "title" && title ? [title] : fields;
 	const scoreParts = rankedFields.map((field) => {
@@ -97,7 +141,7 @@ export async function searchPostgresCollection(
 			WHERE co.slug = ${collection} AND f.slug IN (${sql.join(fields.map((field) => sql`${field}`))})
 		) field_meta
 		WHERE i.site_id = ${options.siteId} AND i.locale = c.locale
-			AND ${indexedMatch}
+			AND ${match}
 			${scopedMatch}
 			AND c.status = ${options.status} AND c.deleted_at IS NULL
 			${options.locale ? sql`AND c.locale = ${resolveConfiguredLocale(options.locale)}` : sql``}
@@ -146,8 +190,17 @@ export async function suggestPostgresCollection(
 		FROM ${sql.ref(`_emdash_search_${collection}`)} i
 		JOIN ${sql.ref(`ec_${collection}`)} c ON c.id = i.content_id AND c.site_id = i.site_id
 		WHERE i.site_id = ${options.siteId} AND i.locale = c.locale
-			AND i.search_vector @@ ${tsquery}
-			AND (i.field_vectors ->> ${title})::tsvector @@ ${tsquery}
+			AND ${indexedMatch(
+				(textConfig) => sql`to_tsquery(${textConfig}::text::regconfig, ${prefix})`,
+				options.locale ? resolveConfiguredLocale(options.locale) : undefined,
+			)}
+			AND (${sql.join(
+				SEARCH_CONFIGS.map(
+					(textConfig) =>
+						sql`(_emdash_search_config(c.locale)::text = ${textConfig} AND (i.field_vectors ->> ${title})::tsvector @@ to_tsquery(${textConfig}::text::regconfig, ${prefix}))`,
+				),
+				sql` OR `,
+			)})
 			AND c.status = 'published' AND c.deleted_at IS NULL AND c.${sql.ref(title)} IS NOT NULL
 			${options.locale ? sql`AND c.locale = ${resolveConfiguredLocale(options.locale)}` : sql``}
 		ORDER BY ts_rank_cd((i.field_vectors ->> ${title})::tsvector, ${tsquery}) DESC, c.id ASC LIMIT ${options.limit}

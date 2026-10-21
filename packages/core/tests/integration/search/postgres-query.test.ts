@@ -1,3 +1,4 @@
+import { CompiledQuery, sql, type KyselyPlugin } from "kysely";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runMigrations } from "../../../src/database/migrations/runner.js";
@@ -141,6 +142,17 @@ describePg("PostgreSQL search queries", () => {
 		});
 	});
 
+	it("keeps malformed-locale fallback consistent across trigger indexing and rebuild", async () => {
+		await add("site-a", "malformed-locale", "running", "en--x");
+		await runWithContext({ editMode: false, siteId: "site-a" }, async () => {
+			const before = await searchCollection(ctx.db, "post", "run");
+			expect(before.items.map((item) => item.slug)).not.toContain("malformed-locale");
+			await fts.rebuildIndex("post", await fts.getSearchableFields("post"));
+			const after = await searchCollection(ctx.db, "post", "run");
+			expect(after.items.map((item) => item.slug)).not.toContain("malformed-locale");
+		});
+	});
+
 	it("uses the simple fallback and filters to the requested content locale", async () => {
 		await add("site-a", "unsupported", "running", "xx");
 		await add("site-a", "locale-en", "sharedlocaleprobe", "en");
@@ -151,6 +163,56 @@ describePg("PostgreSQL search queries", () => {
 			const english = await searchCollection(ctx.db, "post", "sharedlocaleprobe", { locale: "en" });
 			expect(english.items.map((item) => item.slug)).toEqual(["locale-en"]);
 		});
+	});
+
+	it("uses GIN indexes for selective generated search and suggestion queries", async () => {
+		await add("site-a", "gin-probe", "ginneedleprobe", "en");
+		await sql`ALTER TABLE ec_post DISABLE TRIGGER _emdash_search_post_sync`.execute(ctx.db);
+		await sql`INSERT INTO ec_post (id, site_id, slug, status, locale, title, headline, content)
+			SELECT 'gin-content-' || n::text, 'site-a', 'gin-content-' || n::text,
+				'published', 'en', 'common filler words', 'common filler words', '[]'::jsonb
+			FROM generate_series(1, 30000) AS n`.execute(ctx.db);
+		await sql`ALTER TABLE ec_post ENABLE TRIGGER _emdash_search_post_sync`.execute(ctx.db);
+		await sql`INSERT INTO _emdash_search_post
+			(site_id, content_id, locale, search_vector, title_vector, field_vectors)
+			SELECT site_id, id, locale, to_tsvector('english', 'common filler words'),
+				to_tsvector('english', 'common filler words'),
+				jsonb_build_object('title', to_tsvector('english', 'common filler words')::text,
+					'headline', to_tsvector('english', 'common filler words')::text,
+					'content', to_tsvector('english', 'common filler words')::text)
+			FROM ec_post WHERE id LIKE 'gin-content-%'`.execute(ctx.db);
+		await sql`ANALYZE ec_post`.execute(ctx.db);
+		await sql`ANALYZE _emdash_search_post`.execute(ctx.db);
+		const captured: ReturnType<typeof CompiledQuery.raw>[] = [];
+		const plugin: KyselyPlugin = {
+			transformQuery(args) {
+				const query = ctx.db.getExecutor().compileQuery(args.node, args.queryId);
+				if (query.sql.includes('"_emdash_search_post"') && query.sql.includes("search_vector @@")) {
+					captured.push(CompiledQuery.raw(query.sql, [...query.parameters]));
+				}
+				return args.node;
+			},
+			transformResult(args) {
+				return Promise.resolve(args.result);
+			},
+		};
+		const instrumented = ctx.db.withPlugin(plugin);
+		await runWithContext({ editMode: false, siteId: "site-a" }, async () => {
+			await searchCollection(instrumented, "post", "ginneedleprobe", { locale: "en" });
+			await getSuggestions(instrumented, "ginneedleprobe", { locale: "en" });
+		});
+		expect(captured).toHaveLength(2);
+		for (const query of captured) {
+			const plan = await ctx.db.transaction().execute(async (trx) => {
+				await sql`SET LOCAL enable_seqscan = off`.execute(trx);
+				const explained = await trx.executeQuery<{ "QUERY PLAN": string }>(
+					CompiledQuery.raw(`EXPLAIN (ANALYZE, BUFFERS) ${query.sql}`, [...query.parameters]),
+				);
+				return explained.rows.map((row) => row["QUERY PLAN"]).join("\\n");
+			});
+			expect(plan).toContain("idx__emdash_search_post_search_vector");
+			expect(plan).toContain("Bitmap Index Scan");
+		}
 	});
 
 	it("escapes stored markup in snippets and rejects missing site context", async () => {

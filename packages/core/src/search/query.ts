@@ -400,7 +400,7 @@ async function searchSingleCollection(
 		AND c.deleted_at IS NULL
 		AND c.site_id = ${options.siteId}
 		${locale ? sql`AND c.locale = ${locale}` : sql``}
-		ORDER BY score
+		ORDER BY score, c.id ASC
 		LIMIT ${limit}
 	`.execute(db);
 	} catch (error) {
