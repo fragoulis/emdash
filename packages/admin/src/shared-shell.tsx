@@ -3,6 +3,8 @@ import * as React from "react";
 
 import { BrandIcon } from "./components/Logo.js";
 
+export { SystemAdminShell } from "./components/SystemAdminShell.js";
+export type { SystemAdminShellProps } from "./components/SystemAdminShell.js";
 export { ThemeProvider } from "./components/ThemeProvider.js";
 export { ThemeToggle } from "./components/ThemeToggle.js";
 
