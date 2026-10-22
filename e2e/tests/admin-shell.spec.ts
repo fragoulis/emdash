@@ -42,6 +42,7 @@ for (const { locale, theme, width, height, rtl } of cases) {
 		await page.screenshot({
 			path: testInfo.outputPath(`${locale}-${theme}-${width}-shell.png`),
 			fullPage: true,
+			animations: "disabled",
 		});
 
 		if (width > 600) {
@@ -81,6 +82,7 @@ for (const { locale, theme, width, height, rtl } of cases) {
 			.locator(".kumo-popover-popup:visible")
 			.filter({ hasText: "dev@emdash.local" })
 			.last();
+		await expect(menu).toHaveCSS("opacity", "1");
 		const menuBox = await menu.boundingBox();
 		expect(menuBox).not.toBeNull();
 		expect(menuBox!.x).toBeGreaterThanOrEqual(0);
@@ -88,6 +90,7 @@ for (const { locale, theme, width, height, rtl } of cases) {
 		await page.screenshot({
 			path: testInfo.outputPath(`${locale}-${theme}-${width}-user-menu.png`),
 			fullPage: true,
+			animations: "disabled",
 		});
 		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
 			width,

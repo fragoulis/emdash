@@ -1,5 +1,5 @@
 import { execFileSync, type ChildProcess } from "node:child_process";
-import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 
@@ -761,6 +761,150 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			const activeStates = query(
 				"SELECT string_agg(slug || ':' || active, ',' ORDER BY slug) FROM _emdash_sites",
 			);
+			const captureDir = process.env.EMDASH_CAPTURE_DIR;
+			if (captureDir) {
+				if (!captureDir.startsWith("/")) throw new Error("EMDASH_CAPTURE_DIR must be absolute");
+				mkdirSync(captureDir, { recursive: true });
+			}
+			const systemCases = [...(["en", "ar"] as const)].flatMap((locale) =>
+				(["light", "dark"] as const).flatMap((theme) =>
+					([1440, 390] as const).map((width) => ({
+						locale,
+						theme,
+						width,
+						rtl: locale === "ar",
+					})),
+				),
+			);
+			for (const { locale, theme, width, rtl } of systemCases) {
+				const context = await browser.newContext({
+					locale,
+					colorScheme: theme,
+					viewport: { width, height: 900 },
+				});
+				await context.addCookies([
+					{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+				]);
+				const page = await context.newPage();
+				const pageErrors: string[] = [];
+				const consoleErrors: string[] = [];
+				page.on("pageerror", (error) => pageErrors.push(error.message));
+				page.on("console", (message) => {
+					if (message.type() === "error") consoleErrors.push(message.text());
+				});
+				const tag = `${locale}-${theme}-${width}`;
+				const capture = async (name: string) => {
+					if (!captureDir) return;
+					await page.screenshot({
+						path: resolve(captureDir, `system-${tag}-${name}.png`),
+						fullPage: true,
+						animations: "disabled",
+					});
+				};
+				try {
+					await page.goto(`http://localhost:${port}/sites`);
+					await page.getByRole("heading", { name: "Sites", exact: true }).waitFor();
+					await page.getByRole("button", { name: /Test Admin|admin\+fixture@test\.com/ }).waitFor();
+					await page.getByRole("main").locator('a[href="/site/foo"]').waitFor();
+					expect(
+						await page
+							.locator('a[data-sidebar="menu-button"]')
+							.evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+					).toEqual(["/sites"]);
+					await expect.poll(() => page.locator("html").getAttribute("lang")).toBe(locale);
+					await expect
+						.poll(() => page.locator("html").getAttribute("dir"))
+						.toBe(rtl ? "rtl" : "ltr");
+					await expect.poll(() => page.locator("html").getAttribute("data-mode")).toBe(theme);
+					const initialErrors = [...pageErrors, ...consoleErrors];
+					expect(initialErrors).toEqual([]);
+					const layout = await page.evaluate(() => {
+						const header = document.querySelector("header")!;
+						const main = document.querySelector("main")!;
+						const sidebar = document.querySelector('[data-sidebar="sidebar"]')!;
+						const hr = header.getBoundingClientRect();
+						const mr = main.getBoundingClientRect();
+						const sr = sidebar.getBoundingClientRect();
+						return {
+							headerHeight: hr.height,
+							main: { left: mr.left, right: mr.right, top: mr.top, bottom: mr.bottom },
+							sidebar: { left: sr.left, right: sr.right },
+							viewport: innerWidth,
+							overflow: document.documentElement.scrollWidth > innerWidth,
+						};
+					});
+					expect(layout.headerHeight).toBe(58);
+					expect(layout.main.left).toBeGreaterThanOrEqual(0);
+					expect(layout.main.right).toBeLessThanOrEqual(width);
+					expect(layout.overflow).toBe(false);
+					if (width > 600) {
+						if (rtl) expect(layout.main.right).toBeLessThanOrEqual(layout.sidebar.left);
+						else expect(layout.sidebar.right).toBeLessThanOrEqual(layout.main.left);
+					} else {
+						const trigger = page.locator('header button[data-sidebar="trigger"]');
+						await trigger.click();
+						const sidebar = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
+						await expect.poll(() => sidebar.getAttribute("aria-hidden")).toBe("false");
+						await expect
+							.poll(async () => {
+								const box = await sidebar.boundingBox();
+								if (!box) return false;
+								return (
+									box.x >= 0 &&
+									box.x + box.width <= width &&
+									(rtl ? box.x + box.width >= width - 2 : box.x <= 2)
+								);
+							})
+							.toBe(true);
+						await page.keyboard.press("Escape");
+						await expect.poll(() => sidebar.getAttribute("aria-hidden")).toBe("true");
+						await expect
+							.poll(() => trigger.evaluate((el) => el === document.activeElement))
+							.toBe(true);
+					}
+					await capture("list");
+					await page.getByRole("main").locator('a[href="/site/foo"]').click();
+					await page.getByRole("heading", { name: "foo", exact: true }).waitFor();
+					await capture("detail");
+					await page.getByRole("button", { name: /Test Admin|admin\+fixture@test\.com/ }).click();
+					const matrixIdentityMenu = page
+						.locator(".kumo-popover-popup")
+						.filter({ hasText: "admin+fixture@test.com" });
+					await matrixIdentityMenu.getByText("admin+fixture@test.com", { exact: true }).waitFor();
+					await expect
+						.poll(() => matrixIdentityMenu.evaluate((el) => getComputedStyle(el).opacity))
+						.toBe("1");
+					const menuBox = await matrixIdentityMenu.boundingBox();
+					if (!menuBox) throw new Error("Identity menu has no layout box");
+					expect(menuBox.x).toBeGreaterThanOrEqual(0);
+					expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(width);
+					expect(menuBox.y).toBeGreaterThanOrEqual(0);
+					expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(900);
+					await capture("identity-menu");
+					await page.getByRole("button", { name: /Test Admin|admin\+fixture@test\.com/ }).click();
+					await expect.poll(() => matrixIdentityMenu.isVisible()).toBe(false);
+					await page
+						.getByRole("button", {
+							name:
+								locale === "en"
+									? theme === "light"
+										? "Switch to dark"
+										: "Switch to light"
+									: theme === "light"
+										? "التبديل إلى الداكن"
+										: "التبديل إلى الفاتح",
+							exact: true,
+						})
+						.click();
+					const nextTheme = theme === "light" ? "dark" : "light";
+					await expect.poll(() => page.locator("html").getAttribute("data-mode")).toBe(nextTheme);
+					await page.reload();
+					await expect.poll(() => page.locator("html").getAttribute("data-mode")).toBe(nextTheme);
+					expect([...pageErrors, ...consoleErrors]).toEqual([]);
+				} finally {
+					await context.close();
+				}
+			}
 			const disabledContext = await browser.newContext({ locale: "en" });
 			await disabledContext.addCookies([
 				{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
