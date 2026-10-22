@@ -25,7 +25,7 @@ Astro.response.headers.set("Cache-Control", "private, no-store");
     <link rel="stylesheet" href={adminStylesUrl} />
   </head>
   <body class="min-h-screen bg-kumo-canvas text-kumo-default">
-    <SystemAdministration client:load locale={locale} messages={messages} labels={labels} siteSlug={siteSlug}
+    <SystemAdministration client:only="react" locale={locale} messages={messages} labels={labels} siteSlug={siteSlug}
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} />
   </body>
 </html>
