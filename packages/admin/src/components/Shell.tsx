@@ -6,18 +6,15 @@ import type { AdminManifest } from "../lib/api/client.js";
 import { useCurrentUser } from "../lib/api/current-user";
 import { getLocaleDir } from "../locales/config.js";
 import { useLocale } from "../locales/useLocale.js";
+import { SharedShellLayout } from "../shared-shell.js";
 import { AdminCommandPalette } from "./AdminCommandPalette";
 import { Header } from "./Header";
 import { RegistryConfigurationBanner } from "./RegistryConfigurationBanner.js";
-import { Sidebar, SidebarNav } from "./Sidebar";
+import { SidebarNav } from "./Sidebar";
 import { WelcomeModal } from "./WelcomeModal";
 
 declare module "@tanstack/react-router" {
 	interface StaticDataRouteOption {
-		/**
-		 * Route renders edge-to-edge: the Shell's <main> drops its padding and
-		 * page scroll, and the route's component manages its own scroll regions.
-		 */
 		fullBleed?: boolean;
 	}
 }
@@ -96,55 +93,35 @@ export function Shell({ children, manifest }: ShellProps) {
 	}, [t, user]);
 
 	return (
-		<Sidebar.Provider
-			defaultOpen
-			side={sidebarSide}
-			style={
-				{
-					"--sidebar-bg": "var(--color-kumo-elevated)",
-					height: "100svh",
-					minHeight: "0",
-					overflow: "hidden",
-				} as React.CSSProperties
-			}
-		>
-			{/* Sidebar navigation */}
-			<SidebarNav manifest={manifest} />
-
-			{/* Main content area — scrolls independently so sidebar stays full height */}
-			<div className="flex flex-1 flex-col overflow-hidden">
-				<Header />
-				{manifest.registryConfigurationError && (
+		<SharedShellLayout
+			sidebarSide={sidebarSide}
+			fullBleed={fullBleed}
+			sidebar={<SidebarNav manifest={manifest} />}
+			header={<Header />}
+			beforeMain={
+				manifest.registryConfigurationError ? (
 					<div className="space-y-3 px-6 pt-6">
 						<RegistryConfigurationBanner error={manifest.registryConfigurationError} />
 					</div>
-				)}
-				{/* Full-bleed clips because scrollIntoView() and focus() can still scroll
-				    an overflow-hidden box, pushing the page up under the header. A
-				    clipping box isn't a scroll container, so it also needs min-h-0. */}
-				<main
-					className={
-						fullBleed
-							? "min-h-0 flex-1 overflow-clip bg-kumo-elevated"
-							: "flex-1 overflow-y-auto bg-kumo-elevated p-6"
-					}
-				>
-					{children}
-				</main>
-			</div>
-
-			{/* Welcome modal for first-time users */}
-			{user && (
-				<WelcomeModal
-					open={welcomeModalOpen}
-					onClose={() => setWelcomeModalOpen(false)}
-					userName={user.name}
-					userRole={user.role}
-				/>
-			)}
-
-			{/* Command palette for quick navigation */}
-			<AdminCommandPalette manifest={manifest} />
-		</Sidebar.Provider>
+				) : undefined
+			}
+			afterMain={
+				<>
+					{/* Welcome modal for first-time users */}
+					{user && (
+						<WelcomeModal
+							open={welcomeModalOpen}
+							onClose={() => setWelcomeModalOpen(false)}
+							userName={user.name}
+							userRole={user.role}
+						/>
+					)}
+					{/* Command palette for quick navigation */}
+					<AdminCommandPalette manifest={manifest} />
+				</>
+			}
+		>
+			{children}
+		</SharedShellLayout>
 	);
 }

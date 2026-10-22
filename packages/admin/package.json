@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./shared-shell": {
+      "types": "./dist/shared-shell.d.ts",
+      "default": "./dist/shared-shell.js"
+    },
     "./styles.css": "./dist/styles.css",
     "./locales": {
       "types": "./dist/locales/index.d.ts",
