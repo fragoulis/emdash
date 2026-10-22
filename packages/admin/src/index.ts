@@ -4,6 +4,9 @@ export { AdminApp, default as App } from "./App";
 // Router
 export { createAdminRouter, Link, useNavigate, useParams } from "./router";
 
+// Router-independent shared admin presentation
+export * from "./shared-shell.js";
+
 // Components
 export * from "./components";
 

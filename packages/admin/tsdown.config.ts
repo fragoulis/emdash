@@ -57,6 +57,7 @@ export default defineConfig({
 	// React/Kumo graph must not be pulled into the server bundle.
 	entry: [
 		"src/index.ts",
+		"src/shared-shell.tsx",
 		"src/locales/index.ts",
 		"src/locales/server.ts",
 		"src/locales/config.ts",

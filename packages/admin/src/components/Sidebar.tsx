@@ -23,6 +23,7 @@ import {
 	resolveTaxonomyDefinitions,
 	type LocalizedTaxonomyDefinition,
 } from "../lib/taxonomy-definitions.js";
+import { SharedSidebarBrand, SharedSidebarFrame } from "../shared-shell.js";
 import {
 	ADMIN_NAV_ICONS,
 	getCollectionNavIcon,
@@ -30,7 +31,6 @@ import {
 	resolveNavIcon,
 	toPhosphorIconName,
 } from "./admin-navigation-icons.js";
-import { BrandIcon } from "./Logo.js";
 
 // Re-export for Shell.tsx and Header.tsx
 export { KumoSidebar as Sidebar, useSidebar };
@@ -631,80 +631,21 @@ export function SidebarNav({ manifest }: SidebarNavProps) {
 	}
 
 	return (
-		<KumoSidebar className="emdash-sidebar" aria-label={t`Admin navigation`}>
-			<KumoSidebar.Header className="px-[11px] transition-[padding] duration-(--sidebar-animation-duration) motion-reduce:transition-none group-not-data-[state=collapsed]/sidebar:px-3.5">
-				<Link
-					to="/"
-					className="flex w-[calc(var(--sidebar-width)-1.75rem)] shrink-0 items-center gap-2 overflow-hidden py-1 ps-2.5 group-data-[state=collapsed]/sidebar:-translate-x-[3px] rtl:group-data-[state=collapsed]/sidebar:translate-x-[3px]"
-				>
-					<BrandIcon
-						logoUrl={manifest.admin?.logo}
-						siteName={manifest.admin?.siteName}
-						className="size-5 shrink-0"
-						aria-hidden="true"
-					/>
-					<span className="grid min-w-0 flex-1 grid-cols-[1fr] transition-[grid-template-columns] duration-(--sidebar-animation-duration) ease-(--sidebar-easing) motion-reduce:transition-none group-data-[state=collapsed]/sidebar:grid-cols-[0fr]">
-						<span className="min-w-0 overflow-hidden">
-							<span className="block w-[calc(var(--sidebar-width)-4.5rem)] truncate font-semibold">
-								{manifest.admin?.siteName || "EmDash"}
-							</span>
-						</span>
-					</span>
-				</Link>
-			</KumoSidebar.Header>
-
-			<KumoSidebar.Content>
-				{/* Dashboard — standalone */}
-				<KumoSidebar.Group className="mt-2 md:mt-1.5">
-					<KumoSidebar.Menu>
-						<NavMenuLink
-							item={{ to: "/", label: t`Dashboard`, icon: ADMIN_NAV_ICONS.dashboard }}
-							isActive={isItemActive("/", currentPath)}
-						/>
-						{userRole >= ROLE_CONTRIBUTOR && !hiddenNavItems?.includes("calendar") && (
-							<NavMenuLink
-								item={{ to: "/calendar", label: t`Calendar`, icon: ADMIN_NAV_ICONS.calendar }}
-								isActive={isItemActive("/calendar", currentPath)}
-							/>
-						)}
-					</KumoSidebar.Menu>
-				</KumoSidebar.Group>
-
-				{/* Content — collections + media */}
-				{visibleCollectionEntries(manifest.collections).length > 0 && (
-					<KumoSidebar.Group>
-						<KumoSidebar.GroupLabel>{t`Content`}</KumoSidebar.GroupLabel>
-						<KumoSidebar.Menu>{renderNavEntries(visibleContent)}</KumoSidebar.Menu>
-					</KumoSidebar.Group>
-				)}
-
-				{/* Manage — comments, menus, taxonomies, etc. */}
-				{visibleManage.length > 0 && (
-					<KumoSidebar.Group>
-						<KumoSidebar.GroupLabel>{t`Manage`}</KumoSidebar.GroupLabel>
-						<KumoSidebar.Menu>{renderNavItems(visibleManage)}</KumoSidebar.Menu>
-					</KumoSidebar.Group>
-				)}
-
-				{/* Admin — content types, users, plugins, import */}
-				{visibleAdmin.length > 0 && (
-					<KumoSidebar.Group>
-						<KumoSidebar.GroupLabel>{t`Admin`}</KumoSidebar.GroupLabel>
-						<KumoSidebar.Menu>{renderNavItems(visibleAdmin)}</KumoSidebar.Menu>
-					</KumoSidebar.Group>
-				)}
-
-				{/* Plugin pages */}
-				{visiblePlugins.length > 0 && (
-					<KumoSidebar.Group>
-						<KumoSidebar.GroupLabel>{t`Plugins`}</KumoSidebar.GroupLabel>
-						<KumoSidebar.Menu>{renderNavEntries(visiblePlugins)}</KumoSidebar.Menu>
-					</KumoSidebar.Group>
-				)}
-			</KumoSidebar.Content>
-
-			<KumoSidebar.Footer className="gap-0">
-				<KumoSidebar.Trigger className="rtl:rotate-180" />
+		<SharedSidebarFrame
+			className="emdash-sidebar"
+			ariaLabel={t`Admin navigation`}
+			brand={
+				<SharedSidebarBrand
+					logoUrl={manifest.admin?.logo}
+					siteName={manifest.admin?.siteName}
+					renderLink={(children, className) => (
+						<Link to="/" className={className}>
+							{children}
+						</Link>
+					)}
+				/>
+			}
+			footer={
 				<div className="min-w-0 flex-1 overflow-hidden">
 					<p
 						data-testid="admin-version"
@@ -713,7 +654,55 @@ export function SidebarNav({ manifest }: SidebarNavProps) {
 						{formatAdminVersion(manifest.version, manifest.commit, manifest.admin?.footerLabel)}
 					</p>
 				</div>
-			</KumoSidebar.Footer>
-		</KumoSidebar>
+			}
+		>
+			{/* Dashboard — standalone */}
+			<KumoSidebar.Group className="mt-2 md:mt-1.5">
+				<KumoSidebar.Menu>
+					<NavMenuLink
+						item={{ to: "/", label: t`Dashboard`, icon: ADMIN_NAV_ICONS.dashboard }}
+						isActive={isItemActive("/", currentPath)}
+					/>
+					{userRole >= ROLE_CONTRIBUTOR && !hiddenNavItems?.includes("calendar") && (
+						<NavMenuLink
+							item={{ to: "/calendar", label: t`Calendar`, icon: ADMIN_NAV_ICONS.calendar }}
+							isActive={isItemActive("/calendar", currentPath)}
+						/>
+					)}
+				</KumoSidebar.Menu>
+			</KumoSidebar.Group>
+
+			{/* Content — collections + media */}
+			{visibleCollectionEntries(manifest.collections).length > 0 && (
+				<KumoSidebar.Group>
+					<KumoSidebar.GroupLabel>{t`Content`}</KumoSidebar.GroupLabel>
+					<KumoSidebar.Menu>{renderNavEntries(visibleContent)}</KumoSidebar.Menu>
+				</KumoSidebar.Group>
+			)}
+
+			{/* Manage — comments, menus, taxonomies, etc. */}
+			{visibleManage.length > 0 && (
+				<KumoSidebar.Group>
+					<KumoSidebar.GroupLabel>{t`Manage`}</KumoSidebar.GroupLabel>
+					<KumoSidebar.Menu>{renderNavItems(visibleManage)}</KumoSidebar.Menu>
+				</KumoSidebar.Group>
+			)}
+
+			{/* Admin — content types, users, plugins, import */}
+			{visibleAdmin.length > 0 && (
+				<KumoSidebar.Group>
+					<KumoSidebar.GroupLabel>{t`Admin`}</KumoSidebar.GroupLabel>
+					<KumoSidebar.Menu>{renderNavItems(visibleAdmin)}</KumoSidebar.Menu>
+				</KumoSidebar.Group>
+			)}
+
+			{/* Plugin pages */}
+			{visiblePlugins.length > 0 && (
+				<KumoSidebar.Group>
+					<KumoSidebar.GroupLabel>{t`Plugins`}</KumoSidebar.GroupLabel>
+					<KumoSidebar.Menu>{renderNavEntries(visiblePlugins)}</KumoSidebar.Menu>
+				</KumoSidebar.Group>
+			)}
+		</SharedSidebarFrame>
 	);
 }
