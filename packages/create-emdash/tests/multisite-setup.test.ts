@@ -714,15 +714,113 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
 			]);
 			const adminPage = await adminContext.newPage();
+			const shellRequests: string[] = [];
+			adminPage.on("request", (observedRequest) => shellRequests.push(observedRequest.url()));
 			await adminPage.goto(`http://localhost:${port}/admin`);
 			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
 			await adminPage.getByRole("button", { name: "Test Admin" }).click();
+			const identityMenu = adminPage.locator(".kumo-popover-popup");
+			await identityMenu.getByText("admin+fixture@test.com", { exact: true }).waitFor();
+			await identityMenu.getByText("Test Admin", { exact: true }).waitFor();
+			expect(await identityMenu.getByText("Dev Admin", { exact: true }).count()).toBe(0);
+			expect(await identityMenu.getByRole("link", { name: /Settings|Security/ }).count()).toBe(0);
 			await adminPage
 				.locator(".kumo-popover-popup")
 				.getByRole("button", { name: "Sign out" })
 				.waitFor();
 			await adminPage.getByRole("button", { name: "Test Admin" }).click();
 			expect(await adminPage.locator("html").getAttribute("dir")).toBe("rtl");
+			await adminPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).waitFor();
+			expect(
+				shellRequests.some((url) =>
+					/\/_emdash\/api\/(?!system\/(?:identity|sites(?:\/|$|\?)))/.test(url),
+				),
+			).toBe(false);
+			await adminPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).waitFor();
+			await adminPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
+			await adminPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).click();
+			await adminPage.getByRole("heading", { name: "foo" }).waitFor();
+			expect(
+				shellRequests.some((url) =>
+					/\/_emdash\/api\/(?!system\/(?:identity|sites(?:\/|$|\?)))/.test(url),
+				),
+			).toBe(false);
+			await adminPage.goBack();
+			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
+			await adminPage.route("**/_emdash/api/system/identity", async (route) => {
+				const response = await route.fetch();
+				const payload = await response.json();
+				payload.data.name = null;
+				await route.fulfill({ response, json: payload });
+			});
+			await adminPage.reload();
+			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
+			await adminPage.getByRole("button", { name: "admin+fixture@test.com" }).waitFor();
+			await adminPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
+			await adminPage.unroute("**/_emdash/api/system/identity");
+			const activeStates = query(
+				"SELECT string_agg(slug || ':' || active, ',' ORDER BY slug) FROM _emdash_sites",
+			);
+			const disabledContext = await browser.newContext({ locale: "en" });
+			await disabledContext.addCookies([
+				{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+			]);
+			const disabledPage = await disabledContext.newPage();
+			try {
+				query("UPDATE _emdash_sites SET active = 0");
+				expect(query("SELECT count(*) FROM _emdash_sites WHERE active = 1")).toBe("0");
+				expect(query("SELECT count(*) FROM _emdash_sites")).toBe("3");
+				await disabledPage.goto(`http://localhost:${port}/sites`);
+				await disabledPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
+				await disabledPage
+					.getByRole("main")
+					.getByRole("link", { name: "Acceptance Site" })
+					.waitFor();
+				await disabledPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
+				expect(await disabledPage.getByText("Disabled", { exact: true }).count()).toBe(3);
+				await disabledPage.getByRole("main").getByRole("link", { name: "bar" }).click();
+				await disabledPage.getByRole("heading", { name: "bar" }).waitFor();
+				const openSiteAdmin = disabledPage.getByRole("button", { name: "Open site admin" });
+				await openSiteAdmin.waitFor();
+				expect(await openSiteAdmin.isDisabled()).toBe(true);
+				await disabledPage.goto(`http://localhost:${port}/sites`);
+				await disabledPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).click();
+				await disabledPage.getByLabel("Title").fill("Disabled Foo title");
+				const disabledSave = disabledPage.waitForResponse(
+					(response) =>
+						response.url().endsWith("/_emdash/api/system/sites/foo") &&
+						response.request().method() === "PATCH",
+				);
+				await disabledPage.getByRole("button", { name: "Save title" }).click();
+				expect((await disabledSave).status()).toBe(200);
+				await expect
+					.poll(() => disabledPage.getByRole("button", { name: "Save title" }).isEnabled())
+					.toBe(true);
+				await disabledPage.getByLabel("Title").fill("Acceptance Site");
+				const restoredSave = disabledPage.waitForResponse(
+					(response) =>
+						response.url().endsWith("/_emdash/api/system/sites/foo") &&
+						response.request().method() === "PATCH",
+				);
+				await disabledPage.getByRole("button", { name: "Save title" }).click();
+				expect((await restoredSave).status()).toBe(200);
+				await expect
+					.poll(() => disabledPage.getByRole("button", { name: "Save title" }).isEnabled())
+					.toBe(true);
+				expect(await disabledPage.getByLabel("Title").inputValue()).toBe("Acceptance Site");
+				await disabledPage.goto(`http://localhost:${port}/sites`);
+				await disabledPage
+					.getByRole("main")
+					.getByRole("link", { name: "Acceptance Site" })
+					.waitFor();
+			} finally {
+				for (const row of activeStates.split(",")) {
+					const [slug, active] = row.split(":");
+					if (slug) query(`UPDATE _emdash_sites SET active = ${active} WHERE slug = '${slug}'`);
+				}
+				await disabledContext.close();
+			}
+			await adminPage.goto(`http://localhost:${port}/sites`);
 			await adminPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).waitFor();
 			await adminPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
 			const rtlLayout = await adminPage.evaluate(() => {
@@ -849,6 +947,47 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			await adminPage.goForward();
 			await adminPage.getByRole("heading", { name: "foo" }).waitFor();
 			await adminContext.close();
+
+			const guestContext = await browser.newContext();
+			const guestPage = await guestContext.newPage();
+			await guestPage.goto(`http://localhost:${port}/sites`, { waitUntil: "domcontentloaded" });
+			await guestPage.waitForURL("**/login?**", { waitUntil: "domcontentloaded" });
+			expect(
+				await guestPage.evaluate(async () => (await fetch("/_emdash/api/system/sites")).status),
+			).toBe(401);
+			expect(
+				await guestPage.evaluate(async () => (await fetch("/_emdash/api/system/identity")).status),
+			).toBe(401);
+			await guestContext.close();
+
+			const revokedContext = await browser.newContext();
+			await revokedContext.addCookies([
+				{ name: "__session", value: clerk.jwt(), url: `http://localhost:${port}` },
+			]);
+			const revokedPage = await revokedContext.newPage();
+			try {
+				await revokedPage.goto(`http://localhost:${port}/sites`);
+				await revokedPage.getByRole("button", { name: "Test Admin" }).waitFor();
+				await revokedPage
+					.getByRole("main")
+					.getByRole("link", { name: "Acceptance Site" })
+					.waitFor();
+				clerk.state.superAdmin = false;
+				await revokedPage.reload();
+				await revokedPage.getByRole("heading", { name: "No site access" }).waitFor();
+				expect(await revokedPage.locator("form").count()).toBe(0);
+				expect(
+					await revokedPage.evaluate(async () => (await fetch("/_emdash/api/system/sites")).status),
+				).toBe(403);
+				expect(
+					await revokedPage.evaluate(
+						async () => (await fetch("/_emdash/api/system/identity")).status,
+					),
+				).toBe(403);
+			} finally {
+				clerk.state.superAdmin = true;
+				await revokedContext.close();
+			}
 
 			const editContext = await browser.newContext({ locale: "en" });
 			await editContext.addCookies([
