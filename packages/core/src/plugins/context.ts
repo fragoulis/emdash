@@ -399,8 +399,6 @@ export function createSchemaAccess(db: Kysely<Database>): SchemaAccess {
  * Create read-only taxonomy access (gated on `taxonomies:read`).
  */
 export function createTaxonomyAccess(db: Kysely<Database>): TaxonomyAccess {
-	const taxonomyRepo = new TaxonomyRepository(db);
-
 	return {
 		async getAll(options?: TaxonomyReadOptions): Promise<TaxonomyDefInfo[]> {
 			let query = selectTaxonomyDefs(db);
@@ -417,7 +415,9 @@ export function createTaxonomyAccess(db: Kysely<Database>): TaxonomyAccess {
 		},
 
 		async getTerms(taxonomy: string, options?: TaxonomyReadOptions): Promise<TaxonomyTermInfo[]> {
-			const terms = await taxonomyRepo.findByName(taxonomy, { locale: options?.locale });
+			const terms = await new TaxonomyRepository(db).findByName(taxonomy, {
+				locale: options?.locale,
+			});
 			return terms.map(taxonomyToTermInfo);
 		},
 
@@ -426,7 +426,7 @@ export function createTaxonomyAccess(db: Kysely<Database>): TaxonomyAccess {
 			entryId: string,
 			options?: TaxonomyReadOptions & { taxonomy?: string },
 		): Promise<TaxonomyTermInfo[]> {
-			const terms = await taxonomyRepo.getTermsForEntry(
+			const terms = await new TaxonomyRepository(db).getTermsForEntry(
 				collection,
 				entryId,
 				options?.taxonomy,
