@@ -99,6 +99,30 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect((await request(port, "localhost", "/admin", cookie)).headers.location).toBe("/sites");
 		expect((await request(port, "localhost", "/sites", cookie)).body).toContain("No sites yet");
 		expect(query("SELECT count(*) FROM _emdash_sites")).toBe("0");
+		const anonymousIdentity = await request(port, "localhost", "/_emdash/api/system/identity");
+		expect(anonymousIdentity.status).toBe(401);
+		const identity = await request(port, "localhost", "/_emdash/api/system/identity", cookie);
+		expect(identity.status).toBe(200);
+		expect(identity.headers["cache-control"]).toBe("private, no-store");
+		expect(JSON.parse(identity.body)).toEqual({
+			success: true,
+			data: { id: "user_fixture", name: "Test Admin", email: "admin+fixture@test.com" },
+		});
+		const identityHead = await request(
+			port,
+			"localhost",
+			"/_emdash/api/system/identity",
+			cookie,
+			"HEAD",
+		);
+		expect(identityHead.status).toBe(200);
+		expect(identityHead.body).toBe("");
+		expect(identityHead.headers["cache-control"]).toBe("private, no-store");
+		for (const method of ["POST", "PATCH"] as const) {
+			expect(
+				(await request(port, "localhost", "/_emdash/api/system/identity", cookie, method)).status,
+			).toBe(403);
+		}
 		{
 			const { chromium } = await import("../../../node_modules/@playwright/test/index.mjs");
 			const browser = await chromium.launch();
@@ -349,6 +373,9 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 				const publicFoo = await request(port, "foo.localhost", "/");
 				expect(publicFoo.status).toBe(200);
 				expect(publicFoo.body).toContain("A Weekend with a Side Project");
+				expect((await request(port, "foo.localhost", "/_emdash/api/system/identity")).status).toBe(
+					421,
+				);
 				fooPublicAtCreation = publicFoo.body;
 				await context.close();
 
@@ -616,6 +643,10 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		expect(arabicSites.body).toContain('dir="rtl"');
 
 		clerk.state.superAdmin = false;
+		const deniedIdentity = await request(port, "localhost", "/_emdash/api/system/identity", cookie);
+		expect(deniedIdentity.status).toBe(403);
+		expect(deniedIdentity.body).not.toContain("user_fixture");
+		expect(deniedIdentity.body).not.toContain("admin+fixture@test.com");
 		const unauthorizedCreate = await request(
 			port,
 			"localhost",
@@ -883,6 +914,9 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 		);
 		clerk.state.active = false;
 		expect((await request(port, "localhost", "/_emdash/api/system/sites", cookie)).status).toBe(
+			401,
+		);
+		expect((await request(port, "localhost", "/_emdash/api/system/identity", cookie)).status).toBe(
 			401,
 		);
 		expect((await request(port, "localhost", "/admin", cookie)).headers.location).toContain(

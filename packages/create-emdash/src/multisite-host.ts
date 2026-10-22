@@ -46,9 +46,10 @@ const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const registryDb = new Kysely({ dialect: createDialect({ connectionString: process.env.DATABASE_URL }) });
 const publicApiPath = /^\\/_emdash\\/api\\/(?:media\\/file\\/|search(?:\\/suggest)?$)/;
 const systemSitesPath = /^\\/_emdash\\/api\\/system\\/sites(?:\\/([a-z][a-z0-9-]*))?$/;
+const systemIdentityPath = "/_emdash/api/system/identity";
 
-function json(response, status, body) {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+function json(response, status, body, cacheControl = "no-store") {
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": cacheControl });
   response.end(JSON.stringify(body));
 }
 
@@ -303,6 +304,12 @@ const server = createServer(async (request, response) => {
         response.writeHead(302, { Location: "/no-access", "Cache-Control": "no-store" });
         response.end();
         return;
+      }
+      if (path === systemIdentityPath) {
+        return json(response, 200, {
+          success: true,
+          data: { id: identity.subject, name: identity.name, email: identity.email },
+        }, "private, no-store");
       }
       if (!landing && !sitePage && !noAccessPage) {
         response.writeHead(403, { "Cache-Control": "no-store" });
