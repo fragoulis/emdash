@@ -157,24 +157,33 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 						const geometry = await page.evaluate(() => {
 							const mainRect = document.querySelector("main")!.getBoundingClientRect();
 							const headingRect = document.querySelector("main h1")!.getBoundingClientRect();
-							const brandRect = document
-								.querySelector("header > div > span")!
-								.getBoundingClientRect();
+							const sidebar = document.querySelector('[data-sidebar="sidebar"]');
 							const rtl = getComputedStyle(document.documentElement).direction === "rtl";
 							return {
 								mainRect,
-								headingStart: rtl ? headingRect.right : headingRect.left,
-								brandStart: rtl ? brandRect.right : brandRect.left,
+								headingRect,
+								sidebarRect: sidebar?.getBoundingClientRect() ?? null,
+								rtl,
+								overflow: document.documentElement.scrollWidth > window.innerWidth,
 								viewportWidth: window.innerWidth,
 							};
 						});
-						if (width === 1440) {
-							expect(geometry.mainRect.width).toBeLessThan(geometry.viewportWidth);
-						} else {
-							expect(geometry.mainRect.left).toBeGreaterThanOrEqual(0);
-							expect(geometry.mainRect.right).toBeLessThanOrEqual(geometry.viewportWidth);
+						expect(geometry.mainRect.left).toBeGreaterThanOrEqual(0);
+						expect(geometry.mainRect.right).toBeLessThanOrEqual(geometry.viewportWidth);
+						expect(geometry.sidebarRect).not.toBeNull();
+						expect(geometry.headingRect.width).toBeGreaterThan(0);
+						expect(
+							Math.abs(
+								(geometry.rtl ? geometry.mainRect.right - 24 : geometry.mainRect.left + 24) -
+									(geometry.rtl ? geometry.headingRect.right : geometry.headingRect.left),
+							),
+						).toBeLessThanOrEqual(1);
+						if (width === 1440 && geometry.sidebarRect) {
+							if (geometry.rtl)
+								expect(geometry.mainRect.right).toBeLessThanOrEqual(geometry.sidebarRect.left);
+							else expect(geometry.sidebarRect.right).toBeLessThanOrEqual(geometry.mainRect.left);
 						}
-						expect(Math.abs(geometry.brandStart - geometry.headingStart)).toBeLessThanOrEqual(1);
+						expect(geometry.overflow).toBe(false);
 					}
 					expect(layout.mainWidth).toBeLessThan(layout.viewportWidth);
 					expect(layout.cardHeadingGap).toBeGreaterThanOrEqual(24);
@@ -707,7 +716,12 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			const adminPage = await adminContext.newPage();
 			await adminPage.goto(`http://localhost:${port}/admin`);
 			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
-			await adminPage.getByRole("button", { name: "Sign out" }).waitFor();
+			await adminPage.getByRole("button", { name: "Test Admin" }).click();
+			await adminPage
+				.locator(".kumo-popover-popup")
+				.getByRole("button", { name: "Sign out" })
+				.waitFor();
+			await adminPage.getByRole("button", { name: "Test Admin" }).click();
 			expect(await adminPage.locator("html").getAttribute("dir")).toBe("rtl");
 			await adminPage.getByRole("main").getByRole("link", { name: "Acceptance Site" }).waitFor();
 			await adminPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
