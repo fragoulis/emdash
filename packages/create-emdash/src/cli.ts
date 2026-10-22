@@ -16,6 +16,7 @@ import * as p from "@clack/prompts";
 import { downloadTemplate } from "giget";
 import pc from "picocolors";
 
+import { getAdminDependencyRange } from "./admin-version.js";
 import {
 	FlagError,
 	HELP_TEXT,
@@ -409,7 +410,7 @@ export async function main(templateSource: typeof downloadTemplate = downloadTem
 				pkg.dependencies["@clerk/clerk-js"] = "^6.38.1";
 				pkg.dependencies["@clerk/localizations"] = "^4.23.0";
 				pkg.dependencies["@cloudflare/kumo"] = "^2.6.0";
-				pkg.dependencies["@emdash-cms/admin"] = "^1.2.0";
+				pkg.dependencies["@emdash-cms/admin"] = getAdminDependencyRange();
 				pkg.scripts.build = "node --env-file-if-exists=.env ./build.mjs";
 				pkg.scripts.start = "node --env-file-if-exists=.env ./host.mjs";
 				pkg.scripts.dev = "npm run build && npm run start";
