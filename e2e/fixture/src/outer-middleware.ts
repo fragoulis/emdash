@@ -33,7 +33,10 @@ const handleRequest: typeof onRequest = async (context, next) => {
 		});
 	}
 
-	const response = await next();
+	const response =
+		context.url.hostname === "localhost"
+			? await runWithContext({ editMode: false, siteId: "site-default" }, next)
+			: await next();
 	if (context.request.headers.get("X-Outer-Finalize") !== "1") return response;
 
 	const html = (await response.text()).replaceAll(
