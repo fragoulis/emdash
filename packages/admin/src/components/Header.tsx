@@ -1,11 +1,15 @@
 import { LinkButton } from "@cloudflare/kumo";
 import { useLingui } from "@lingui/react/macro";
-import { SignOut, Shield, Gear, ArrowSquareOut } from "@phosphor-icons/react";
+import { Shield, Gear, ArrowSquareOut } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
 
 import { apiFetch } from "../lib/api/client";
 import { useCurrentUser } from "../lib/api/current-user";
-import { SharedHeaderPresentation, SharedIdentityMenu } from "../shared-shell.js";
+import {
+	SharedHeaderPresentation,
+	SharedIdentityMenu,
+	SharedLogoutButton,
+} from "../shared-shell.js";
 import { ThemeToggle } from "./ThemeToggle";
 
 export type { CurrentUser } from "../lib/api/current-user";
@@ -76,15 +80,7 @@ export function Header() {
 						</Link>
 					</>
 				)}
-				logoutAction={
-					<button
-						onClick={handleLogout}
-						className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-start text-sm text-kumo-danger hover:bg-kumo-danger/10"
-					>
-						<SignOut className="h-4 w-4" />
-						{t`Log out`}
-					</button>
-				}
+				logoutAction={<SharedLogoutButton onClick={handleLogout}>{t`Log out`}</SharedLogoutButton>}
 			/>
 		</SharedHeaderPresentation>
 	);

@@ -1,13 +1,15 @@
 export const clerkSignOutSource = `import { Button } from "@cloudflare/kumo";
+import { SharedLogoutButton } from "@emdash-cms/admin/shared-shell";
 import { useState } from "react";
 
 export interface ClerkSignOutProps {
   publishableKey: string;
   label: string;
   errorLabel: string;
+  appearance?: "standalone" | "menu";
 }
 
-export function ClerkSignOut({ publishableKey, label, errorLabel }: ClerkSignOutProps) {
+export function ClerkSignOut({ publishableKey, label, errorLabel, appearance = "standalone" }: ClerkSignOutProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
 
@@ -27,9 +29,13 @@ export function ClerkSignOut({ publishableKey, label, errorLabel }: ClerkSignOut
 
   return (
     <div>
-      <Button type="button" onClick={() => void signOut()} disabled={busy}>
-        {label}
-      </Button>
+      {appearance === "menu" ? (
+        <SharedLogoutButton onClick={() => void signOut()} disabled={busy}>{label}</SharedLogoutButton>
+      ) : (
+        <Button type="button" onClick={() => void signOut()} disabled={busy}>
+          {label}
+        </Button>
+      )}
       {error ? <p className="mt-3 text-kumo-danger" role="alert" dir="auto">{errorLabel}</p> : null}
     </div>
   );
