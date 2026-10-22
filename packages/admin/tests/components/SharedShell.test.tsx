@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	SharedHeaderPresentation,
 	SharedIdentityMenu,
+	SharedLogoutButton,
 	SharedShellLayout,
 	SharedSidebarBrand,
 	SharedSidebarFrame,
@@ -10,6 +11,25 @@ import {
 import { render } from "../utils/render.tsx";
 
 describe("shared admin shell presentation", () => {
+	it("forwards logout activation and disabled state through the shared Kumo control", async () => {
+		const onClick = vi.fn();
+		const screen = await render(
+			<>
+				<SharedLogoutButton onClick={onClick}>Log out</SharedLogoutButton>
+				<SharedLogoutButton onClick={onClick} disabled>
+					Sign out
+				</SharedLogoutButton>
+			</>,
+		);
+
+		const logout = screen.getByRole("button", { name: "Log out" });
+		const signOut = screen.getByRole("button", { name: "Sign out" });
+		expect(logout).toBeEnabled();
+		expect(signOut).toBeDisabled();
+		await logout.click();
+		expect(onClick).toHaveBeenCalledOnce();
+	});
+
 	it("renders supplied navigation, identity actions, logout, and page content without a site context", async () => {
 		const logout = vi.fn();
 		const screen = await render(

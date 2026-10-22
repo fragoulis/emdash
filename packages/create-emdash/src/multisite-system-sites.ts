@@ -47,7 +47,7 @@ export function SystemAdministration(props: SystemAdministrationProps) {
     <div className="mt-6"><SystemSites labels={labels} siteSlug={siteSlug} /></div>
   </>;
   return <SystemAdminShell locale={locale} messages={messages} name={identity?.name} email={identity?.email}
-    logoutAction={<ClerkSignOut publishableKey={publishableKey} label={labels.signOut} errorLabel={labels.signOutError} />}>
+    logoutAction={<ClerkSignOut appearance="menu" publishableKey={publishableKey} label={labels.signOut} errorLabel={labels.signOutError} />}>
     {children}
   </SystemAdminShell>;
 }

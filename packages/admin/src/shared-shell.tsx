@@ -1,4 +1,5 @@
 import { Button, Popover, Sidebar } from "@cloudflare/kumo";
+import { SignOut } from "@phosphor-icons/react";
 import * as React from "react";
 
 import { BrandIcon } from "./components/Logo.js";
@@ -119,6 +120,28 @@ export function SharedSidebarBrand({ logoUrl, siteName, renderLink }: SharedSide
 			</span>
 		</>,
 		"flex w-[calc(var(--sidebar-width)-1.75rem)] shrink-0 items-center gap-2 overflow-hidden py-1 ps-2.5 group-data-[state=collapsed]/sidebar:-translate-x-[3px] rtl:group-data-[state=collapsed]/sidebar:translate-x-[3px]",
+	);
+}
+
+export interface SharedLogoutButtonProps {
+	children: React.ReactNode;
+	onClick: React.MouseEventHandler<HTMLButtonElement>;
+	disabled?: boolean;
+}
+
+/** Shared Kumo logout row for identity menus across admin hosts. */
+export function SharedLogoutButton({ children, onClick, disabled }: SharedLogoutButtonProps) {
+	return (
+		<Button
+			type="button"
+			variant="ghost"
+			onClick={onClick}
+			disabled={disabled}
+			icon={<SignOut className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />}
+			className="w-full justify-start gap-2 rounded-md px-3 py-2 text-start text-sm text-kumo-danger hover:bg-kumo-danger/10"
+		>
+			{children}
+		</Button>
 	);
 }
 
