@@ -1,4 +1,6 @@
 export const systemSitesSource = `import { Button, Input, LinkButton } from "@cloudflare/kumo";
+import { SystemAdminShell, type SystemAdminShellProps } from "@emdash-cms/admin/shared-shell";
+import { ClerkSignOut } from "./ClerkSignOut.js";
 import * as React from "react";
 
 interface SiteRecord {
@@ -12,6 +14,43 @@ interface SiteRecord {
 }
 
 interface SystemSitesProps { labels: Record<string, string>; siteSlug?: string; }
+
+interface SystemAdministrationProps {
+  locale: string; messages: SystemAdminShellProps["messages"]; labels: Record<string, string>;
+  siteSlug: string; publishableKey: string;
+}
+
+export function SystemAdministration(props: SystemAdministrationProps) {
+  const { locale, messages, labels, siteSlug, publishableKey } = props;
+  const [identity, setIdentity] = React.useState<{ name?: string; email?: string } | null>(null);
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/_emdash/api/system/identity", { credentials: "same-origin", signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw new Error("Identity unavailable");
+      const value: unknown = await response.json();
+      if (!value || typeof value !== "object" || (value as { success?: unknown }).success !== true) throw new Error("Invalid identity");
+      const data = (value as { data?: unknown }).data;
+      if (!data || typeof data !== "object") throw new Error("Invalid identity");
+      const user = data as { id?: unknown; name?: unknown; email?: unknown };
+      if (typeof user.id !== "string" || !user.id) throw new Error("Invalid identity id");
+      if (user.name !== undefined && user.name !== null && typeof user.name !== "string") throw new Error("Invalid name");
+      if (typeof user.email !== "string" || !user.email.trim()) throw new Error("Invalid email");
+      if (!controller.signal.aborted) setIdentity({ name: typeof user.name === "string" && user.name.trim() ? user.name : user.email, email: user.email });
+    }).catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => controller.abort();
+  }, []);
+  const children = failed ? <p role="alert">{labels.registryLoadError}</p> : !identity ? <p role="status">{labels.registryLoading}</p> : <>
+    <p className="text-sm font-semibold text-kumo-brand">{labels.systemAdministration}</p>
+    <h1 className="mt-2 text-2xl font-semibold">{siteSlug ? <bdi dir="auto">{siteSlug}</bdi> : labels.sites}</h1>
+    <p className="mt-3 text-kumo-subtle"><bdi dir="auto">{labels.sitesDescription}</bdi></p>
+    <div className="mt-6"><SystemSites labels={labels} siteSlug={siteSlug} /></div>
+  </>;
+  return <SystemAdminShell locale={locale} messages={messages} name={identity?.name} email={identity?.email}
+    logoutAction={<ClerkSignOut publishableKey={publishableKey} label={labels.signOut} errorLabel={labels.signOutError} />}>
+    {children}
+  </SystemAdminShell>;
+}
 
 function BidiText({ children }: { children: React.ReactNode }) {
   return <bdi dir="auto">{children}</bdi>;

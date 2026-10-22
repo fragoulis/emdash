@@ -2,4 +2,4 @@
 "create-emdash": patch
 ---
 
-Adds a private, verified identity endpoint for system administrators on the admin host. It returns the signed-in user's ID, name, and email without exposing site data.
+Adds a shared system-administration shell to the generated Sites pages, with the signed-in administrator's identity and logout action in the user menu.
