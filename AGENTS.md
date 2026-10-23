@@ -4,6 +4,8 @@
 
 This is the `emdash/emdash` fork with local customizations.
 
+Before changing platform support, templates, development environments, CI, or rebasing upstream, read [fork scope](docs/agents/fork-scope.md). It defines supported behavior, intentional removals, and permitted upstream code retention.
+
 Track specs and tickets in GitHub Issues on `fragoulis/emdash`. See [issue-tracker guidance](docs/agents/issue-tracker.md). Use `GLOSSARY.md` for shared terms and `CONTEXT-MAP.md` for package contexts when present.
 
 `CLAUDE.md` points here. `.agents/skills` and `.claude/skills` point to `skills/`. Do not sync these symlinks.

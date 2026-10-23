@@ -1,12 +1,12 @@
 ---
 name: emdash-rebase-onto-upstream
-description: Rebase the EmDash multi-site fork onto upstream and verify both upstream and fork behavior.
+description: Rebase the EmDash multi-site fork onto upstream and verify behavior within the fork's supported scope.
 disable-model-invocation: true
 ---
 
 # Rebase EmDash onto upstream
 
-Start or finish a rebase in the current worktree. Preserve upstream EmDash behavior and this fork's multi-site host changes. Keep this skill local to the fork; do not add it to the public skill sync list.
+Start or finish a rebase in the current worktree. Read [fork scope](../../docs/agents/fork-scope.md) first. Preserve upstream behavior within that scope and this fork's multi-site host changes. Keep this skill local to the fork; do not add it to the public skill sync list.
 
 ## 1. Establish the branch and recovery point
 
@@ -30,7 +30,7 @@ For each conflict, record:
 | Commit and paths | Upstream behavior | Fork behavior | Merged behavior | Focused tests and dialects | Result |
 | --- | --- | --- | --- | --- | --- |
 
-Inspect cleanly merged adjacent code too. Conflict markers do not identify every integration defect. Include affected callers, cache keys, schema constraints, migrations, fixtures, and generated artifacts in the inventory.
+Inspect cleanly merged adjacent code too. Conflict markers do not identify every integration defect. Include affected callers, cache keys, schema constraints, migrations, fixtures, and generated artifacts in the inventory. Classify affected capabilities using fork scope, including upstream additions. Record intentional removals and retained unsupported code so a clean merge does not silently restore unsupported workflows.
 
 Record each validation command, exit status, tested commit or working-tree state, and passed, failed, skipped, or unavailable coverage. Keep full command output in log files. Use summaries first; inspect bounded sections of large SQL snapshots or logs when needed. Preserve producer failures in pipelines with `set -o pipefail`.
 
@@ -44,11 +44,11 @@ Resolve the behavior, not just the markers:
 - Keep selected-site context explicit. Scope process-wide and distributed cache entries by site. Check request-cache readers and middleware together when changing keys or snapshot types.
 - Match seed and repository upsert conflict targets to the actual site-scoped unique constraints. Test first seed, repeat seed, and the same logical names on two sites.
 - Keep historical migration readers compatible with their pre-migration data and resume state. Do not substitute a current site-settings reader for a legacy reader. Use pre-migration databases for upgrade tests; keep published migrations immutable.
-- Preserve both upstream UI behavior and fork shell integration, including hidden navigation items, identity fallback, and bidirectional text.
+- Preserve supported upstream UI behavior and fork shell integration, including hidden navigation items, identity fallback, and bidirectional text.
 
 Update fixtures only after tracing the failure. Supply trusted site context and explicit site-owned row values where required. Keep negative tests for missing context. Do not relax production checks or remove assertions to make the replay pass.
 
-Add a regression test when a deterministic interaction is not covered. If the two behaviors cannot coexist, ask for a decision. Do not choose an entire side just because it compiles.
+Add a regression test when a deterministic interaction is not covered. Apply documented fork-scope decisions when upstream and fork behavior differ. Ask when a conflict needs a new support decision. Do not choose an entire side just because it compiles.
 
 Before continuing, review the staged diff and `git diff --check`. Stage only intended resolutions. Confirm `git ls-files -u` is empty, then run `GIT_EDITOR=true git rebase --continue`. Repeat until Git reports completion. Run cheap focused tests during replay when the intermediate commit supports them; reserve final workspace validation for the integrated tree.
 
@@ -64,9 +64,9 @@ Keep the reviewed merged lockfile through later commits. Regenerate only when a 
 
 After the rebase, run the checks in [canonical validation](../../docs/agents/validation.md). Keep a current root workspace build for declaration consumers. Record which inputs invalidate it; reuse valid output between checks. If a required check fails, follow the documented rebuild-and-rerun procedure. Do not replace it with a package-only build.
 
-Run a small integration smoke before expensive site or browser checks. Select existing focused tests for migrations, per-site settings and cache freshness, menu creation and repeat seeding, and site isolation. For each conflict inventory row, exercise both original behaviors and their interaction. Use the repository's real database helpers, not database mocks.
+Run a small integration smoke before expensive site or browser checks. Select existing focused tests for migrations, per-site settings and cache freshness, menu creation and repeat seeding, and site isolation. For each conflict inventory row, verify the supported behaviors and their interaction; check that intentional removals remain removed. Record blocked conversions and coverage gaps separately from passing checks. Use the repository's real database helpers, not database mocks.
 
-For changed PostgreSQL queries or migrations, arrange a disposable PostgreSQL database and set `EMDASH_TEST_PG` before running the relevant files. Read the PostgreSQL service configuration in `.github/workflows/ci.yml` and reuse existing disposable database setup where practical. Setting no connection string silently leaves dialect-wrapper tests SQLite-only. A successful SQLite run does not verify PostgreSQL SQL. Run relevant D1/workerd checks separately. If a required service is unavailable, record the exact unverified coverage and report the limitation; do not mark it passed.
+For changed PostgreSQL queries or migrations, arrange a disposable PostgreSQL database and set `EMDASH_TEST_PG` before running files that use it. Read the PostgreSQL service configuration in `.github/workflows/ci.yml` and reuse existing disposable database setup where practical. Inspect the selected test harness: existing dialect wrappers can silently run SQLite-only without a connection string. A successful SQLite run does not verify PostgreSQL SQL. Follow fork scope and canonical validation for transition checks; do not require D1/workerd validation solely because upstream supports it. If a required service is unavailable, record the exact unverified coverage and report the limitation; do not mark it passed.
 
 For generated-host behavior, use the [local installation guide](../../infra/local-install/README.md) and its fixture-backed authentication. For visible UI changes, run relevant browser tests and Arabic checks as required by repository guidance.
 
