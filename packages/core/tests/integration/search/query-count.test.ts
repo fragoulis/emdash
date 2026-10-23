@@ -1,8 +1,9 @@
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ContentRepository } from "../../../src/database/repositories/content.js";
 import type { Database } from "../../../src/database/types.js";
+import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { FTSManager } from "../../../src/search/fts-manager.js";
 import { getSuggestions, searchCollection, searchWithDb } from "../../../src/search/query.js";
@@ -12,6 +13,8 @@ describe("search query counts", () => {
 	let db: Kysely<Database>;
 	let repo: ContentRepository;
 	let fts: FTSManager;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		db = await setupTestDatabase();
@@ -243,7 +246,7 @@ describe("search query counts", () => {
 	});
 
 	it("keeps ranking weights aligned with the indexed column order", async () => {
-		await fts.rebuildIndex("articles", ["title", "body"], { title: 10, body: 1 });
+		await fts.rebuildIndexInstallationWide("articles", ["title", "body"], { title: 10, body: 1 });
 		const executeQuery = vi.spyOn(db.getExecutor(), "executeQuery");
 		const result = await searchWithDb(db, "farrier", { collections: ["articles"] });
 		expect(executeQuery).toHaveBeenCalledTimes(2);

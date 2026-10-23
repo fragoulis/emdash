@@ -8,9 +8,9 @@ import { createDatabase } from "../../../src/database/connection.js";
 import { runMigrations } from "../../../src/database/migrations/runner.js";
 import type { Database } from "../../../src/database/types.js";
 import { getMenuWithDb, getMenusWithDb } from "../../../src/menus/index.js";
-import { runWithContext } from "../../../src/request-context.js";
 import { SchemaRegistry } from "../../../src/schema/registry.js";
 import { sanitizeHref } from "../../../src/utils/url.js";
+import { runWithDefaultSite as runWithContext } from "../../utils/test-site-context.js";
 
 describe("Navigation Menus", () => {
 	let db: Kysely<Database>;
@@ -616,47 +616,49 @@ describe("Navigation Menus", () => {
 			const childId = ulid();
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: menuId, name: "primary", label: "Primary" })
+				.values({ id: menuId, site_id: "site-default", name: "primary", label: "Primary" })
 				.execute();
 			await db
 				.insertInto("_emdash_menu_items")
-				.values([
-					{
-						id: ulid(),
-						menu_id: menuId,
-						sort_order: 0,
-						type: "custom",
-						custom_url: "/about",
-						label: "About",
-					},
-					{
-						id: parentId,
-						menu_id: menuId,
-						sort_order: 1,
-						type: "collection",
-						reference_collection: "projects",
-						reference_id: "group-proj-1",
-						label: "Widget Co",
-					},
-					{
-						id: childId,
-						menu_id: menuId,
-						parent_id: parentId,
-						sort_order: 0,
-						type: "custom",
-						custom_url: "/widget-co/team",
-						label: "Team",
-					},
-					{
-						id: ulid(),
-						menu_id: menuId,
-						parent_id: childId,
-						sort_order: 0,
-						type: "custom",
-						custom_url: "/widget-co/team/jobs",
-						label: "Jobs",
-					},
-				])
+				.values(
+					[
+						{
+							id: ulid(),
+							menu_id: menuId,
+							sort_order: 0,
+							type: "custom",
+							custom_url: "/about",
+							label: "About",
+						},
+						{
+							id: parentId,
+							menu_id: menuId,
+							sort_order: 1,
+							type: "collection",
+							reference_collection: "projects",
+							reference_id: "group-proj-1",
+							label: "Widget Co",
+						},
+						{
+							id: childId,
+							menu_id: menuId,
+							parent_id: parentId,
+							sort_order: 0,
+							type: "custom",
+							custom_url: "/widget-co/team",
+							label: "Team",
+						},
+						{
+							id: ulid(),
+							menu_id: menuId,
+							parent_id: childId,
+							sort_order: 0,
+							type: "custom",
+							custom_url: "/widget-co/team/jobs",
+							label: "Jobs",
+						},
+					].map((item) => ({ ...item, site_id: "site-default" })),
+				)
 				.execute();
 
 			const menu = await getMenuWithDb("primary", db);

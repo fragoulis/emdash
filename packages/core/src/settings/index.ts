@@ -112,14 +112,13 @@ const SITE_SETTINGS_CACHE_TTL_MS = 30_000;
 const SITE_SETTINGS_CACHE_KEY = Symbol.for("emdash:site-settings:swr");
 const g = globalThis as Record<symbol, unknown>;
 // oxlint-disable typescript/no-unsafe-type-assertion -- globalThis singleton pattern (see request-context.ts)
-const settingsCaches: Map<string, SiteSettingsCache> = (g[
-	SITE_SETTINGS_CACHE_KEY
-] as Map<string, SiteSettingsCache> | undefined) ??
-(() => {
-	const caches = new Map<string, SiteSettingsCache>();
-	g[SITE_SETTINGS_CACHE_KEY] = caches;
-	return caches;
-})();
+const settingsCaches: Map<string, SiteSettingsCache> =
+	(g[SITE_SETTINGS_CACHE_KEY] as Map<string, SiteSettingsCache> | undefined) ??
+	(() => {
+		const caches = new Map<string, SiteSettingsCache>();
+		g[SITE_SETTINGS_CACHE_KEY] = caches;
+		return caches;
+	})();
 // oxlint-enable typescript/no-unsafe-type-assertion
 
 function getSettingsCache(siteId: string = selectedSiteId()): SiteSettingsCache {
@@ -372,7 +371,7 @@ export function getSiteSettings(): Promise<Partial<SiteSettings>> {
 	const siteId = selectedSiteId();
 	const settingsCache = getSettingsCache(siteId);
 	return requestCached(`siteSettings:${siteId}`, async () => {
-		const snapshot = await requestCached(`siteSettingsSnapshot:${siteId}`, async () => {
+		const snapshot = await requestCached("siteSettingsSnapshot", async () => {
 			const ctx = getRequestContext();
 			const requestSettings = ctx?.siteSettings;
 			if (ctx?.routeCacheFill) return loadSiteSettingsSnapshot(await getDb());
@@ -389,7 +388,7 @@ export function getSiteSettings(): Promise<Partial<SiteSettings>> {
 		});
 		return snapshot.data;
 	}).then(async (data) => {
-		const snapshot = await peekRequestCache<CachedSiteSettings>(`siteSettingsSnapshot:${siteId}`);
+		const snapshot = await peekRequestCache<CachedSiteSettings>("siteSettingsSnapshot");
 		if (snapshot) getRequestContext()?.siteSettings?.onRead(snapshot.version);
 		return data;
 	});
@@ -430,7 +429,7 @@ async function loadSiteSettingsSnapshot(
 	const allOptions = await options.getVersioned();
 	const version = normalizeSiteSettingsVersion(
 		JSON.stringify(
-			[...allOptions].map(([key, value]) => [`site:${selectedSiteId()}:${key}`, value.revision]),
+			Array.from(allOptions, ([key, value]) => [`site:${selectedSiteId()}:${key}`, value.revision]),
 		),
 	);
 	const settings: Record<string, unknown> = {};

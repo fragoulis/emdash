@@ -1191,7 +1191,7 @@ async function applySeedWrites(
 							locale,
 							translation_group: translationGroup,
 						})
-						.onConflict((conflict) => conflict.columns(["name", "locale"]).doNothing())
+						.onConflict((conflict) => conflict.columns(["site_id", "name", "locale"]).doNothing())
 						.returning("id")
 						.executeTakeFirst();
 					if (inserted) {

@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, aroundEach, beforeEach, expect, it } from "vitest";
 
 import { OptionsRepository } from "../../../src/database/repositories/options.js";
+import { SiteSettingsRepository } from "../../../src/database/repositories/site-settings.js";
+import { runWithContext } from "../../../src/request-context.js";
 import {
 	normalizeSiteSettingsVersion,
 	siteSettingsVersionQuery,
@@ -14,6 +16,8 @@ import {
 
 describeEachDialect("site settings version", (dialect) => {
 	let ctx: DialectTestContext | undefined;
+
+	aroundEach((runTest) => runWithContext({ editMode: false, siteId: "site-default" }, runTest));
 
 	beforeEach(async () => {
 		ctx = await setupForDialect(dialect);
@@ -35,22 +39,28 @@ describeEachDialect("site settings version", (dialect) => {
 	it("changes for site setting insert, update, and deletion but not unrelated writes", async () => {
 		if (!ctx) throw new Error("test database is not initialized");
 		const options = new OptionsRepository(ctx.db);
+		const settings = new SiteSettingsRepository(ctx.db);
 
 		const empty = await readVersion();
 		expect(empty).toBe("[]");
 
-		await options.set("site:title", "First");
+		await settings.set("title", "First");
 		const inserted = await readVersion();
 		expect(inserted).not.toBe(empty);
 
-		await options.set("site:title", "Second");
+		await settings.set("title", "Second");
 		const updated = await readVersion();
 		expect(updated).not.toBe(inserted);
 
 		await options.set("unrelated", "value");
 		expect(await readVersion()).toBe(updated);
 
-		await options.delete("site:title");
+		await runWithContext({ editMode: false, siteId: "other-site" }, () =>
+			settings.set("title", "Other site"),
+		);
+		expect(await readVersion()).toBe(updated);
+
+		await settings.delete("title");
 		expect(await readVersion()).not.toBe(updated);
 		expect(await readVersion()).toBe(empty);
 	});

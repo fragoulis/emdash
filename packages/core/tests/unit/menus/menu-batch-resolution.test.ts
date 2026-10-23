@@ -162,6 +162,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 			.values([
 				{
 					id: "taxonomy-local-en",
+					site_id: "site-default",
 					name: "category",
 					slug: "news",
 					label: "News",
@@ -172,6 +173,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				},
 				{
 					id: "taxonomy-local-fr",
+					site_id: "site-default",
 					name: "category",
 					slug: "nouvelles",
 					label: "Nouvelles",
@@ -182,6 +184,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				},
 				{
 					id: "taxonomy-fallback-en",
+					site_id: "site-default",
 					name: "tag",
 					slug: "releases",
 					label: "Releases",
@@ -192,6 +195,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				},
 				{
 					id: "taxonomy-fallback-es",
+					site_id: "site-default",
 					name: "tag",
 					slug: "lanzamientos",
 					label: "Lanzamientos",
@@ -202,6 +206,7 @@ describeEachDialect("batched menu reference resolution", (dialect) => {
 				},
 				{
 					id: "legacy-taxonomy-id",
+					site_id: "site-default",
 					name: "category",
 					slug: "legacy-topic",
 					label: "Legacy topic",

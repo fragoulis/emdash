@@ -83,10 +83,12 @@ describeEachDialect("published content sites", (dialect) => {
 		await sql`UPDATE _emdash_taxonomy_def_groups SET collections = '["posts"]' WHERE name = 'category'`.execute(
 			ctx.db,
 		);
-		await sql`INSERT INTO taxonomies (id, name, slug, label, translation_group)
-			VALUES ('term-1', 'category', 'news', 'News', 'term-1')`.execute(ctx.db);
-		await sql`INSERT INTO content_taxonomies (collection, entry_id, taxonomy_id)
-			VALUES ('posts', 'foo-id', 'term-1'), ('posts', 'bar-id', 'term-1')`.execute(ctx.db);
+		await sql`INSERT INTO taxonomies (id, site_id, name, slug, label, translation_group)
+			VALUES ('term-foo', 'site-foo', 'category', 'news', 'News', 'term-foo'),
+			('term-bar', 'site-bar', 'category', 'news', 'News', 'term-bar')`.execute(ctx.db);
+		await sql`INSERT INTO content_taxonomies (site_id, collection, entry_id, taxonomy_id)
+			VALUES ('site-foo', 'posts', 'foo-id', 'term-foo'),
+			('site-bar', 'posts', 'bar-id', 'term-bar')`.execute(ctx.db);
 		resetTaxonomyNamesCache();
 		const loader = emdashLoader();
 		for (const orderBy of [{ created_at: "desc" }, { updated_at: "desc" }] as const) {

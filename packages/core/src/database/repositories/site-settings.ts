@@ -57,7 +57,10 @@ export class SiteSettingsRepository {
 		return new Map(
 			rows
 				.filter((row) => row.name.startsWith(prefix))
-				.map((row) => [row.name.slice(prefix.length), { value: JSON.parse(row.value), revision: row.revision }]),
+				.map((row) => [
+					row.name.slice(prefix.length),
+					{ value: JSON.parse(row.value), revision: row.revision },
+				]),
 		);
 	}
 

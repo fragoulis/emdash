@@ -25,7 +25,8 @@ import {
 	__setObjectCacheBackendForTests,
 	invalidateMenuObjectCache,
 } from "../../../src/object-cache/index.js";
-import { runWithContext } from "../../../src/request-context.js";
+import { runWithContext as runWithoutSite } from "../../../src/request-context.js";
+import { runWithDefaultSite as runWithContext } from "../../utils/test-site-context.js";
 
 /** SQL of every query executed against the test database. */
 let queries: string[] = [];
@@ -126,7 +127,7 @@ describe("getMenu collection-pattern request cache", () => {
 	});
 
 	it("rejects menu reads without a selected site", async () => {
-		await expect(runWithContext({ editMode: false }, () => getMenu("primary"))).rejects.toThrow(
+		await expect(runWithoutSite({ editMode: false }, () => getMenu("primary"))).rejects.toThrow(
 			"server-selected site",
 		);
 	});
@@ -217,10 +218,20 @@ describe("getMenu collection-pattern request cache", () => {
 			item: { type: string; reference_collection?: string; reference_id: string },
 		): Promise<void> {
 			const menuId = ulid();
-			await db.insertInto("_emdash_menus").values({ id: menuId, name, label: name }).execute();
+			await db
+				.insertInto("_emdash_menus")
+				.values({ id: menuId, site_id: "site-default", name, label: name })
+				.execute();
 			await db
 				.insertInto("_emdash_menu_items")
-				.values({ id: ulid(), menu_id: menuId, sort_order: 0, label: name, ...item })
+				.values({
+					id: ulid(),
+					site_id: "site-default",
+					menu_id: menuId,
+					sort_order: 0,
+					label: name,
+					...item,
+				})
 				.execute();
 		}
 
@@ -242,7 +253,13 @@ describe("getMenu collection-pattern request cache", () => {
 		it("keeps cached menus apart by locale and trailing-slash policy", async () => {
 			await db
 				.insertInto("_emdash_menus")
-				.values({ id: ulid(), name: "primary", label: "Hauptmenü", locale: "de" })
+				.values({
+					id: ulid(),
+					site_id: "site-default",
+					name: "primary",
+					label: "Hauptmenü",
+					locale: "de",
+				})
 				.execute();
 			const read = (options: { locale: string; trailingSlash: "always" | "never" }) =>
 				runWithContext({ editMode: false, db }, () => getMenu("primary", options));
@@ -353,7 +370,7 @@ describe("getMenu collection-pattern request cache", () => {
 				);
 			await urls();
 			const memo = namespacesMemo();
-			const [memoKey, before] = [...memo].find(([key]) => key.startsWith("primary:"))!;
+			const [memoKey, before] = [...memo].find(([key]) => key.startsWith("site-default:primary:"))!;
 			// Another isolate still knows the menu by the namespaces it had before the edit.
 			const asOtherIsolate = () => memo.set(memoKey, before);
 

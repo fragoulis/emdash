@@ -356,7 +356,10 @@ export class MenuRepository {
 	 * is supplied) and to detect AMBIGUOUS_LOCALE situations (`length > 1`).
 	 */
 	async findByName(name: string, options: { locale?: string } = {}): Promise<Menu[]> {
-		let query = this.db.selectFrom("_emdash_menus").selectAll().where("name", "=", name)
+		let query = this.db
+			.selectFrom("_emdash_menus")
+			.selectAll()
+			.where("name", "=", name)
 			.where("site_id", "=", selectedSiteId());
 		if (options.locale !== undefined) {
 			query = query

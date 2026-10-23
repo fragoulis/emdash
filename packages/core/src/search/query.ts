@@ -157,11 +157,24 @@ export async function searchWithDb(
 			continue;
 		}
 
-		const searchOptions = { siteId, status, locale: options.locale, limit: perCollectionLimit, scope: options.scope };
+		const searchOptions = {
+			siteId,
+			status,
+			locale: options.locale,
+			limit: perCollectionLimit,
+			scope: options.scope,
+		};
 		const collectionResults = isSqlite(db)
 			? await searchSingleCollection(db, collection, query, searchOptions, collectionMetadata)
-			: await searchPostgresCollection(db, collection, query, searchOptions,
-				collectionMetadata.searchableFields, collectionMetadata.config.weights, collectionMetadata.config.titleField);
+			: await searchPostgresCollection(
+					db,
+					collection,
+					query,
+					searchOptions,
+					collectionMetadata.searchableFields,
+					collectionMetadata.config.weights,
+					collectionMetadata.config.titleField,
+				);
 
 		allResults.push(...collectionResults);
 	}
@@ -215,10 +228,24 @@ export async function searchCollection(
 	// Over-fetch the [offset, offset + limit) window plus one row to detect a
 	// further page, then slice. Keeps the FTS SQL (LIMIT-only) unchanged and
 	// the cursor contract identical to the cross-collection path.
-	const searchOptions = { siteId, status: options.status ?? "published", locale: options.locale, limit: offset + limit + 1, scope: options.scope };
+	const searchOptions = {
+		siteId,
+		status: options.status ?? "published",
+		locale: options.locale,
+		limit: offset + limit + 1,
+		scope: options.scope,
+	};
 	const fetched = isSqlite(db)
 		? await searchSingleCollection(db, collection, query, searchOptions, metadata)
-		: await searchPostgresCollection(db, collection, query, searchOptions, metadata.searchableFields, metadata.config.weights, metadata.config.titleField);
+		: await searchPostgresCollection(
+				db,
+				collection,
+				query,
+				searchOptions,
+				metadata.searchableFields,
+				metadata.config.weights,
+				metadata.config.titleField,
+			);
 
 	const items = fetched.slice(offset, offset + limit);
 	const hasMore = fetched.length > offset + limit;

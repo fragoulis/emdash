@@ -423,6 +423,7 @@ describe("Site Settings", () => {
 				.insertInto("media" as never)
 				.values({
 					id: mediaId,
+					site_id: "site-default",
 					filename: "og.png",
 					mime_type: "image/png",
 					size: 2048,
@@ -460,6 +461,7 @@ describe("Site Settings", () => {
 				.insertInto("media" as never)
 				.values({
 					id: mediaId,
+					site_id: "site-default",
 					filename: "og.png",
 					mime_type: "image/png",
 					size: 1024,
@@ -558,7 +560,9 @@ describe("Site Settings caching", () => {
 		]);
 		await waitForDeferredTasks();
 		expect((await read()).seo?.googleVerification).toBe("new");
-		expect(queries.filter((q) => q.includes("LIKE") && q.includes("options"))).toHaveLength(1);
+		expect(
+			queries.filter((q) => q.toLowerCase().includes("like") && q.includes("options")),
+		).toHaveLength(1);
 
 		reset();
 		clock.mockReturnValue(now + 59_999);
@@ -866,6 +870,7 @@ describe("Media mutations invalidate site settings cache", () => {
 			.insertInto("media" as never)
 			.values({
 				id: mediaId,
+				site_id: "site-default",
 				filename: "og.png",
 				mime_type: "image/png",
 				size: 1024,
@@ -901,6 +906,7 @@ describe("Media mutations invalidate site settings cache", () => {
 			.insertInto("media" as never)
 			.values({
 				id: mediaId,
+				site_id: "site-default",
 				filename: "og.png",
 				mime_type: "image/png",
 				size: 1024,
@@ -936,6 +942,7 @@ describe("Media mutations invalidate site settings cache", () => {
 			.insertInto("media" as never)
 			.values({
 				id: mediaId,
+				site_id: "site-default",
 				filename: "og.png",
 				mime_type: "image/png",
 				size: 1024,

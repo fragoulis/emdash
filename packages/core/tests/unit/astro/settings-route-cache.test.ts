@@ -1,6 +1,6 @@
 import type { Kysely } from "kysely";
 import { Kysely as KyselyClass, SqliteDialect } from "kysely";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("astro:middleware", () => ({
 	defineMiddleware: (handler: unknown) => handler,
@@ -12,7 +12,7 @@ import { onRequest as redirectMiddleware } from "../../../src/astro/middleware/r
 import requestContextMiddleware from "../../../src/astro/middleware/request-context.js";
 import { prefetchLayoutData } from "../../../src/astro/prefetch.js";
 import { runMigrations } from "../../../src/database/migrations/runner.js";
-import { OptionsRepository } from "../../../src/database/repositories/options.js";
+import { SiteSettingsRepository } from "../../../src/database/repositories/site-settings.js";
 import type { Database } from "../../../src/database/types.js";
 import { openNodeSqliteDatabase } from "../../../src/db/node-sqlite-compat.js";
 import { waitForDeferredTasks } from "../../../src/deferred-tasks.js";
@@ -22,12 +22,12 @@ import { createObjectCache as createMemoryCache } from "../../../src/object-cach
 import { publishRedirectArtifacts } from "../../../src/redirects/artifacts.js";
 import { invalidateRedirectCache } from "../../../src/redirects/cache.js";
 import { requestCached } from "../../../src/request-cache.js";
-import { runWithContext } from "../../../src/request-context.js";
 import {
 	getSiteSettings,
 	invalidateSiteSettingsSnapshot,
 	setSiteSettings,
 } from "../../../src/settings/index.js";
+import { runWithDefaultSite as runWithContext } from "../../utils/test-site-context.js";
 
 interface QueryCounts {
 	selects: number;
@@ -124,6 +124,8 @@ describe("settings freshness in route-cache renders", () => {
 	let db: Kysely<Database>;
 	let counts: QueryCounts;
 
+	aroundEach((runTest) => runWithContext({ editMode: false }, runTest));
+
 	beforeEach(async () => {
 		config.objectCacheEnabled = false;
 		counts = { selects: 0, redirectStateSelects: 0 };
@@ -132,7 +134,7 @@ describe("settings freshness in route-cache renders", () => {
 		await setSiteSettings({ seo: { googleVerification: "old" } }, db);
 		await db
 			.insertInto("_emdash_menus")
-			.values({ id: "primary", name: "primary", label: "Primary" })
+			.values({ id: "primary", site_id: "site-default", name: "primary", label: "Primary" })
 			.execute();
 		await publishRedirectArtifacts(db);
 		invalidateRedirectCache();
@@ -157,7 +159,7 @@ describe("settings freshness in route-cache renders", () => {
 		expect(warmCache.set).not.toHaveBeenCalled();
 
 		resetCounts(counts);
-		await new OptionsRepository(db).set("site:seo", { googleVerification: "new" });
+		await new SiteSettingsRepository(db).set("seo", { googleVerification: "new" });
 		const staleCache = {
 			enabled: true,
 			options: { tags: ["emdash:settings"], maxAge: 3600 },
@@ -198,12 +200,12 @@ describe("settings freshness in route-cache renders", () => {
 		const streamGate = new Promise<void>((resolve) => {
 			releaseStream = resolve;
 		});
-		const original = OptionsRepository.prototype.getVersionedByPrefix;
+		const original = SiteSettingsRepository.prototype.getVersioned;
 		let first = true;
 		const spy = vi
-			.spyOn(OptionsRepository.prototype, "getVersionedByPrefix")
-			.mockImplementation(async function (this: OptionsRepository, prefix, options) {
-				const result = await original.call(this, prefix, options);
+			.spyOn(SiteSettingsRepository.prototype, "getVersioned")
+			.mockImplementation(async function (this: SiteSettingsRepository) {
+				const result = await original.call(this);
 				if (first) {
 					first = false;
 					loadReached();
@@ -214,7 +216,7 @@ describe("settings freshness in route-cache renders", () => {
 		try {
 			const pending = runWithContext({ editMode: false, db }, () => getSiteSettings());
 			await started;
-			await new OptionsRepository(db).set("site:seo", { googleVerification: "new" });
+			await new SiteSettingsRepository(db).set("seo", { googleVerification: "new" });
 			const candidate = cache();
 			const response = await renderLazyPipeline(db, candidate, streamGate);
 			expect(candidate.set).not.toHaveBeenCalled();
@@ -264,7 +266,7 @@ describe("settings freshness in route-cache renders", () => {
 			};
 			await (await renderPipeline(db, warmCache)).text();
 			await waitForDeferredTasks();
-			await new OptionsRepository(db).set("site:seo", { googleVerification: "new" });
+			await new SiteSettingsRepository(db).set("seo", { googleVerification: "new" });
 
 			let release!: () => void;
 			const gate = new Promise<void>((resolve) => {
@@ -363,7 +365,7 @@ describe("settings freshness in route-cache renders", () => {
 
 		await runWithContext({ editMode: false, db }, async () => {
 			await prefetchLayoutData();
-			await new OptionsRepository(db).set("site:seo", { googleVerification: "new" });
+			await new SiteSettingsRepository(db).set("seo", { googleVerification: "new" });
 			invalidateSiteSettingsSnapshot();
 			const freshSettings = await runWithContext({ editMode: false, db }, () => getSiteSettings());
 			expect(freshSettings.seo?.googleVerification).toBe("new");
@@ -394,7 +396,7 @@ describe("settings freshness in route-cache renders", () => {
 		await runWithContext({ editMode: false, db }, () => getSiteSettings());
 		await (await renderPipeline(db, warmCache)).text();
 		await waitForDeferredTasks();
-		await new OptionsRepository(db).set("site:seo", { googleVerification: "new" });
+		await new SiteSettingsRepository(db).set("seo", { googleVerification: "new" });
 		invalidateSiteSettingsSnapshot();
 
 		let release!: () => void;
@@ -422,7 +424,7 @@ describe("settings freshness in route-cache renders", () => {
 		});
 		await runWithContext({ editMode: false, db }, async () => {
 			await prefetchLayoutData();
-			await new OptionsRepository(db).set("site:seo", { googleVerification: "new" });
+			await new SiteSettingsRepository(db).set("seo", { googleVerification: "new" });
 			await db
 				.updateTable("_emdash_menus")
 				.set({ label: "New menu" })
@@ -505,7 +507,7 @@ describe("settings freshness in route-cache renders", () => {
 			options: { tags: ["emdash:settings"], maxAge: 3600 },
 			set: vi.fn(),
 		});
-		await new OptionsRepository(db).set("site:seo", { googleVerification: "new" });
+		await new SiteSettingsRepository(db).set("seo", { googleVerification: "new" });
 		resetCounts(counts);
 		const cache = {
 			enabled: true,

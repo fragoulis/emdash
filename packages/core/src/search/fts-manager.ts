@@ -496,7 +496,9 @@ export class FTSManager {
 			.select(["search_config", "title_field"])
 			.where("slug", "=", collectionSlug)
 			.executeTakeFirst();
-		return result ? parseSearchConfig(result.search_config, result.title_field) : null;
+		return result?.search_config
+			? parseSearchConfig(result.search_config, result.title_field)
+			: null;
 	}
 
 	async getSearchConfigAndFields(collectionSlug: string): Promise<{
@@ -513,7 +515,9 @@ export class FTSManager {
 			.execute();
 		const first = rows[0];
 		return {
-			config: first ? parseSearchConfig(first.search_config, first.title_field) : null,
+			config: first?.search_config
+				? parseSearchConfig(first.search_config, first.title_field)
+				: null,
 			searchableFields: rows.flatMap((row) => (row.field_slug ? [row.field_slug] : [])),
 		};
 	}
@@ -528,17 +532,40 @@ export class FTSManager {
 		if (!isSqlite(this.db)) {
 			let query = this.db
 				.selectFrom("_emdash_collections as c")
+				.leftJoin("_emdash_fields as f", (join) =>
+					join.onRef("f.collection_id", "=", "c.id").on("f.searchable", "=", 1),
+				)
 				.select([
-					"c.slug", "c.search_config", "c.title_field",
-					sql<string[]>`ARRAY(SELECT slug FROM _emdash_fields WHERE collection_id = c.id AND searchable = 1 ORDER BY slug)`.as("searchable_fields"),
-					sql<boolean>`EXISTS (SELECT 1 FROM _emdash_fields WHERE collection_id = c.id AND slug = 'title')`.as("has_title"),
+					"c.slug",
+					"c.search_config",
+					"c.title_field",
+					"f.slug as field_slug",
+					"f.type as field_type",
+					"f.validation as field_validation",
+					sql<boolean>`EXISTS (SELECT 1 FROM _emdash_fields WHERE collection_id = c.id AND slug = 'title')`.as(
+						"has_title",
+					),
 				])
 				.where("c.search_config", "is not", null);
 			if (collectionSlugs?.length) query = query.where("c.slug", "in", collectionSlugs);
 			const metadata = new Map<string, CollectionSearchMetadata>();
 			for (const row of await query.execute()) {
-				const config = row.search_config ? parseSearchConfig(row.search_config, row.title_field) : null;
-				if (config?.enabled) metadata.set(row.slug, { config, searchableFields: row.searchable_fields, hasTitle: row.has_title });
+				const config = row.search_config
+					? parseSearchConfig(row.search_config, row.title_field)
+					: null;
+				if (!config?.enabled) continue;
+				let entry = metadata.get(row.slug);
+				if (!entry) {
+					entry = { config, searchableFields: [], hasTitle: row.has_title };
+					metadata.set(row.slug, entry);
+				}
+				if (
+					row.field_slug &&
+					row.field_type &&
+					!isStoragelessFieldRow({ type: row.field_type, validation: row.field_validation })
+				) {
+					entry.searchableFields.push(row.field_slug);
+				}
 			}
 			return metadata;
 		}
