@@ -94,7 +94,8 @@ describe("shared admin shell presentation", () => {
 		const identityButton = screen.getByRole("button", { name: "admin@example.test" });
 		expect(identityButton).toBeInTheDocument();
 		await identityButton.click();
-		expect(screen.getByText("admin@example.test", { exact: true }).nth(1)).toBeInTheDocument();
+		const popupText = document.querySelector(".kumo-popover-popup")?.textContent ?? "";
+		expect(popupText.match(/admin@example\.test/g)).toHaveLength(1);
 	});
 
 	it("keeps full-bleed page layout available to the normal admin", async () => {
