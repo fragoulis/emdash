@@ -35,8 +35,10 @@ export function SystemAdministration(props: SystemAdministrationProps) {
       const user = data as { id?: unknown; name?: unknown; email?: unknown };
       if (typeof user.id !== "string" || !user.id) throw new Error("Invalid identity id");
       if (user.name !== undefined && user.name !== null && typeof user.name !== "string") throw new Error("Invalid name");
-      if (typeof user.email !== "string" || !user.email.trim()) throw new Error("Invalid email");
-      if (!controller.signal.aborted) setIdentity({ name: typeof user.name === "string" && user.name.trim() ? user.name : user.email, email: user.email });
+      if (user.email !== undefined && user.email !== null && typeof user.email !== "string") throw new Error("Invalid email");
+      const email = typeof user.email === "string" && user.email.trim() ? user.email : undefined;
+      const name = typeof user.name === "string" && user.name.trim() ? user.name : email || user.id;
+      if (!controller.signal.aborted) setIdentity({ name, email });
     }).catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
   }, []);

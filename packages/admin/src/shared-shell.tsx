@@ -184,7 +184,9 @@ export function SharedIdentityMenu({
 			<Popover.Content className="w-56 p-2" align="end">
 				<div className="mb-1 border-b px-3 py-2">
 					<div className="truncate font-medium">{name || email || fallbackName}</div>
-					<div className="truncate text-xs text-kumo-subtle"><bdi dir="ltr">{email}</bdi></div>
+					{email && email !== displayName && (
+						<div className="truncate text-xs text-kumo-subtle"><bdi dir="ltr">{email}</bdi></div>
+					)}
 				</div>
 				<div className="grid gap-1">
 					{links?.(() => setOpen(false))}

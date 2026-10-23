@@ -747,16 +747,81 @@ it("initializes with no sites, then serves explicit sites behind verified super-
 			).toBe(false);
 			await adminPage.goBack();
 			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
+			let identityProfile: "email-only" | "subject-only" = "email-only";
+			let verifiedSubject = "";
 			await adminPage.route("**/_emdash/api/system/identity", async (route) => {
 				const response = await route.fetch();
 				const payload = await response.json();
+				verifiedSubject = payload.data.id;
 				payload.data.name = null;
+				if (identityProfile === "subject-only") delete payload.data.email;
 				await route.fulfill({ response, json: payload });
 			});
 			await adminPage.reload();
 			await adminPage.getByRole("heading", { name: "Sites", exact: true }).waitFor();
 			await adminPage.getByRole("button", { name: "admin+fixture@test.com" }).waitFor();
 			await adminPage.getByRole("main").getByRole("link", { name: "bar" }).waitFor();
+			const identityCaptureDir = process.env.EMDASH_TASK_VALIDATION_RUN;
+			if (identityCaptureDir)
+				mkdirSync(resolve(identityCaptureDir, "screenshots"), { recursive: true });
+			const captureIdentityMenu = async (label: string) => {
+				await adminPage.locator("header button").last().click();
+				const menu = adminPage.locator(".kumo-popover-popup");
+				await menu.waitFor({ state: "visible" });
+				if (identityCaptureDir) {
+					await adminPage.addStyleTag({
+						content:
+							"*, *::before, *::after { animation: none !important; transition: none !important; }",
+					});
+					await adminPage.waitForFunction(
+						() => getComputedStyle(document.querySelector(".kumo-popover-popup")!).opacity === "1",
+					);
+					const pageState = await adminPage.evaluate(() => ({
+						lang: document.documentElement.lang,
+						mode: document.documentElement.dataset.mode,
+						viewport: { width: innerWidth, height: innerHeight },
+					}));
+					await adminPage.screenshot({
+						path: resolve(identityCaptureDir, "screenshots", `identity-${label}.png`),
+						fullPage: true,
+					});
+					writeFileSync(
+						resolve(identityCaptureDir, "screenshots", `identity-${label}.json`),
+						JSON.stringify({ ...pageState, profile: label }, null, 2),
+					);
+				}
+				return menu;
+			};
+			const emailOnlyMenu = await captureIdentityMenu("email-only");
+			expect
+				.soft(await emailOnlyMenu.getByText("admin+fixture@test.com", { exact: true }).count())
+				.toBe(1);
+			await adminPage.getByRole("button", { name: "admin+fixture@test.com" }).click();
+			identityProfile = "subject-only";
+			const identityResponse = adminPage.waitForResponse((response) =>
+				response.url().includes("/_emdash/api/system/identity"),
+			);
+			await adminPage.reload();
+			await identityResponse;
+			await adminPage.getByRole("main").waitFor();
+			await adminPage.waitForFunction(
+				(subject) =>
+					[...document.querySelectorAll("header button")].some((button) =>
+						["User", subject].includes(button.getAttribute("aria-label") ?? ""),
+					),
+				verifiedSubject,
+			);
+			const subjectOnlyMenu = await captureIdentityMenu("subject-only");
+			expect
+				.soft(await adminPage.getByRole("button", { name: verifiedSubject, exact: true }).count())
+				.toBe(1);
+			expect
+				.soft(await adminPage.getByRole("button", { name: "User", exact: true }).count())
+				.toBe(0);
+			expect
+				.soft(await subjectOnlyMenu.getByText(verifiedSubject, { exact: true }).count())
+				.toBe(1);
+			await adminPage.locator("header button").last().click();
 			await adminPage.unroute("**/_emdash/api/system/identity");
 			const activeStates = query(
 				"SELECT string_agg(slug || ':' || active, ',' ORDER BY slug) FROM _emdash_sites",
